@@ -1,0 +1,32 @@
+// v0.15: records - named fields grouped into one value.
+// Built with Point(x: 3, y: 4), read with p.x, compared with ==.
+// Records are immutable: build a new one instead of changing a field.
+
+record Point {
+    x: Int
+    y: Int
+}
+
+record User {
+    name: Text
+    age: Int
+}
+
+fn shift(p: Point, dx: Int) -> Point {
+    return Point(x: p.x + dx, y: p.y)
+}
+
+fn describe(u: User) -> Text {
+    return u.name + " (" + u.age + ")"
+}
+
+fn main() uses io {
+    let p = Point(x: 3, y: 4)
+    print(p)
+    let q = shift(p, 10)
+    print(q)
+    print("q.x is " + q.x)
+    print("same point? " + (p == q))
+    let u = User(name: "gowri", age: 25)
+    print(describe(u))
+}

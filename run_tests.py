@@ -17,6 +17,8 @@ EXPECT = {
     "loop_proof.vel": "RUNS",
     "list_proof.vel": "RUNS",
     "text_tools.vel": "RUNS",
+    "records.vel": "RUNS",
+    "records_bad.vel": "REJECTED",
     "loop_proof_bad.vel": "REJECTED",
     "list_proof_bad.vel": "REJECTED",
     "sneaky.vel": "REJECTED",       "caught.vel": "REJECTED",

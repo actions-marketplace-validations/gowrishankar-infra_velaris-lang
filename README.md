@@ -146,6 +146,14 @@ fn biggest(xs: List of Int) -> Int
 }
 ```
 
+Records group named fields into one immutable value:
+
+```
+record Point { x: Int  y: Int }
+let p = Point(x: 3, y: 4)         // build with named fields
+let q = Point(x: p.x + 1, y: p.y) // "change" by building anew
+```
+
 Built-ins: `print` and `ask` (io), `read_file`/`write_file` (fs), `fetch`
 (net — a real HTTP GET), `now` (clock), `random` (rand), plus pure
 `length`, `push`, `get`, and `to_int`. Try `examples/net.vel` to watch a signature-guarded real
@@ -178,6 +186,8 @@ pipeline order.
 - `fetch` is HTTP GET only for now — no POST, headers, or status codes yet.
 - Native compilation covers pure Int functions only, so far.
 - No modules/imports yet; one file per program.
+- Records are runtime-checked only for now — the prover treats functions
+  using them as unprovable and falls back to runtime contract checks.
 - The prover is deliberately conservative: it only reports "proven" when the
   counterexample involves no summarized calls, so its claims are always
   literally true.

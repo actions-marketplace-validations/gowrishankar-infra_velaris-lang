@@ -1,0 +1,11 @@
+// A record with a missing field cannot be built - caught before running.
+
+record User {
+    name: Text
+    age: Int
+}
+
+fn main() uses io {
+    let u = User(name: "gowri")
+    print(u)
+}

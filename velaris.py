@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v0.14 — "The language where you can trust code you didn't write."
+Velaris v0.15 — "The language where you can trust code you didn't write."
+
+New in v0.15: RECORDS - group named fields into one value.
+    record Point { x: Int  y: Int }
+    let p = Point(x: 3, y: 4)      then      p.x
+    Records are immutable: build a new one instead of changing fields.
 
 New in v0.14: the usability pack.
     else if chains, the % remainder operator, and text tools:
@@ -82,7 +87,7 @@ from dataclasses import dataclass, field
 # 1. LEXER — turn raw text into a list of tokens
 # ---------------------------------------------------------------------------
 
-KEYWORDS = {"fn", "let", "return", "if", "else", "uses", "true", "false", "while", "requires", "ensures", "and", "or", "not", "invariant"}
+KEYWORDS = {"fn", "let", "return", "if", "else", "uses", "true", "false", "while", "requires", "ensures", "and", "or", "not", "invariant", "record"}
 
 TOKEN_SPEC = [
     ("COMMENT", r"//[^\n]*"),
@@ -92,7 +97,7 @@ TOKEN_SPEC = [
     ("NUMBER",  r"\d+"),
     ("STRING",  r'"[^"\n]*"'),
     ("IDENT",   r"[A-Za-z_][A-Za-z0-9_]*"),
-    ("OP",      r"==|!=|<=|>=|[+\-*/%<>=(){},:\[\]]"),
+    ("OP",      r"==|!=|<=|>=|[+\-*/%<>=(){},:\[\].]"),
 ]
 
 MASTER_RE = re.compile("|".join(f"(?P<{n}>{p})" for n, p in TOKEN_SPEC))
@@ -158,6 +163,12 @@ class Assign:   name: str; value: object; line: int
 @dataclass
 class Not:      value: object; line: int
 @dataclass
+class RecordLit: name: str; fields: list; line: int      # [(fname, expr)]
+@dataclass
+class FieldGet: obj: object; field: str; line: int
+@dataclass
+class RecordDef: name: str; fields: list; line: int      # [(fname, type)]
+@dataclass
 class ListLit:  items: list; line: int
 @dataclass
 class ExprStmt: expr: object; line: int
@@ -221,11 +232,26 @@ class Parser:
                               t.line, fixes=[f"insert '{want}' here"])
         return self.next()
 
-    def parse_program(self) -> list[Function]:
-        funcs = []
+    def parse_program(self):
+        funcs, records = [], []
         while self.peek().kind != "EOF":
-            funcs.append(self.parse_function())
-        return funcs
+            if self.peek().kind == "KEYWORD" and self.peek().text == "record":
+                records.append(self.parse_record())
+            else:
+                funcs.append(self.parse_function())
+        return funcs, records
+
+    def parse_record(self) -> RecordDef:
+        start = self.expect("KEYWORD", "record")
+        name = self.expect("IDENT").text
+        self.expect("OP", "{")
+        fields = []
+        while self.peek().text != "}":
+            fname = self.expect("IDENT").text
+            self.expect("OP", ":")
+            fields.append((fname, self.parse_type()))
+        self.expect("OP", "}")
+        return RecordDef(name, fields, start.line)
 
     def parse_function(self) -> Function:
         start = self.expect("KEYWORD", "fn")
@@ -291,6 +317,16 @@ class Parser:
                 invs.append((self.parse_expr(), kw.line))
             body = self.parse_block()
             return While(cond, body, t.line, invs)
+        if t.kind == "IDENT" and self.toks[self.i + 1].text == ".":
+            j = self.i + 1                       # looks like p.x(.y)* = ...
+            while (self.toks[j].text == "."
+                   and self.toks[j + 1].kind == "IDENT"):
+                j += 2
+            if self.toks[j].text == "=":
+                raise VelarisError("E511",
+                    "records cannot be changed in place", t.line,
+                    fixes=["build a new one: let p2 = "
+                           "Point(x: new_value, y: p.y)"])
         if t.kind == "IDENT" and self.toks[self.i + 1].text == "=":
             self.next()
             self.expect("OP", "=")
@@ -358,16 +394,24 @@ class Parser:
         return left
 
     def parse_mul(self):
-        left = self.parse_atom()
+        left = self.parse_postfix()
         while self.peek().text in ("*", "/", "%"):
             op = self.next()
-            left = BinOp(op.text, left, self.parse_atom(), op.line)
+            left = BinOp(op.text, left, self.parse_postfix(), op.line)
         return left
+
+    def parse_postfix(self):
+        e = self.parse_atom()
+        while self.peek().text == ".":
+            dot = self.next()
+            fname = self.expect("IDENT").text
+            e = FieldGet(e, fname, dot.line)
+        return e
 
     def parse_atom(self):
         t = self.next()
         if t.text == "-":                      # negative numbers: -7, -x
-            return BinOp("-", Num(0), self.parse_atom(), t.line)
+            return BinOp("-", Num(0), self.parse_postfix(), t.line)
         if t.text == "[":                      # list literal: [1, 2, 3]
             items = []
             while self.peek().text != "]":
@@ -387,6 +431,19 @@ class Parser:
             self.expect("OP", ")")
             return e
         if t.kind == "IDENT":
+            if (self.peek().text == "("
+                    and self.toks[self.i + 1].kind == "IDENT"
+                    and self.toks[self.i + 2].text == ":"):
+                self.next()                        # record literal
+                fields = []
+                while self.peek().text != ")":
+                    fname = self.expect("IDENT").text
+                    self.expect("OP", ":")
+                    fields.append((fname, self.parse_expr()))
+                    if self.peek().text == ",":
+                        self.next()
+                self.expect("OP", ")")
+                return RecordLit(t.text, fields, t.line)
             if self.peek().text == "(":            # function call
                 self.next()
                 args = []
@@ -411,6 +468,9 @@ def expr_str(e) -> str:
     if isinstance(e, BinOp): return f"{expr_str(e.left)} {e.op} {expr_str(e.right)}"
     if isinstance(e, Not):   return f"not {expr_str(e.value)}"
     if isinstance(e, ListLit): return "[" + ", ".join(expr_str(i) for i in e.items) + "]"
+    if isinstance(e, FieldGet): return f"{expr_str(e.obj)}.{e.field}"
+    if isinstance(e, RecordLit):
+        return e.name + "(" + ", ".join(f"{f}: {expr_str(v)}" for f, v in e.fields) + ")"
     return "?"
 
 
@@ -423,6 +483,12 @@ def expr_vars(e) -> set[str]:
             out |= expr_vars(i)
         return out
     if isinstance(e, BinOp): return expr_vars(e.left) | expr_vars(e.right)
+    if isinstance(e, FieldGet): return expr_vars(e.obj)
+    if isinstance(e, RecordLit):
+        out = set()
+        for _, v in e.fields:
+            out |= expr_vars(v)
+        return out
     if isinstance(e, Call):
         out = set()
         for a in e.args:
@@ -511,6 +577,11 @@ def check_effects(funcs: list[Function]) -> None:
         elif isinstance(node, ListLit):
             for it in node.items:
                 walk(it, fn)
+        elif isinstance(node, FieldGet):
+            walk(node.obj, fn)
+        elif isinstance(node, RecordLit):
+            for _, v in node.fields:
+                walk(v, fn)
 
     def walk_pure(node, fn: Function, where: str):
         if isinstance(node, Call):
@@ -532,6 +603,11 @@ def check_effects(funcs: list[Function]) -> None:
         elif isinstance(node, ListLit):
             for it in node.items:
                 walk_pure(it, fn, where)
+        elif isinstance(node, FieldGet):
+            walk_pure(node.obj, fn, where)
+        elif isinstance(node, RecordLit):
+            for _, v in node.fields:
+                walk_pure(v, fn, where)
 
     for fn in funcs:
         for stmt in fn.body:
@@ -547,8 +623,25 @@ def check_effects(funcs: list[Function]) -> None:
 #     Types: Int, Text, Bool.  "Unit" means "returns nothing".
 # ---------------------------------------------------------------------------
 
-def check_types(funcs: list[Function]) -> None:
+def check_types(funcs: list[Function], records: list) -> None:
     table = {f.name: f for f in funcs}
+    rec = {}
+    for r in records:
+        if r.name in rec:
+            raise VelarisError("E507", f"record '{r.name}' is defined twice",
+                               r.line, fixes=["rename one of them"])
+        if r.name in table:
+            raise VelarisError("E507",
+                f"'{r.name}' is used for both a record and a function",
+                r.line, fixes=["rename one of them"])
+        seen = set()
+        for fname, _ in r.fields:
+            if fname in seen:
+                raise VelarisError("E507",
+                    f"record '{r.name}' has field '{fname}' twice", r.line,
+                    fixes=["remove the duplicate field"])
+            seen.add(fname)
+        rec[r.name] = dict(r.fields)
 
     def callee_sig(name: str) -> tuple[list[str], str]:
         if name in BUILTINS:
@@ -557,11 +650,21 @@ def check_types(funcs: list[Function]) -> None:
         return [t for _, t in f.params], (f.return_type or "Unit")
 
     def valid_type(t: str) -> bool:
-        if t in KNOWN_TYPES:
+        if t in KNOWN_TYPES or t in rec:
             return True
-        return t.startswith("List of ") and t[len("List of "):] in KNOWN_TYPES
+        inner = t[len("List of "):]
+        return t.startswith("List of ") and (inner in KNOWN_TYPES
+                                             or inner in rec)
 
-    TYPE_HINT = "use Int, Text, Bool, or List of <one of those>"
+    TYPE_HINT = ("use Int, Text, Bool, a record name, or "
+                 "List of <one of those>")
+
+    for r in records:
+        for fname, ftype in r.fields:
+            if not valid_type(ftype):
+                raise VelarisError("E500",
+                    f"unknown type '{ftype}' for field '{fname}' of "
+                    f"record '{r.name}'", r.line, fixes=[TYPE_HINT])
 
     # first: every declared type must be a real type
     for f in funcs:
@@ -596,6 +699,50 @@ def check_types(funcs: list[Function]) -> None:
                         f"'not' needs a yes/no value (Bool), but this is {t}",
                         node.line, fixes=["use it on a comparison like not (x > 0)"])
                 return "Bool"
+            if isinstance(node, RecordLit):
+                if node.name not in rec:
+                    raise VelarisError("E508",
+                        f"unknown record '{node.name}'", node.line,
+                        fixes=[f"declare it first: record {node.name} {{ ... }}"])
+                want = rec[node.name]
+                given = {}
+                for fname, v in node.fields:
+                    if fname not in want:
+                        raise VelarisError("E509",
+                            f"record '{node.name}' has no field '{fname}'",
+                            node.line,
+                            fixes=[f"its fields are: {', '.join(want)}"])
+                    if fname in given:
+                        raise VelarisError("E509",
+                            f"field '{fname}' is given twice", node.line,
+                            fixes=["give each field exactly once"])
+                    given[fname] = infer(v)
+                    if given[fname] != want[fname]:
+                        raise VelarisError("E501",
+                            f"field '{fname}' of '{node.name}' holds "
+                            f"{want[fname]}, but this is {given[fname]}",
+                            node.line,
+                            fixes=[f"give {'an' if want[fname] == 'Int' else 'a'} "
+                                   f"{want[fname]} value"])
+                missing = [f for f in want if f not in given]
+                if missing:
+                    raise VelarisError("E509",
+                        f"record '{node.name}' is missing field(s): "
+                        f"{', '.join(missing)}", node.line,
+                        fixes=["give every field a value"])
+                return node.name
+            if isinstance(node, FieldGet):
+                t = infer(node.obj)
+                if t not in rec:
+                    raise VelarisError("E510",
+                        f"{t} has no fields", node.line,
+                        fixes=["only records have fields, accessed like p.x"])
+                if node.field not in rec[t]:
+                    raise VelarisError("E510",
+                        f"record '{t}' has no field '{node.field}'",
+                        node.line,
+                        fixes=[f"its fields are: {', '.join(rec[t])}"])
+                return rec[t][node.field]
             if isinstance(node, ListLit):
                 if not node.items:
                     raise VelarisError("E506",
@@ -1026,6 +1173,11 @@ def check_proofs(funcs: list[Function]) -> None:
         elif isinstance(node, ListLit):
             for it in node.items:
                 scan_calls(it, env, ctx)
+        elif isinstance(node, FieldGet):
+            scan_calls(node.obj, env, ctx)
+        elif isinstance(node, RecordLit):
+            for _, v in node.fields:
+                scan_calls(v, env, ctx)
 
     def assigned_names(stmts, out):
         for s in stmts:
@@ -1468,7 +1620,20 @@ class ReturnSignal(Exception):
     def __init__(self, value): self.value = value
 
 
+class RecordValue:
+    def __init__(self, rname: str, fields: dict):
+        self.rname, self.fields = rname, fields
+
+    def __eq__(self, other):
+        return (isinstance(other, RecordValue)
+                and self.rname == other.rname
+                and self.fields == other.fields)
+
+
 def to_text(v) -> str:
+    if isinstance(v, RecordValue):
+        inner = ", ".join(f"{k}: {to_text(x)}" for k, x in v.fields.items())
+        return f"{v.rname}({inner})"
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, list):
@@ -1654,6 +1819,11 @@ def interpret(funcs: list[Function], native: dict | None = None) -> None:
             return call(node.name, [eval_(a, env) for a in node.args], node.line)
         if isinstance(node, Not):
             return not eval_(node.value, env)
+        if isinstance(node, RecordLit):
+            return RecordValue(node.name,
+                               {f: eval_(v, env) for f, v in node.fields})
+        if isinstance(node, FieldGet):
+            return eval_(node.obj, env).fields[node.field]
         if isinstance(node, ListLit):
             return [eval_(i, env) for i in node.items]
         if isinstance(node, BinOp):
@@ -1678,8 +1848,17 @@ def interpret(funcs: list[Function], native: dict | None = None) -> None:
                     raise VelarisError("E403", "remainder by zero", node.line,
                                       fixes=["check the divisor before using %"])
                 return l % r
-            return {"==": l == r, "!=": l != r, "<": l < r,
-                    ">": l > r, "<=": l <= r, ">=": l >= r}[node.op]
+            if node.op == "==":
+                return l == r
+            if node.op == "!=":
+                return l != r
+            if node.op == "<":
+                return l < r
+            if node.op == ">":
+                return l > r
+            if node.op == "<=":
+                return l <= r
+            return l >= r
 
     call("main", [], table["main"].line)
 
@@ -1702,9 +1881,9 @@ def main() -> int:
                               fixes=["check the file name spelling",
                                      "make sure you are in the folder that contains it"])
         tokens = lex(source)
-        funcs = Parser(tokens).parse_program()
+        funcs, records = Parser(tokens).parse_program()
         check_effects(funcs)          # superpower 1: no hidden effects
-        check_types(funcs)            # superpower 2: no type surprises
+        check_types(funcs, records)   # superpower 2: no type surprises
         check_proofs(funcs)           # superpower 3: broken promises proven early
         native = {} if "--no-native" in sys.argv else compile_native(funcs)
         import time as _t
