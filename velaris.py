@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Velaris v1.8 — "The language where you can trust code you didn't write."
+Velaris v1.9 — "The language where you can trust code you didn't write."
+
+New in v1.9: a REPL - try Velaris line by line.
+    velaris repl
+    Loose lines run immediately (checked while running); fn / record /
+    import definitions get the FULL treatment - effects, types, and
+    Z3 proofs - before they are accepted into the session.
 
 New in v1.8: a real install.
     pip install .          (from a clone; add [full] for proofs + native)
@@ -51,6 +57,8 @@ New in v1.0: the testers' release.
 
 Usage:
   velaris program.vel                      run a program (after pip install)
+  velaris repl                             interactive session
+  velaris version                          print the version
   python velaris.py program.vel            run a program
   python velaris.py program.vel --json     errors as machine-readable JSON
   python velaris.py program.vel --time     show how long the run took
@@ -142,7 +150,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.8.0"
+VERSION = "1.9.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -2442,19 +2450,20 @@ def run_builtin(name: str, args: list, line: int):
         return _rand.randrange(n)
 
 
-def interpret(funcs: list[Function], native: dict | None = None) -> None:
+def build_runtime(funcs: list[Function], native: dict | None = None):
     native = native or {}
     table = {f.name: f for f in funcs}
-    if "main" not in table:
-        raise VelarisError("E400", "no 'main' function found", 1,
-                          fixes=["add: fn main() uses io { ... }"])
 
     def call(name: str, args: list, line: int):
         if name in BUILTINS:
             return run_builtin(name, args, line)
         if name in native:
             return native[name](*args)     # machine code, C-like speed
-        fn = table[name]
+        fn = table.get(name)
+        if fn is None:
+            raise VelarisError("E200", f"unknown function '{name}'", line,
+                               fixes=[f"define 'fn {name}(...)' somewhere",
+                                      "check the spelling of the name"])
         return call_function(fn, args, line)
 
     def call_function(fn: Function, args: list, line: int):
@@ -2616,14 +2625,126 @@ def interpret(funcs: list[Function], native: dict | None = None) -> None:
                 return l <= r
             return l >= r
 
-    call("main", [], table["main"].line)
+    return {"table": table, "call": call, "run": run, "eval": eval_}
+
+
+def interpret(funcs: list[Function], native: dict | None = None) -> None:
+    rt = build_runtime(funcs, native)
+    if "main" not in rt["table"]:
+        raise VelarisError("E400", "no 'main' function found", 1,
+                          fixes=["add: fn main() uses io { ... }"])
+    rt["call"]("main", [], rt["table"]["main"].line)
 
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
+def repl() -> int:
+    print(f"Velaris {VERSION} - interactive session.")
+    print("Definitions (fn / record / import) are fully checked before "
+          "joining;\nloose lines are checked while running. "
+          "Type exit to leave.")
+    sess_funcs: list[Function] = []
+    sess_recs: list = []
+    env: dict = {}
+    rt = build_runtime(sess_funcs)
+
+    while True:
+        try:
+            line = input("velaris> ")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return 0
+        if line.strip() in ("exit", "quit", ":q"):
+            return 0
+        if not line.strip():
+            continue
+        depth = line.count("{") - line.count("}")
+        while depth > 0:
+            try:
+                more = input("   ...  ")
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return 0
+            line += "\n" + more
+            depth += more.count("{") - more.count("}")
+        try:
+            toks = lex(line)
+        except VelarisError as e:
+            print(e.human("<repl>"))
+            continue
+        kind = toks[0].text if toks and toks[0].kind == "KEYWORD" else ""
+        try:
+            if kind in ("fn", "record", "import"):
+                fs, rs, imps = Parser(toks).parse_program()
+                for ipath, _ in imps:
+                    if not os.path.exists(ipath):
+                        shipped = os.path.join(
+                            os.path.dirname(os.path.abspath(__file__)),
+                            "stdlib", os.path.basename(ipath))
+                        if os.path.exists(shipped):
+                            ipath = shipped
+                    ifuncs, irecs = load_program(ipath)
+                    fs += ifuncs
+                    rs += irecs
+                cand_f = {f.name: f for f in sess_funcs}
+                cand_r = {r.name: r for r in sess_recs}
+                for f in fs:
+                    if f.name in cand_f:
+                        print(f"(replacing fn {f.name})")
+                    cand_f[f.name] = f
+                for r in rs:
+                    if r.name in cand_r:
+                        print(f"(replacing record {r.name})")
+                    cand_r[r.name] = r
+                new_f, new_r = list(cand_f.values()), list(cand_r.values())
+                errs: list = []
+                check_effects(new_f, errs)
+                check_types(new_f, new_r, errs)
+                if not errs:
+                    check_proofs(new_f, errs)
+                if errs:
+                    for e in errs:
+                        print(e.human("<repl>"))
+                    print("(not accepted)")
+                    continue
+                sess_funcs[:] = new_f
+                sess_recs[:] = new_r
+                rt = build_runtime(list(sess_funcs))
+                names = [f.name for f in fs] + [r.name for r in rs]
+                print("defined: " + ", ".join(names))
+            else:
+                p = Parser(toks)
+                stmts = []
+                while p.peek().kind != "EOF":
+                    stmts.append(p.parse_statement())
+                for s in stmts:
+                    if isinstance(s, ExprStmt):
+                        v = rt["eval"](s.expr, env)
+                        if v is not None:
+                            print(to_text(v))
+                    else:
+                        rt["run"](s, env)
+        except FailSignal as f:
+            print("failed: " + to_text(f.reason))
+        except ReturnSignal:
+            print("('return' only works inside a function)")
+        except VelarisError as e:
+            print(e.human("<repl>"))
+        except RecursionError:
+            print("(too much recursion)")
+
+
 def main() -> int:
+    argv = sys.argv[1:]
+    if argv[:1] == ["repl"]:
+        return repl()
+    if argv[:1] == ["version"]:
+        print(f"Velaris {VERSION}")
+        return 0
+    if argv[:1] == ["run"]:
+        sys.argv.pop(1)
     if "--version" in sys.argv:
         print(f"Velaris {VERSION}")
         return 0
