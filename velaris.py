@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v0.11 — "The language where you can trust code you didn't write."
+Velaris v0.12 — "The language where you can trust code you didn't write."
+
+New in v0.12: interactive programs.
+    ask("your name?")   reads a line from the keyboard (an io effect)
+    to_int(text)        turns text into an Int (pure; clean error if not
+                        a whole number)
 
 New in v0.11: fetch(url) is REAL - an actual HTTP GET with a 10-second
     timeout, guarded by 'uses net'. A function without 'uses net' in its
@@ -426,7 +431,9 @@ BUILTINS = {
     "fetch":      {"effects": {"net"},   "types": ["Text"],        "ret": "Text"},
     "now":        {"effects": {"clock"}, "types": [],              "ret": "Int"},
     "random":     {"effects": {"rand"},  "types": ["Int"],         "ret": "Int"},
+    "ask":        {"effects": {"io"},     "types": ["Text"],        "ret": "Text"},
     # pure helpers (no effects) - usable everywhere, including promises
+    "to_int":     {"effects": set(),      "types": ["Text"],        "ret": "Int"},
     "length":     {"effects": set(),      "types": ["Any"],         "ret": "Int"},
     "push":       {"effects": set(),      "types": ["Any", "Any"],  "ret": "Any"},
     "get":        {"effects": set(),      "types": ["Any", "Any"],  "ret": "Any"},
@@ -1368,6 +1375,21 @@ def run_builtin(name: str, args: list, line: int):
     if name == "print":
         print(to_text(args[0]))
         return None
+    if name == "ask":
+        try:
+            return input(str(args[0]) + " ")
+        except (EOFError, KeyboardInterrupt):
+            raise VelarisError("E607", "no input available to read", line,
+                               fixes=["run this program in a terminal where "
+                                      "you can type an answer"])
+    if name == "to_int":
+        t = str(args[0]).strip()
+        body = t[1:] if t.startswith("-") else t
+        if not body.isdigit():
+            raise VelarisError("E608",
+                f"'{args[0]}' is not a whole number", line,
+                fixes=["enter digits only, like 42 or -7"])
+        return int(t)
     if name == "length":
         return len(args[0])
     if name == "push":

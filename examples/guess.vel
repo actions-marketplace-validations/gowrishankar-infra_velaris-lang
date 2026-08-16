@@ -1,0 +1,28 @@
+// v0.12: a real, playable game written in Velaris.
+// 'ask' reads your keyboard (an io effect - it's in the signature),
+// 'to_int' turns the answer into a number (typing "banana" gives a
+// clean error, not a crash). Interactive, so not in run_tests.py.
+
+fn main() uses io, rand {
+    let secret = random(100) + 1
+    let tries = 0
+    let found = false
+    print("I picked a number from 1 to 100. Guess it!")
+    while not found
+        invariant tries >= 0
+    {
+        let answer = ask("your guess:")
+        let g = to_int(answer)
+        tries = tries + 1
+        if g == secret {
+            found = true
+        } else {
+            if g < secret {
+                print("higher!")
+            } else {
+                print("lower!")
+            }
+        }
+    }
+    print("got it in " + tries + " tries!")
+}

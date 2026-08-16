@@ -146,9 +146,9 @@ fn biggest(xs: List of Int) -> Int
 }
 ```
 
-Built-ins: `print` (io), `read_file`/`write_file` (fs), `fetch` (net — a
-real HTTP GET), `now` (clock), `random` (rand), plus pure `length`,
-`push`, `get`. Try `examples/net.vel` to watch a signature-guarded real
+Built-ins: `print` and `ask` (io), `read_file`/`write_file` (fs), `fetch`
+(net — a real HTTP GET), `now` (clock), `random` (rand), plus pure
+`length`, `push`, `get`, and `to_int`. Try `examples/net.vel` to watch a signature-guarded real
 network request (needs a connection, so it's not in the offline test suite).
 
 ## How it works
