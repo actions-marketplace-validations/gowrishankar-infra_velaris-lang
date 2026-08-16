@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Velaris v1.1 — "The language where you can trust code you didn't write."
+Velaris v1.2 — "The language where you can trust code you didn't write."
+
+New in v1.2: a browser playground - open playground/index.html and run
+    Velaris with zero install (rebuild it with: python build_playground.py).
 
 New in v1.1: escape sequences in text - \n newline, \t tab, \" quote,
     \\ backslash - plus a VS Code syntax highlighter in editor/vscode.
@@ -102,7 +105,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 import re
 import sys
 from dataclasses import dataclass, field

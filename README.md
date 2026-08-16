@@ -102,6 +102,10 @@ python velaris.py examples/bench.vel --time
 python velaris.py examples/proof_catch.vel        # watch a proof reject a bug
 ```
 
+**Zero-install:** open `playground/index.html` in any browser to run
+Velaris without installing anything (promises check at runtime there; the
+installed version also proves them with Z3 and compiles with LLVM).
+
 Check your install with `python velaris.py --version`, then run the test
 suite (28 example programs, each with an expected verdict):
 
