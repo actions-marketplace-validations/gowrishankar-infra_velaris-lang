@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-Velaris v1.0 — "The language where you can trust code you didn't write."
+Velaris v1.1 — "The language where you can trust code you didn't write."
 
+New in v1.1: escape sequences in text - \n newline, \t tab, \" quote,
+    \\ backslash - plus a VS Code syntax highlighter in editor/vscode.
 New in v1.0: the testers' release.
     * Multiple problems are reported in one run (one per function),
       instead of stopping at the first.
@@ -100,7 +102,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -117,7 +119,7 @@ TOKEN_SPEC = [
     ("SKIP",    r"[ \t\r]+"),
     ("ARROW",   r"->"),
     ("NUMBER",  r"\d+"),
-    ("STRING",  r'"[^"\n]*"'),
+    ("STRING",  r'"(?:\\.|[^"\\\n])*"'),
     ("IDENT",   r"[A-Za-z_][A-Za-z0-9_]*"),
     ("OP",      r"==|!=|<=|>=|[+\-*/%<>=(){},:\[\].]"),
 ]
@@ -152,6 +154,28 @@ def lex(source: str) -> list[Token]:
             tokens.append(Token(kind, text, line))
     tokens.append(Token("EOF", "", line))
     return tokens
+
+
+ESCAPES = {"n": "\n", "t": "\t", '"': '"', "\\": "\\"}
+
+
+def unescape(raw: str, line: int) -> str:
+    out, i = [], 0
+    while i < len(raw):
+        c = raw[i]
+        if c == "\\":
+            i += 1
+            e = raw[i] if i < len(raw) else ""
+            if e not in ESCAPES:
+                raise VelarisError("E002",
+                    f"unknown escape '\\{e}' in text", line,
+                    fixes=['known escapes: \\n (newline), \\t (tab), '
+                           '\\" (quote), \\\\ (backslash)'])
+            out.append(ESCAPES[e])
+        else:
+            out.append(c)
+        i += 1
+    return "".join(out)
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +291,7 @@ class Parser:
             if t.kind == "KEYWORD" and t.text == "import":
                 self.next()
                 s = self.expect("STRING")
-                imports.append((s.text[1:-1], t.line))
+                imports.append((unescape(s.text[1:-1], s.line), t.line))
             elif t.kind == "KEYWORD" and t.text == "record":
                 records.append(self.parse_record())
             else:
@@ -456,7 +480,7 @@ class Parser:
         if t.kind == "NUMBER":
             return Num(int(t.text))
         if t.kind == "STRING":
-            return Str(t.text[1:-1])
+            return Str(unescape(t.text[1:-1], t.line))
         if t.kind == "KEYWORD" and t.text in ("true", "false"):
             return Bool(t.text == "true")
         if t.text == "(":

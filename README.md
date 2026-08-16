@@ -109,6 +109,11 @@ suite (28 example programs, each with an expected verdict):
 python run_tests.py
 ```
 
+## Editor support
+
+Syntax highlighting for VS Code lives in `editor/vscode` — see its README
+for the one-line install (no marketplace account needed).
+
 ## Language tour
 
 ```

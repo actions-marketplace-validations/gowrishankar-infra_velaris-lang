@@ -1,0 +1,8 @@
+// v1.1: text can hold newlines, tabs, and quotes via escapes.
+
+fn main() uses io {
+    print("line one\nline two\nline three")
+    print("columns:\ta\tb\tc")
+    print("she said \"trust the compiler\"")
+    print("a real backslash: \\")
+}
