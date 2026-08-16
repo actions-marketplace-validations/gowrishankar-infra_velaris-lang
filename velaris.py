@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Velaris v0.15 — "The language where you can trust code you didn't write."
+Velaris v0.16 — "The language where you can trust code you didn't write."
+
+New in v0.16: IMPORTS - programs can span multiple files.
+    import "mathlib.vel"
+    Paths are relative to the importing file; imports chain and cycles
+    are safe; a name defined in two files is a clear error; and error
+    messages name the file the problem actually lives in.
 
 New in v0.15: RECORDS - group named fields into one value.
     record Point { x: Int  y: Int }
@@ -79,6 +85,7 @@ Usage:
 """
 
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -87,7 +94,7 @@ from dataclasses import dataclass, field
 # 1. LEXER — turn raw text into a list of tokens
 # ---------------------------------------------------------------------------
 
-KEYWORDS = {"fn", "let", "return", "if", "else", "uses", "true", "false", "while", "requires", "ensures", "and", "or", "not", "invariant", "record"}
+KEYWORDS = {"fn", "let", "return", "if", "else", "uses", "true", "false", "while", "requires", "ensures", "and", "or", "not", "invariant", "record", "import"}
 
 TOKEN_SPEC = [
     ("COMMENT", r"//[^\n]*"),
@@ -167,7 +174,9 @@ class RecordLit: name: str; fields: list; line: int      # [(fname, expr)]
 @dataclass
 class FieldGet: obj: object; field: str; line: int
 @dataclass
-class RecordDef: name: str; fields: list; line: int      # [(fname, type)]
+class RecordDef:
+    name: str; fields: list; line: int                   # [(fname, type)]
+    src_file: str = ""
 @dataclass
 class ListLit:  items: list; line: int
 @dataclass
@@ -183,6 +192,7 @@ class Function:
     ensures: list                      # [(expr, line)] promises about output
     body: list
     line: int
+    src_file: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -190,14 +200,16 @@ class Function:
 # ---------------------------------------------------------------------------
 
 class VelarisError(Exception):
-    def __init__(self, code: str, message: str, line: int, fixes: list[str] | None = None):
+    def __init__(self, code: str, message: str, line: int,
+                 fixes: list[str] | None = None, file: str | None = None):
         self.code, self.message, self.line = code, message, line
         self.fixes = fixes or []
+        self.file = file
         super().__init__(message)
 
     def human(self, filename: str) -> str:
         out = [f"error[{self.code}] {self.message}",
-               f"  --> {filename}, line {self.line}"]
+               f"  --> {self.file or filename}, line {self.line}"]
         if self.fixes:
             out.append("  how to fix (pick one):")
             for i, f in enumerate(self.fixes, 1):
@@ -207,7 +219,8 @@ class VelarisError(Exception):
     def machine(self, filename: str) -> str:
         return json.dumps({
             "code": self.code, "message": self.message,
-            "file": filename, "line": self.line, "fixes": self.fixes,
+            "file": self.file or filename, "line": self.line,
+            "fixes": self.fixes,
         }, indent=2)
 
 
@@ -233,13 +246,18 @@ class Parser:
         return self.next()
 
     def parse_program(self):
-        funcs, records = [], []
+        funcs, records, imports = [], [], []
         while self.peek().kind != "EOF":
-            if self.peek().kind == "KEYWORD" and self.peek().text == "record":
+            t = self.peek()
+            if t.kind == "KEYWORD" and t.text == "import":
+                self.next()
+                s = self.expect("STRING")
+                imports.append((s.text[1:-1], t.line))
+            elif t.kind == "KEYWORD" and t.text == "record":
                 records.append(self.parse_record())
             else:
                 funcs.append(self.parse_function())
-        return funcs, records
+        return funcs, records, imports
 
     def parse_record(self) -> RecordDef:
         start = self.expect("KEYWORD", "record")
@@ -498,6 +516,71 @@ def expr_vars(e) -> set[str]:
 
 
 # ---------------------------------------------------------------------------
+# 3b. LOADER — resolve imports into one program, remembering which file
+#     every function and record came from.
+# ---------------------------------------------------------------------------
+
+def load_program(entry: str):
+    funcs, records = [], []
+    fn_src, rec_src = {}, {}
+    visited = set()
+
+    def load(path: str, importer: str | None, iline: int = 1):
+        ap = os.path.abspath(path)
+        if ap in visited:
+            return                       # already loaded (diamond or cycle)
+        visited.add(ap)
+        try:
+            source = open(path, encoding="utf-8").read()
+        except OSError:
+            if importer is None:
+                raise VelarisError("E001", f"cannot find file '{path}'", 1,
+                    fixes=["check the file name spelling",
+                           "make sure you are in the folder that contains it"])
+            raise VelarisError("E512",
+                f"cannot find imported file '{path}'", iline,
+                fixes=["check the path in the import line",
+                       "paths are relative to the importing file"],
+                file=importer)
+        try:
+            tokens = lex(source)
+            fs, rs, imports = Parser(tokens).parse_program()
+        except VelarisError as e:
+            e.file = e.file or path
+            raise
+        base = os.path.dirname(path)
+        for ipath, iline in imports:
+            load(os.path.join(base, ipath) if base else ipath, path, iline)
+        for f in fs:
+            f.src_file = path
+            if f.name in fn_src:
+                raise VelarisError("E513",
+                    f"function '{f.name}' is defined in both "
+                    f"'{fn_src[f.name]}' and '{path}'", f.line,
+                    fixes=["rename one of them"], file=path)
+            fn_src[f.name] = path
+            funcs.append(f)
+        for r in rs:
+            r.src_file = path
+            if r.name in rec_src:
+                raise VelarisError("E513",
+                    f"record '{r.name}' is defined in both "
+                    f"'{rec_src[r.name]}' and '{path}'", r.line,
+                    fixes=["rename one of them"], file=path)
+            rec_src[r.name] = path
+            records.append(r)
+
+    load(entry, None)
+    return funcs, records
+
+
+def blame(fn_or_rec, err: VelarisError) -> VelarisError:
+    """Attach the true source file to an error, innermost wins."""
+    err.file = err.file or fn_or_rec.src_file or None
+    return err
+
+
+# ---------------------------------------------------------------------------
 # 4. EFFECT CHECKER — the heart of Velaris
 #    Rule: a function may only cause effects it declares with `uses`.
 # ---------------------------------------------------------------------------
@@ -610,12 +693,15 @@ def check_effects(funcs: list[Function]) -> None:
                 walk_pure(v, fn, where)
 
     for fn in funcs:
-        for stmt in fn.body:
-            walk(stmt, fn)
-        for expr, _ in fn.requires:
-            walk_pure(expr, fn, "requires")
-        for expr, _ in fn.ensures:
-            walk_pure(expr, fn, "ensures")
+        try:
+            for stmt in fn.body:
+                walk(stmt, fn)
+            for expr, _ in fn.requires:
+                walk_pure(expr, fn, "requires")
+            for expr, _ in fn.ensures:
+                walk_pure(expr, fn, "ensures")
+        except VelarisError as e:
+            raise blame(fn, e)
 
 
 # ---------------------------------------------------------------------------
@@ -934,7 +1020,10 @@ def check_types(funcs: list[Function], records: list) -> None:
             check_stmt(stmt)
 
     for fn in funcs:
-        check_fn(fn)
+        try:
+            check_fn(fn)
+        except VelarisError as e:
+            raise blame(fn, e)
 
 
 # ---------------------------------------------------------------------------
@@ -1373,6 +1462,8 @@ def check_proofs(funcs: list[Function]) -> None:
             continue                    # runtime promise checks still guard
         except z3.Z3Exception:
             continue                    # solver hiccup: runtime still guards
+        except VelarisError as e:
+            raise blame(fn, e)
 
 
 # ---------------------------------------------------------------------------
@@ -1761,6 +1852,8 @@ def interpret(funcs: list[Function], native: dict | None = None) -> None:
                 run(stmt, env)
         except ReturnSignal as r:
             retval = r.value
+        except VelarisError as e:
+            raise blame(fn, e)
 
         for expr, cline in fn.ensures:
             check_env = dict(entry)
@@ -1874,14 +1967,7 @@ def main() -> int:
     filename = sys.argv[1]
     as_json = "--json" in sys.argv
     try:
-        try:
-            source = open(filename, encoding="utf-8").read()
-        except OSError:
-            raise VelarisError("E001", f"cannot find file '{filename}'", 1,
-                              fixes=["check the file name spelling",
-                                     "make sure you are in the folder that contains it"])
-        tokens = lex(source)
-        funcs, records = Parser(tokens).parse_program()
+        funcs, records = load_program(filename)
         check_effects(funcs)          # superpower 1: no hidden effects
         check_types(funcs, records)   # superpower 2: no type surprises
         check_proofs(funcs)           # superpower 3: broken promises proven early

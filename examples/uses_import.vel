@@ -1,0 +1,11 @@
+// v0.16: imports. This program spans two files - the functions below
+// live in mathlib.vel, pulled in by the import line. Their contracts,
+// effects, and proofs all still apply across the file boundary.
+
+import "mathlib.vel"
+
+fn main() uses io {
+    print("square(7) = " + square(7))
+    print("cube(3) = " + cube(3))
+    print("square(cube(2)) = " + square(cube(2)))
+}

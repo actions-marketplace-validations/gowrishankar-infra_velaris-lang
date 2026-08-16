@@ -185,7 +185,9 @@ pipeline order.
   work.
 - `fetch` is HTTP GET only for now — no POST, headers, or status codes yet.
 - Native compilation covers pure Int functions only, so far.
-- No modules/imports yet; one file per program.
+- Imports (v0.16) are a flat merge — `import "lib.vel"` pulls in that
+  file's functions and records with duplicate-name protection; namespaces
+  and a standard library are future work.
 - Records are runtime-checked only for now — the prover treats functions
   using them as unprovable and falls back to runtime contract checks.
 - The prover is deliberately conservative: it only reports "proven" when the
