@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Velaris v1.13 — "The language where you can trust code you didn't write."
+Velaris v1.14 — "The language where you can trust code you didn't write."
+
+New in v1.14: RECORD PROOFS. Promises about record fields are now
+    proven before running - ensures result.x == p.x + dx is mathematics,
+    and a swapped-fields bug is a compile-time counterexample with the
+    record values shown. Works for records whose fields are Int, Bool,
+    or other such records; lists/Float fields stay runtime-checked.
 
 New in v1.13: the first real app - examples/ledger.vel, an expense
     tracker written in Velaris (records, contracts, or-fail parsing,
@@ -174,7 +180,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.13.0"
+VERSION = "1.14.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1711,7 +1717,8 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
 #       to runtime promise checks.
 # ---------------------------------------------------------------------------
 
-def check_proofs(funcs: list[Function], errors: list) -> None:
+def check_proofs(funcs: list[Function], records: list,
+                 errors: list) -> None:
     try:
         import z3
     except ImportError:
@@ -1721,12 +1728,27 @@ def check_proofs(funcs: list[Function], errors: list) -> None:
         return
 
     table = {f.name: f for f in funcs}
+    rec_fields = {r.name: r.fields for r in records}
+
+    def provable_rec(name: str, seen=frozenset()) -> bool:
+        if name in seen:
+            return False
+        fs = rec_fields.get(name)
+        if fs is None:
+            return False
+        return all(ft in ("Int", "Bool") or provable_rec(ft, seen | {name})
+                   for _, ft in fs)
 
     class Unprovable(Exception):
         pass
 
     FELL_OFF = object()
     counter = [0]
+
+    class RecVal:
+        """A symbolic record: one Z3 value per field."""
+        def __init__(self, rname: str, fields: dict):
+            self.rname, self.fields = rname, fields
 
     class ListVal:
         """A symbolic list: a Z3 array of Ints plus a length."""
@@ -1735,6 +1757,25 @@ def check_proofs(funcs: list[Function], errors: list) -> None:
 
     def mk(name: str, t: str):
         return z3.Int(name) if t == "Int" else z3.Bool(name)
+
+    def mk_rec(prefix: str, rname: str) -> "RecVal":
+        out = {}
+        for f, ft in rec_fields[rname]:
+            if ft in ("Int", "Bool"):
+                out[f] = mk(f"{prefix}.{f}", ft)
+            else:
+                out[f] = mk_rec(f"{prefix}.{f}", ft)
+        return RecVal(rname, out)
+
+    def rec_eq(l: "RecVal", r: "RecVal"):
+        parts = []
+        for f, ft in rec_fields[l.rname]:
+            a, b = l.fields[f], r.fields[f]
+            if isinstance(a, RecVal):
+                parts.append(rec_eq(a, b))
+            else:
+                parts.append(a == b)
+        return z3.And(*parts) if parts else z3.BoolVal(True)
 
     def fresh(t: str, base: str):
         counter[0] += 1
@@ -1755,6 +1796,8 @@ def check_proofs(funcs: list[Function], errors: list) -> None:
 
     def has_fresh(e) -> bool:
         """Does this Z3 expression mention a summarized/havoc value?"""
+        if isinstance(e, RecVal):
+            return any(has_fresh(v) for v in e.fields.values())
         if isinstance(e, ListVal):
             return has_fresh(e.arr) or has_fresh(e.length)
         if z3.is_const(e) and e.decl().name().startswith("__"):
@@ -1762,6 +1805,13 @@ def check_proofs(funcs: list[Function], errors: list) -> None:
         return any(has_fresh(c) for c in e.children())
 
     def show_val(name, v, model):
+        if isinstance(v, RecVal):
+            inner = ", ".join(
+                show_val(f, x, model).split(" = ", 1)[-1]
+                if isinstance(x, RecVal)
+                else f"{f}: {model.eval(x, model_completion=True)}"
+                for f, x in v.fields.items())
+            return f"{name} = {v.rname}({inner})"
         if isinstance(v, ListVal):
             return f"length({name}) = {model.eval(v.length, model_completion=True)}"
         return f"{name} = {model.eval(v, model_completion=True)}"
@@ -1802,13 +1852,23 @@ def check_proofs(funcs: list[Function], errors: list) -> None:
     def summarize_call(node: Call, env, ctx):
         """Model a call to a pure user function by its contract."""
         fnB = table.get(node.name)
-        if (fnB is None or fnB.effects or fnB.can_fail
-                or fnB.return_type not in ("Int", "Bool")
-                or any(pt not in ("Int", "Bool") for _, pt in fnB.params)):
+
+        def summarizable(t):
+            return t in ("Int", "Bool") or (t in rec_fields
+                                            and provable_rec(t))
+
+        if (fnB is None or fnB.effects or fnB.can_fail or fnB.type_vars
+                or not summarizable(fnB.return_type or "")
+                or any(not summarizable(pt) for _, pt in fnB.params)):
             raise Unprovable()
         args_z3 = [to_z3(a, env, ctx) for a in node.args]
         check_requires_at(fnB, args_z3, ctx, node.line)
-        rv = fresh(fnB.return_type, fnB.name)
+        if fnB.return_type in rec_fields:
+            counter[0] += 1
+            rv = mk_rec(f"__{fnB.name}_result_{counter[0]}",
+                        fnB.return_type)
+        else:
+            rv = fresh(fnB.return_type, fnB.name)
         for ens_expr, _ in fnB.ensures:
             e2 = bind_params(fnB, args_z3)
             e2["result"] = rv
@@ -1832,6 +1892,18 @@ def check_proofs(funcs: list[Function], errors: list) -> None:
             if isinstance(v, ListVal):
                 raise Unprovable()
             return -v
+        if isinstance(node, RecordLit):
+            if not provable_rec(node.name):
+                raise Unprovable()
+            vals = {}
+            for f, v in node.fields:
+                vals[f] = to_z3(v, env, ctx)
+            return RecVal(node.name, vals)
+        if isinstance(node, FieldGet):
+            obj = to_z3(node.obj, env, ctx)
+            if not isinstance(obj, RecVal):
+                raise Unprovable()
+            return obj.fields[node.field]
         if isinstance(node, ListLit):
             arr = z3.K(z3.IntSort(), z3.IntVal(0))
             vals = [to_z3(it, env, ctx) for it in node.items]
@@ -1868,6 +1940,14 @@ def check_proofs(funcs: list[Function], errors: list) -> None:
                              to_z3(node.right, env, ctx))
             l = to_z3(node.left, env, ctx)
             r = to_z3(node.right, env, ctx)
+            if isinstance(l, RecVal) or isinstance(r, RecVal):
+                if not (isinstance(l, RecVal) and isinstance(r, RecVal)):
+                    raise Unprovable()
+                if op == "==":
+                    return rec_eq(l, r)
+                if op == "!=":
+                    return z3.Not(rec_eq(l, r))
+                raise Unprovable()
             if isinstance(l, ListVal) or isinstance(r, ListVal):
                 if not (isinstance(l, ListVal) and isinstance(r, ListVal)):
                     raise Unprovable()
@@ -1927,6 +2007,7 @@ def check_proofs(funcs: list[Function], errors: list) -> None:
             if (fnB is not None and fnB.requires
                     and len(fnB.params) == len(node.args)
                     and all(pt in ("Int", "Bool", "List of Int")
+                            or (pt in rec_fields and provable_rec(pt))
                             for _, pt in fnB.params)):
                 try:
                     args_z3 = [to_z3(a, env, ctx) for a in node.args]
@@ -1998,7 +2079,10 @@ def check_proofs(funcs: list[Function], errors: list) -> None:
         facts = []
         for n in names:
             old = env.get(n)
-            if isinstance(old, ListVal):
+            if isinstance(old, RecVal):
+                counter[0] += 1
+                out[n] = mk_rec(f"__{n}_{counter[0]}", old.rname)
+            elif isinstance(old, ListVal):
                 counter[0] += 1
                 arr = z3.Array(f"__{n}_arr_{counter[0]}",
                                z3.IntSort(), z3.IntSort())
@@ -2091,6 +2175,8 @@ def check_proofs(funcs: list[Function], errors: list) -> None:
                 ln = z3.Int(pname + "__n")
                 env[pname] = ListVal(arr, ln)
                 list_facts.append(ln >= 0)
+            elif ptype in rec_fields and provable_rec(ptype):
+                env[pname] = mk_rec(pname, ptype)
         ctx = Ctx([], list(list_facts), list(list_facts), fn.name)
         try:
             for r_expr, _ in fn.requires:
@@ -2127,8 +2213,12 @@ def check_proofs(funcs: list[Function], errors: list) -> None:
                         vals = ", ".join(
                             show_val(p, v, m)
                             for p, v in sorted(env.items()))
-                        rv = ("a list" if isinstance(ret, ListVal)
-                              else m.eval(ret, model_completion=True))
+                        if isinstance(ret, RecVal):
+                            rv = show_val("r", ret, m).split(" = ", 1)[-1]
+                        elif isinstance(ret, ListVal):
+                            rv = "a list"
+                        else:
+                            rv = m.eval(ret, model_completion=True)
                         raise VelarisError("E700",
                             f"promise cannot be kept: '{fn.name}' ensures "
                             f"{expr_str(ens_expr)} - proven without running "
@@ -2730,7 +2820,7 @@ def lsp_analyze(path: str, text: str, deep: bool) -> list:
     check_effects(funcs, errors)
     check_types(funcs, records, errors)
     if deep and not errors:
-        check_proofs(funcs, errors)
+        check_proofs(funcs, records, errors)
     return errors
 
 
@@ -3012,7 +3102,7 @@ def repl() -> int:
                 check_effects(new_f, errs)
                 check_types(new_f, new_r, errs)
                 if not errs:
-                    check_proofs(new_f, errs)
+                    check_proofs(new_f, new_r, errs)
                 if errs:
                     for e in errs:
                         print(e.human("<repl>"))
@@ -3072,7 +3162,7 @@ def main() -> int:
         check_effects(funcs, errors)  # superpower 1: no hidden effects
         check_types(funcs, records, errors)  # superpower 2: no type surprises
         if not errors:                # proofs assume well-formed code
-            check_proofs(funcs, errors)  # superpower 3: promises proven early
+            check_proofs(funcs, records, errors)  # promises proven early
         if errors:
             errors.sort(key=lambda e: (e.file or filename, e.line))
             if as_json:

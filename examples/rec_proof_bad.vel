@@ -1,0 +1,17 @@
+// The classic copy-paste bug: fields swapped in the constructor.
+// Every promise about x is broken - proven, with the record shown.
+
+record Point {
+    x: Int
+    y: Int
+}
+
+fn shift(p: Point, dx: Int) -> Point
+    ensures result.x == p.x + dx
+{
+    return Point(x: p.y + dx, y: p.x)
+}
+
+fn main() uses io {
+    print(shift(Point(x: 3, y: 4), 10))
+}

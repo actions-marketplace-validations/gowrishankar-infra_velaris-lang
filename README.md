@@ -223,8 +223,10 @@ pipeline order.
 - Imports (v0.16) are a flat merge — `import "lib.vel"` pulls in that
   file's functions and records with duplicate-name protection; namespaces
   and a standard library are future work.
-- Records are runtime-checked only for now — the prover treats functions
-  using them as unprovable and falls back to runtime contract checks.
+- Record proofs (v1.14) cover records whose fields are Int, Bool, or
+  other such records — promises like `ensures result.x == p.x + dx` are
+  proven before running. Records containing lists or Floats stay
+  runtime-checked.
 - The prover is deliberately conservative: it only reports "proven" when the
   counterexample involves no summarized calls, so its claims are always
   literally true.

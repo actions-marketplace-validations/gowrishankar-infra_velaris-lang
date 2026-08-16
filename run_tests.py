@@ -27,6 +27,8 @@ EXPECT = {
     "funcs.vel": "RUNS",
     "generics.vel": "RUNS",
     "ledger.vel": "RUNS",
+    "rec_proof.vel": "RUNS",
+    "rec_proof_bad.vel": "REJECTED",
     "generics_bad.vel": "REJECTED",
     "funcs_bad.vel": "REJECTED",
     "failing_bad.vel": "REJECTED",

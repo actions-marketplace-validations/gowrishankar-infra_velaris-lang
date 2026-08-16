@@ -1,0 +1,26 @@
+// v1.14: promises about record FIELDS are proven before running.
+
+record Point {
+    x: Int
+    y: Int
+}
+
+fn shift(p: Point, dx: Int) -> Point
+    requires dx >= 0
+    ensures result.x == p.x + dx
+    ensures result.y == p.y
+{
+    return Point(x: p.x + dx, y: p.y)
+}
+
+fn distance_sq(p: Point) -> Int
+    ensures result >= 0
+{
+    return p.x * p.x + p.y * p.y
+}
+
+fn main() uses io {
+    let p = Point(x: 3, y: 4)
+    print(shift(p, 10))
+    print("distance^2: " + distance_sq(p))
+}
