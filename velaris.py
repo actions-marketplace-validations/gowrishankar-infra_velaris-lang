@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Velaris v1.10 — "The language where you can trust code you didn't write."
+Velaris v1.11 — "The language where you can trust code you didn't write."
+
+New in v1.11: a LANGUAGE SERVER - errors as you type, in any LSP editor.
+    velaris lsp
+    Fast checks (effects + types) on every keystroke; the full pipeline
+    including Z3 proofs on save. The VS Code extension in editor/vscode
+    now launches it automatically (no extra dependencies).
 
 New in v1.10: a formatter - one canonical style for every .vel file.
     velaris fmt program.vel            rewrite in place (if needed)
@@ -64,6 +70,7 @@ Usage:
   velaris program.vel                      run a program (after pip install)
   velaris repl                             interactive session
   velaris fmt program.vel                  format to the canonical style
+  velaris lsp                              language server (for editors)
   velaris version                          print the version
   python velaris.py program.vel            run a program
   python velaris.py program.vel --json     errors as machine-readable JSON
@@ -156,7 +163,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.10.0"
+VERSION = "1.11.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -786,7 +793,7 @@ def expr_vars(e) -> set[str]:
 #     every function and record came from.
 # ---------------------------------------------------------------------------
 
-def load_program(entry: str):
+def load_program(entry: str, entry_source: str | None = None):
     funcs, records = [], []
     fn_src, rec_src = {}, {}
     visited = set()
@@ -796,8 +803,12 @@ def load_program(entry: str):
         if ap in visited:
             return                       # already loaded (diamond or cycle)
         visited.add(ap)
+        source = None
+        if importer is None and entry_source is not None:
+            source = entry_source
         try:
-            source = open(path, encoding="utf-8").read()
+            if source is None:
+                source = open(path, encoding="utf-8").read()
         except OSError:
             if importer is not None:
                 shipped = os.path.join(
@@ -2651,6 +2662,129 @@ def interpret(funcs: list[Function], native: dict | None = None) -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def lsp_analyze(path: str, text: str, deep: bool) -> list:
+    """Run the checkers on an editor buffer; return VelarisErrors."""
+    errors: list = []
+    try:
+        funcs, records = load_program(path, entry_source=text)
+    except VelarisError as e:
+        return [e]
+    check_effects(funcs, errors)
+    check_types(funcs, records, errors)
+    if deep and not errors:
+        check_proofs(funcs, errors)
+    return errors
+
+
+def lsp_serve() -> int:
+    import urllib.parse
+
+    stdin = sys.stdin.buffer
+    stdout = sys.stdout.buffer
+    docs: dict[str, str] = {}          # uri -> latest text
+    published: set = set()             # uris we have diagnostics on
+
+    def read_message():
+        length = None
+        while True:
+            line = stdin.readline()
+            if not line:
+                return None
+            line = line.strip()
+            if not line:
+                break
+            key, _, val = line.partition(b":")
+            if key.lower() == b"content-length":
+                length = int(val)
+        if length is None:
+            return None
+        return json.loads(stdin.read(length))
+
+    def send(payload: dict):
+        body = json.dumps(payload).encode("utf-8")
+        stdout.write(f"Content-Length: {len(body)}\r\n\r\n".encode())
+        stdout.write(body)
+        stdout.flush()
+
+    def uri_to_path(uri: str) -> str:
+        p = urllib.parse.unquote(uri[len("file://"):])
+        if len(p) > 2 and p[0] == "/" and p[2] == ":":
+            p = p[1:]                   # windows: /C:/... -> C:/...
+        return p
+
+    def path_to_uri(p: str) -> str:
+        p = os.path.abspath(p).replace("\\", "/")
+        if not p.startswith("/"):
+            p = "/" + p
+        return "file://" + urllib.parse.quote(p)
+
+    def diag_of(e: VelarisError) -> dict:
+        msg = f"[{e.code}] {e.message}"
+        if e.fixes:
+            msg += "".join(f"\nfix: {f}" for f in e.fixes)
+        line = max(e.line - 1, 0)
+        return {"range": {"start": {"line": line, "character": 0},
+                          "end": {"line": line, "character": 500}},
+                "severity": 1, "source": "velaris", "message": msg}
+
+    def publish(uri: str, deep: bool):
+        path = uri_to_path(uri)
+        errors = lsp_analyze(path, docs.get(uri, ""), deep)
+        by_file: dict[str, list] = {uri: []}
+        for e in errors:
+            target = uri if e.file in (None, path) else path_to_uri(e.file)
+            by_file.setdefault(target, []).append(diag_of(e))
+        for target, ds in by_file.items():
+            send({"jsonrpc": "2.0",
+                  "method": "textDocument/publishDiagnostics",
+                  "params": {"uri": target, "diagnostics": ds}})
+            published.add(target)
+        for old in list(published):
+            if old not in by_file:
+                send({"jsonrpc": "2.0",
+                      "method": "textDocument/publishDiagnostics",
+                      "params": {"uri": old, "diagnostics": []}})
+                published.discard(old)
+
+    while True:
+        msg = read_message()
+        if msg is None:
+            return 0
+        method = msg.get("method", "")
+        params = msg.get("params", {})
+        if method == "initialize":
+            send({"jsonrpc": "2.0", "id": msg["id"], "result": {
+                "capabilities": {"textDocumentSync": {
+                    "openClose": True, "change": 1,
+                    "save": {"includeText": True}}},
+                "serverInfo": {"name": "velaris", "version": VERSION}}})
+        elif method == "shutdown":
+            send({"jsonrpc": "2.0", "id": msg["id"], "result": None})
+        elif method == "exit":
+            return 0
+        elif method == "textDocument/didOpen":
+            uri = params["textDocument"]["uri"]
+            docs[uri] = params["textDocument"]["text"]
+            publish(uri, deep=True)
+        elif method == "textDocument/didChange":
+            uri = params["textDocument"]["uri"]
+            docs[uri] = params["contentChanges"][0]["text"]
+            publish(uri, deep=False)
+        elif method == "textDocument/didSave":
+            uri = params["textDocument"]["uri"]
+            if "text" in params:
+                docs[uri] = params["text"]
+            publish(uri, deep=True)
+        elif method == "textDocument/didClose":
+            uri = params["textDocument"]["uri"]
+            docs.pop(uri, None)
+            send({"jsonrpc": "2.0",
+                  "method": "textDocument/publishDiagnostics",
+                  "params": {"uri": uri, "diagnostics": []}})
+        elif "id" in msg:               # any other request: empty result
+            send({"jsonrpc": "2.0", "id": msg["id"], "result": None})
+
+
 UNARY_BEFORE = {"(", "[", "{", ",", ":", "=", "==", "!=", "<", ">",
                 "<=", ">=", "+", "-", "*", "/", "%"}
 UNARY_KEYWORDS = {"return", "fail", "and", "or", "not", "requires",
@@ -2862,6 +2996,8 @@ def main() -> int:
         return 0
     if argv[:1] == ["fmt"]:
         return fmt_main(argv[1:])
+    if argv[:1] == ["lsp"]:
+        return lsp_serve()
     if argv[:1] == ["run"]:
         sys.argv.pop(1)
     if "--version" in sys.argv:

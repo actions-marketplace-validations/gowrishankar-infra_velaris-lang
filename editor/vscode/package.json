@@ -2,21 +2,38 @@
   "name": "velaris-syntax",
   "displayName": "Velaris",
   "description": "Syntax highlighting for the Velaris programming language (.vel)",
-  "version": "1.1.0",
+  "version": "1.11.0",
   "publisher": "velaris-lang",
-  "engines": { "vscode": "^1.50.0" },
-  "categories": ["Programming Languages"],
+  "engines": {
+    "vscode": "^1.50.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
   "contributes": {
-    "languages": [{
-      "id": "velaris",
-      "aliases": ["Velaris", "velaris"],
-      "extensions": [".vel"],
-      "configuration": "./language-configuration.json"
-    }],
-    "grammars": [{
-      "language": "velaris",
-      "scopeName": "source.velaris",
-      "path": "./syntaxes/velaris.tmLanguage.json"
-    }]
-  }
+    "languages": [
+      {
+        "id": "velaris",
+        "aliases": [
+          "Velaris",
+          "velaris"
+        ],
+        "extensions": [
+          ".vel"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "velaris",
+        "scopeName": "source.velaris",
+        "path": "./syntaxes/velaris.tmLanguage.json"
+      }
+    ]
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:velaris"
+  ]
 }

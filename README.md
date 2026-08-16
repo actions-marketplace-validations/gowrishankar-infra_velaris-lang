@@ -120,8 +120,11 @@ python run_tests.py
 
 ## Editor support
 
-Syntax highlighting for VS Code lives in `editor/vscode` — see its README
-for the one-line install (no marketplace account needed).
+VS Code support lives in `editor/vscode` — syntax highlighting plus
+**live errors as you type** (the extension launches `velaris lsp`
+automatically when the compiler is installed). Any other LSP-capable
+editor can use `velaris lsp` directly. See that folder's README for the
+one-line install (no marketplace account needed).
 
 ## Language tour
 
