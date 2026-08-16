@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Velaris v1.4 — "The language where you can trust code you didn't write."
+Velaris v1.5 — "The language where you can trust code you didn't write."
+
+New in v1.5: failure is visible and UNIGNORABLE.
+    fn parse(t: Text) -> Int or fail { ... fail "reason" ... }
+    Callers must handle it:  check parse(t) { ok v {...} fail why {...} }
+    or pass it upward inside another fallible function:  try parse(t)
+    Calling a fallible function any other way is a compile error.
 
 New in v1.4: MAPS - lookup tables, written {"alice": 30, "bob": 25}.
     Typed as: Map of Text to Int (keys are Text or Int).
@@ -115,7 +121,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -124,7 +130,7 @@ from dataclasses import dataclass, field
 # 1. LEXER — turn raw text into a list of tokens
 # ---------------------------------------------------------------------------
 
-KEYWORDS = {"fn", "let", "return", "if", "else", "uses", "true", "false", "while", "requires", "ensures", "and", "or", "not", "invariant", "record", "import"}
+KEYWORDS = {"fn", "let", "return", "if", "else", "uses", "true", "false", "while", "requires", "ensures", "and", "or", "not", "invariant", "record", "import", "fail", "check", "try"}
 
 TOKEN_SPEC = [
     ("COMMENT", r"//[^\n]*"),
@@ -240,6 +246,15 @@ class ListLit:  items: list; line: int
 class MapLit:   entries: list; line: int         # [(key_expr, val_expr)]
 @dataclass
 class ExprStmt: expr: object; line: int
+@dataclass
+class FailStmt: value: object; line: int
+@dataclass
+class TryExpr:  value: object; line: int         # value is a Call
+@dataclass
+class Check:
+    subject: object; line: int                   # subject is a Call
+    ok_name: str | None = None; ok_body: list = field(default_factory=list)
+    fail_name: str = ""; fail_body: list = field(default_factory=list)
 
 @dataclass
 class Function:
@@ -252,6 +267,7 @@ class Function:
     body: list
     line: int
     src_file: str = ""
+    can_fail: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -354,6 +370,11 @@ class Parser:
             while self.peek().text == ",":
                 self.next()
                 effects.add(self.expect("IDENT").text)
+        can_fail = False
+        if (self.peek().kind == "KEYWORD" and self.peek().text == "or"
+                and self.toks[self.i + 1].text == "fail"):
+            self.next(); self.next()
+            can_fail = True
         requires_, ensures_ = [], []
         while (self.peek().kind == "KEYWORD"
                and self.peek().text in ("requires", "ensures")):
@@ -361,8 +382,10 @@ class Parser:
             clause = (self.parse_expr(), kw.line)
             (requires_ if kw.text == "requires" else ensures_).append(clause)
         body = self.parse_block()
-        return Function(name, params, ret, effects, requires_, ensures_,
-                        body, start.line)
+        f = Function(name, params, ret, effects, requires_, ensures_,
+                     body, start.line)
+        f.can_fail = can_fail
+        return f
 
     def parse_block(self) -> list:
         self.expect("OP", "{")
@@ -384,6 +407,32 @@ class Parser:
             if self.peek().text == "}":          # bare 'return' with no value
                 return Return(None, t.line)
             return Return(self.parse_expr(), t.line)
+        if t.kind == "KEYWORD" and t.text == "fail":
+            self.next()
+            return FailStmt(self.parse_expr(), t.line)
+        if t.kind == "KEYWORD" and t.text == "check":
+            self.next()
+            subject = self.parse_expr()
+            if isinstance(subject, TryExpr) or not isinstance(subject, Call):
+                raise VelarisError("E100",
+                    "'check' needs a call to a function that can fail",
+                    t.line, fixes=["write: check f(args) { ok v { ... } "
+                                   "fail reason { ... } }"])
+            self.expect("OP", "{")
+            okkw = self.expect("IDENT")
+            if okkw.text != "ok":
+                raise VelarisError("E100", "expected 'ok' arm first in check",
+                    okkw.line, fixes=["write: ok value { ... }"])
+            ok_name = None
+            if self.peek().kind == "IDENT":
+                ok_name = self.next().text
+            ok_body = self.parse_block()
+            self.expect("KEYWORD", "fail")
+            fail_name = self.expect("IDENT").text
+            fail_body = self.parse_block()
+            self.expect("OP", "}")
+            return Check(subject, t.line, ok_name, ok_body,
+                         fail_name, fail_body)
         if t.kind == "KEYWORD" and t.text == "while":
             self.next()
             cond = self.parse_expr()
@@ -498,6 +547,13 @@ class Parser:
 
     def parse_atom(self):
         t = self.next()
+        if t.kind == "KEYWORD" and t.text == "try":
+            inner = self.parse_postfix()
+            if not isinstance(inner, Call):
+                raise VelarisError("E100",
+                    "'try' needs a call to a function that can fail",
+                    t.line, fixes=["write: try f(args)"])
+            return TryExpr(inner, t.line)
         if t.text == "-":                      # negative numbers: -7, -x
             return Neg(self.parse_postfix(), t.line)
         if t.text == "{":                      # map literal: {"a": 1}
@@ -563,6 +619,7 @@ def expr_str(e) -> str:
     if isinstance(e, Num):  return str(e.value)
     if isinstance(e, FloatNum): return str(e.value)
     if isinstance(e, Neg):  return f"-{expr_str(e.value)}"
+    if isinstance(e, TryExpr): return f"try {expr_str(e.value)}"
     if isinstance(e, Str):  return f'"{e.value}"'
     if isinstance(e, Bool): return "true" if e.value else "false"
     if isinstance(e, Var):  return e.name
@@ -583,6 +640,7 @@ def expr_vars(e) -> set[str]:
     if isinstance(e, Var):   return {e.name}
     if isinstance(e, Not):   return expr_vars(e.value)
     if isinstance(e, Neg):   return expr_vars(e.value)
+    if isinstance(e, TryExpr): return expr_vars(e.value)
     if isinstance(e, ListLit):
         out = set()
         for i in e.items:
@@ -738,10 +796,16 @@ def check_effects(funcs: list[Function], errors: list) -> None:
                 walk(a, fn)
         elif isinstance(node, BinOp):
             walk(node.left, fn); walk(node.right, fn)
-        elif isinstance(node, (Let, Return, ExprStmt)):
+        elif isinstance(node, (Let, Return, ExprStmt, FailStmt)):
             inner = node.expr if isinstance(node, ExprStmt) else node.value
             if inner is not None:
                 walk(inner, fn)
+        elif isinstance(node, TryExpr):
+            walk(node.value, fn)
+        elif isinstance(node, Check):
+            walk(node.subject, fn)
+            for s in node.ok_body + node.fail_body:
+                walk(s, fn)
         elif isinstance(node, If):
             walk(node.cond, fn)
             for s in node.then + node.other:
@@ -785,6 +849,11 @@ def check_effects(funcs: list[Function], errors: list) -> None:
             walk_pure(node.right, fn, where)
         elif isinstance(node, (Not, Neg)):
             walk_pure(node.value, fn, where)
+        elif isinstance(node, TryExpr):
+            raise VelarisError("E310",
+                f"the '{where}' promise of '{fn.name}' uses 'try'; "
+                f"promises must be simple and pure", node.line,
+                fixes=["only use plain values and pure functions in promises"])
         elif isinstance(node, ListLit):
             for it in node.items:
                 walk_pure(it, fn, where)
@@ -880,7 +949,22 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
         env = dict(fn.params)                       # variable -> type
         declared_ret = fn.return_type or "Unit"
 
-        def infer(node) -> str:
+        def infer(node, allow_fail: bool = False) -> str:
+            if isinstance(node, TryExpr):
+                if not fn.can_fail:
+                    raise VelarisError("E521",
+                        f"'try' passes failure up, but '{fn.name}' cannot "
+                        f"fail", node.line,
+                        fixes=[f"add 'or fail' to the signature of "
+                               f"'{fn.name}'",
+                               "or handle it here with a check block"])
+                callee = table.get(node.value.name)
+                if callee is None or not callee.can_fail:
+                    raise VelarisError("E522",
+                        f"'{node.value.name}' cannot fail - call it "
+                        f"directly without 'try'", node.line,
+                        fixes=["remove the 'try'"])
+                return infer(node.value, allow_fail=True)
             if isinstance(node, Num):  return "Int"
             if isinstance(node, FloatNum): return "Float"
             if isinstance(node, Neg):
@@ -1060,6 +1144,15 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                         node.line, fixes=["positions are numbers, e.g. get(xs, 0)"])
                 return elem
             if isinstance(node, Call):
+                cfn = table.get(node.name)
+                if cfn is not None and cfn.can_fail and not allow_fail:
+                    raise VelarisError("E520",
+                        f"'{node.name}' can fail - that cannot be ignored",
+                        node.line,
+                        fixes=[f"handle it: check {node.name}(...) "
+                               f"{{ ok v {{ ... }} fail reason {{ ... }} }}",
+                               f"or pass it up (inside a fallible "
+                               f"function): try {node.name}(...)"])
                 ptypes, ret = callee_sig(node.name)
                 if len(node.args) != len(ptypes):
                     raise VelarisError("E401",
@@ -1159,6 +1252,42 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                                f"or change the signature to '-> {t}'"])
             elif isinstance(node, ExprStmt):
                 infer(node.expr)
+            elif isinstance(node, FailStmt):
+                if not fn.can_fail:
+                    raise VelarisError("E523",
+                        f"'fail' is used, but '{fn.name}' does not declare "
+                        f"it can fail", node.line,
+                        fixes=[f"add 'or fail' to the signature of "
+                               f"'{fn.name}'"])
+                t = infer(node.value)
+                if t != "Text":
+                    raise VelarisError("E501",
+                        f"'fail' needs a Text reason, but this is {t}",
+                        node.line, fixes=['write a message: fail "why"'])
+            elif isinstance(node, Check):
+                callee = table.get(node.subject.name)
+                if callee is None or not callee.can_fail:
+                    raise VelarisError("E522",
+                        f"'{node.subject.name}' cannot fail - call it "
+                        f"directly, no check needed", node.line,
+                        fixes=["remove the check block"])
+                rt = infer(node.subject, allow_fail=True)
+                if rt == "Unit" and node.ok_name is not None:
+                    raise VelarisError("E525",
+                        f"'{node.subject.name}' returns nothing - "
+                        f"write 'ok {{ ... }}' with no name", node.line,
+                        fixes=["remove the name after ok"])
+                if rt != "Unit" and node.ok_name is None:
+                    raise VelarisError("E525",
+                        f"name the result: 'ok value {{ ... }}'", node.line,
+                        fixes=["add a name after ok to hold the result"])
+                if node.ok_name is not None:
+                    env[node.ok_name] = rt
+                for s in node.ok_body:
+                    check_stmt(s)
+                env[node.fail_name] = "Text"
+                for s in node.fail_body:
+                    check_stmt(s)
             elif isinstance(node, If):
                 c = infer(node.cond)
                 if c != "Bool":
@@ -1213,6 +1342,12 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
         for stmt in fn.body:
             check_stmt(stmt)
 
+    m = table.get("main")
+    if m is not None and m.can_fail:
+        errors.append(blame(m, VelarisError("E524",
+            "'main' cannot be 'or fail' - there is no one above it to "
+            "handle the failure", m.line,
+            fixes=["handle failures inside main with check blocks"])))
     for fn in funcs:
         try:
             check_fn(fn)
@@ -1322,7 +1457,7 @@ def check_proofs(funcs: list[Function], errors: list) -> None:
     def summarize_call(node: Call, env, ctx):
         """Model a call to a pure user function by its contract."""
         fnB = table.get(node.name)
-        if (fnB is None or fnB.effects
+        if (fnB is None or fnB.effects or fnB.can_fail
                 or fnB.return_type not in ("Int", "Bool")
                 or any(pt not in ("Int", "Bool") for _, pt in fnB.params)):
             raise Unprovable()
@@ -1456,7 +1591,7 @@ def check_proofs(funcs: list[Function], errors: list) -> None:
         elif isinstance(node, BinOp):
             scan_calls(node.left, env, ctx)
             scan_calls(node.right, env, ctx)
-        elif isinstance(node, (Not, Neg)):
+        elif isinstance(node, (Not, Neg, TryExpr)):
             scan_calls(node.value, env, ctx)
         elif isinstance(node, ListLit):
             for it in node.items:
@@ -1684,7 +1819,7 @@ def native_eligible(funcs: list[Function]) -> set[str]:
     table = {f.name: f for f in funcs}
 
     def locally_ok(fn: Function):
-        if fn.effects or fn.requires or fn.ensures:
+        if fn.effects or fn.requires or fn.ensures or fn.can_fail:
             return None
         if fn.return_type != "Int":
             return None
@@ -1916,6 +2051,10 @@ class ReturnSignal(Exception):
     def __init__(self, value): self.value = value
 
 
+class FailSignal(Exception):
+    def __init__(self, reason): self.reason = reason
+
+
 class RecordValue:
     def __init__(self, rname: str, fields: dict):
         self.rname, self.fields = rname, fields
@@ -2102,6 +2241,20 @@ def interpret(funcs: list[Function], native: dict | None = None) -> None:
             raise ReturnSignal(None if node.value is None else eval_(node.value, env))
         elif isinstance(node, ExprStmt):
             eval_(node.expr, env)
+        elif isinstance(node, FailStmt):
+            raise FailSignal(eval_(node.value, env))
+        elif isinstance(node, Check):
+            try:
+                val = eval_(node.subject, env)
+            except FailSignal as f:
+                env[node.fail_name] = f.reason
+                for s in node.fail_body:
+                    run(s, env)
+            else:
+                if node.ok_name is not None:
+                    env[node.ok_name] = val
+                for s in node.ok_body:
+                    run(s, env)
         elif isinstance(node, If):
             branch = node.then if eval_(node.cond, env) else node.other
             for s in branch:
@@ -2132,6 +2285,8 @@ def interpret(funcs: list[Function], native: dict | None = None) -> None:
         if isinstance(node, Num):  return node.value
         if isinstance(node, FloatNum): return node.value
         if isinstance(node, Neg):  return -eval_(node.value, env)
+        if isinstance(node, TryExpr):
+            return eval_(node.value, env)   # a failure keeps rising
         if isinstance(node, Str):  return node.value
         if isinstance(node, Bool): return node.value
         if isinstance(node, Var):

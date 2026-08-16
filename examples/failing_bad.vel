@@ -1,0 +1,13 @@
+// Calling a fallible function like a normal one: forbidden.
+// Ignoring failure is a compile error, not a runtime surprise.
+
+fn risky(n: Int) -> Int or fail {
+    if n < 0 {
+        fail "negative input"
+    }
+    return n * 2
+}
+
+fn main() uses io {
+    print(risky(5))
+}

@@ -156,6 +156,21 @@ fn biggest(xs: List of Int) -> Int
 }
 ```
 
+Failure is part of the signature, and ignoring it doesn't compile:
+
+```
+fn parse_age(t: Text) -> Int or fail {
+    ...
+    fail "not an age: " + t          // how a function gives up
+}
+
+check parse_age(answer) {            // the only way to call it
+    ok age { print(age) }
+    fail reason { print(reason) }
+}
+let a = try parse_age(answer)        // or pass failure to YOUR caller
+```
+
 Records group named fields into one immutable value:
 
 ```

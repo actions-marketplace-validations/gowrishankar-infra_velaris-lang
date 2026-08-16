@@ -1,0 +1,33 @@
+// v1.5: failure is visible in the signature ('or fail') and can never
+// be ignored. 'check' handles it here; 'try' passes it upward.
+
+fn safe_divide(a: Int, b: Int) -> Int or fail {
+    if b == 0 {
+        fail "cannot divide " + a + " by zero"
+    }
+    return a / b
+}
+
+fn ratio_line(a: Int, b: Int) -> Text or fail {
+    let r = try safe_divide(a, b)
+    return a + ":" + b + " is " + r
+}
+
+fn main() uses io {
+    check ratio_line(10, 2) {
+        ok line {
+            print(line)
+        }
+        fail reason {
+            print("could not compute: " + reason)
+        }
+    }
+    check ratio_line(7, 0) {
+        ok line {
+            print(line)
+        }
+        fail reason {
+            print("could not compute: " + reason)
+        }
+    }
+}

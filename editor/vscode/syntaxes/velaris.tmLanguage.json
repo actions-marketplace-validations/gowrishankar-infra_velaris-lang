@@ -8,7 +8,7 @@
       "begin": "\"", "end": "\"",
       "patterns": [{ "name": "constant.character.escape.velaris", "match": "\\\\[nt\"\\\\]" }] },
     { "name": "keyword.control.velaris",
-      "match": "\\b(if|else|while|return|import)\\b" },
+      "match": "\\b(if|else|while|return|import|check|try|fail)\\b" },
     { "name": "keyword.declaration.velaris",
       "match": "\\b(fn|let|record)\\b" },
     { "name": "keyword.other.contract.velaris",
