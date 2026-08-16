@@ -146,9 +146,10 @@ fn biggest(xs: List of Int) -> Int
 }
 ```
 
-Built-ins: `print` (io), `read_file`/`write_file` (fs), `fetch` (net,
-simulated for now), `now` (clock), `random` (rand), plus pure `length`,
-`push`, `get`.
+Built-ins: `print` (io), `read_file`/`write_file` (fs), `fetch` (net — a
+real HTTP GET), `now` (clock), `random` (rand), plus pure `length`,
+`push`, `get`. Try `examples/net.vel` to watch a signature-guarded real
+network request (needs a connection, so it's not in the offline test suite).
 
 ## How it works
 
@@ -171,8 +172,7 @@ pipeline order.
   invariants automatically** and **list proofs via Z3's array theory**
   remain open — both genuinely hard. Unproven invariants are checked at
   runtime on every iteration instead.
-- `fetch` is simulated (deterministic, offline-friendly) until the effect
-  system meets real sockets.
+- `fetch` is HTTP GET only for now — no POST, headers, or status codes yet.
 - Native compilation covers pure Int functions only, so far.
 - No modules/imports yet; one file per program.
 - The prover is deliberately conservative: it only reports "proven" when the

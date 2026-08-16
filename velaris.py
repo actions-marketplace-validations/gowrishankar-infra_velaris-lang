@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v0.10 — "The language where you can trust code you didn't write."
+Velaris v0.11 — "The language where you can trust code you didn't write."
+
+New in v0.11: fetch(url) is REAL - an actual HTTP GET with a 10-second
+    timeout, guarded by 'uses net'. A function without 'uses net' in its
+    signature provably cannot touch the network. Failures are clean
+    Velaris errors (E606), never tracebacks.
 
 New in v0.10: LOOP INVARIANTS - the prover learned loops.
     while i <= n
@@ -1386,9 +1391,20 @@ def run_builtin(name: str, args: list, line: int):
             f.write(str(args[1]))
         return None
     if name == "fetch":
-        # v0.2: simulated network (deterministic, works offline).
-        # A real HTTP request arrives in a later version.
-        return "response from " + str(args[0])
+        import urllib.request
+        import urllib.error
+        url = str(args[0])
+        if not (url.startswith("http://") or url.startswith("https://")):
+            url = "https://" + url
+        try:
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "velaris/0.11"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return resp.read(65536).decode("utf-8", errors="replace")
+        except Exception:
+            raise VelarisError("E606", f"cannot reach '{url}'", line,
+                               fixes=["check the address is correct",
+                                      "check your internet connection"])
     if name == "now":
         return int(_time.time())
     if name == "random":

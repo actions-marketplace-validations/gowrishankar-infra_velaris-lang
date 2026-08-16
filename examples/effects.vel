@@ -1,4 +1,5 @@
-// v0.2 showcase: five separate effects, each declared honestly.
+// The effect system showcase: four effects, each declared honestly.
+// (Network gets its own showcase in net.vel - it needs a connection.)
 
 fn dice() -> Int uses rand {
     return random(6) + 1
@@ -12,14 +13,9 @@ fn save_report(text: Text) uses fs {
     write_file("report.txt", text)
 }
 
-fn download(url: Text) -> Text uses net {
-    return fetch(url)
-}
-
-fn main() uses io, fs, net, clock, rand {
+fn main() uses io, fs, clock, rand {
     print("dice roll: " + dice())
     print("time now: " + timestamp())
-    print(download("example.com/data"))
     save_report("all systems working")
     print("saved report.txt with: " + read_file("report.txt"))
 }
