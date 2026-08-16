@@ -26,6 +26,7 @@ EXPECT = {
     "failing.vel": "RUNS",
     "funcs.vel": "RUNS",
     "generics.vel": "RUNS",
+    "ledger.vel": "RUNS",
     "generics_bad.vel": "REJECTED",
     "funcs_bad.vel": "REJECTED",
     "failing_bad.vel": "REJECTED",
@@ -41,6 +42,13 @@ EXPECT = {
     "contract_impure.vel": "REJECTED",
     "list_mixed.vel": "REJECTED",   "list_oob.vel": "REJECTED",
     "proof_catch.vel": "REJECTED",  "callsite_bad.vel": "REJECTED",
+}
+
+# scripted keyboard input for interactive examples
+STDIN = {
+    "ledger.vel": ("add\nchai\n2500\n1\nadd\nbook\n45000\n2\n"
+                   "list\ntotal\nsave\nload\nlist\n"
+                   "add\npen\nabc\nquit\n"),
 }
 
 
@@ -67,7 +75,8 @@ def main() -> int:
             continue
         r = subprocess.run(
             [sys.executable, str(here / "velaris.py"), str(path)] + extra,
-            capture_output=True, text=True, timeout=300)
+            capture_output=True, text=True, timeout=300,
+            input=STDIN.get(name))
         got = "RUNS" if r.returncode == 0 else "REJECTED"
         ok = got == want
         print(f"{'PASS' if ok else 'FAIL':4}  {name:22} expected {want:8} got {got}")

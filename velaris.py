@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Velaris v1.12 — "The language where you can trust code you didn't write."
+Velaris v1.13 — "The language where you can trust code you didn't write."
+
+New in v1.13: the first real app - examples/ledger.vel, an expense
+    tracker written in Velaris (records, contracts, or-fail parsing,
+    file persistence). Two supporting builtins: chars(text) splits Text
+    into single characters (pure), and file_exists(path) checks before
+    reading (fs).
 
 New in v1.12: continuous integration + repo hygiene.
     Every push is tested by GitHub Actions on Linux and Windows,
@@ -168,7 +174,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.12.0"
+VERSION = "1.13.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -319,7 +325,9 @@ class BinOp:    op: str; left: object; right: object; line: int
 @dataclass
 class Call:     name: str; args: list; line: int
 @dataclass
-class Let:      name: str; value: object; line: int
+class Let:
+    name: str; value: object; line: int
+    ann: str | None = None             # optional 'let x: Type = ...' 
 @dataclass
 class Return:   value: object; line: int
 @dataclass
@@ -465,28 +473,32 @@ class Parser:
             self.next()
             ret = self.parse_type()
         effects: set[str] = set()
-        if self.peek().kind == "KEYWORD" and self.peek().text == "uses":
-            self.next()
-            effects.add(self.expect("IDENT").text)
-            while self.peek().text == ",":
+        type_vars: list[str] = []
+        can_fail = False
+        while True:                    # uses / for any / or fail, any order
+            t2 = self.peek()
+            if t2.kind == "KEYWORD" and t2.text == "uses":
                 self.next()
                 effects.add(self.expect("IDENT").text)
-        type_vars = []
-        if self.peek().kind == "KEYWORD" and self.peek().text == "for":
-            self.next()
-            anykw = self.expect("IDENT")
-            if anykw.text != "any":
-                raise VelarisError("E100", "expected 'any' after 'for'",
-                    anykw.line, fixes=["write: for any T"])
-            type_vars.append(self.expect("IDENT").text)
-            while self.peek().text == ",":
+                while self.peek().text == ",":
+                    self.next()
+                    effects.add(self.expect("IDENT").text)
+            elif t2.kind == "KEYWORD" and t2.text == "for":
                 self.next()
+                anykw = self.expect("IDENT")
+                if anykw.text != "any":
+                    raise VelarisError("E100", "expected 'any' after 'for'",
+                        anykw.line, fixes=["write: for any T"])
                 type_vars.append(self.expect("IDENT").text)
-        can_fail = False
-        if (self.peek().kind == "KEYWORD" and self.peek().text == "or"
-                and self.toks[self.i + 1].text == "fail"):
-            self.next(); self.next()
-            can_fail = True
+                while self.peek().text == ",":
+                    self.next()
+                    type_vars.append(self.expect("IDENT").text)
+            elif (t2.kind == "KEYWORD" and t2.text == "or"
+                    and self.toks[self.i + 1].text == "fail"):
+                self.next(); self.next()
+                can_fail = True
+            else:
+                break
         requires_, ensures_ = [], []
         while (self.peek().kind == "KEYWORD"
                and self.peek().text in ("requires", "ensures")):
@@ -513,8 +525,12 @@ class Parser:
         if t.kind == "KEYWORD" and t.text == "let":
             self.next()
             name = self.expect("IDENT").text
+            ann = None
+            if self.peek().text == ":":
+                self.next()
+                ann = self.parse_type()
             self.expect("OP", "=")
-            return Let(name, self.parse_expr(), t.line)
+            return Let(name, self.parse_expr(), t.line, ann)
         if t.kind == "KEYWORD" and t.text == "return":
             self.next()
             if self.peek().text == "}":          # bare 'return' with no value
@@ -891,6 +907,8 @@ BUILTINS = {
     "contains":   {"effects": set(),      "types": ["Text", "Text"], "ret": "Bool"},
     "split":      {"effects": set(),      "types": ["Text", "Text"], "ret": "List of Text"},
     "upper":      {"effects": set(),      "types": ["Text"],        "ret": "Text"},
+    "chars":      {"effects": set(),      "types": ["Text"],        "ret": "List of Text"},
+    "file_exists": {"effects": {"fs"},    "types": ["Text"],        "ret": "Bool"},
     "put":        {"effects": set(),      "types": ["Any", "Any", "Any"], "ret": "Any"},
     "has":        {"effects": set(),      "types": ["Any", "Any"],  "ret": "Bool"},
     "keys":       {"effects": set(),      "types": ["Any"],         "ret": "Any"},
@@ -1518,6 +1536,37 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
 
         def check_stmt(node) -> None:
             if isinstance(node, Let):
+                if node.ann is not None:
+                    if not valid_type(node.ann, frozenset(fn.type_vars)):
+                        raise VelarisError("E500",
+                            f"unknown type '{node.ann}'", node.line,
+                            fixes=[TYPE_HINT])
+                    empty_list = (isinstance(node.value, ListLit)
+                                  and not node.value.items)
+                    empty_map = (isinstance(node.value, MapLit)
+                                 and not node.value.entries)
+                    if empty_list or empty_map:
+                        want_kind = "List of " if empty_list else "Map of "
+                        if not node.ann.startswith(want_kind):
+                            raise VelarisError("E501",
+                                f"'{node.name}' is declared {node.ann}, "
+                                f"but this is an empty "
+                                f"{'list' if empty_list else 'map'}",
+                                node.line,
+                                fixes=["match the declared type and the "
+                                       "value"])
+                        env[node.name] = node.ann
+                        return
+                    t = infer(node.value)
+                    if t != node.ann:
+                        raise VelarisError("E501",
+                            f"'{node.name}' is declared {node.ann}, "
+                            f"but this is {t}", node.line,
+                            fixes=[f"give {'an' if node.ann == 'Int' else 'a'} "
+                                   f"{node.ann} value",
+                                   "or fix the declared type"])
+                    env[node.name] = t
+                    return
                 t = infer(node.value)
                 if t == "Unit":
                     raise VelarisError("E502",
@@ -2413,6 +2462,10 @@ def run_builtin(name: str, args: list, line: int):
         return str(args[0]).split(str(args[1]))
     if name == "upper":
         return str(args[0]).upper()
+    if name == "chars":
+        return list(str(args[0]))
+    if name == "file_exists":
+        return os.path.exists(str(args[0]))
     if name == "lower":
         return str(args[0]).lower()
     if name == "length":

@@ -1,0 +1,168 @@
+// LEDGER - a real expense tracker, written in Velaris.
+// Everything the language stands for, carrying actual weight:
+// records for data, contracts on the math, 'or fail' parsing that
+// cannot be ignored, file persistence visible as 'uses fs', and a
+// safe number parser written in Velaris itself (no crashing to_int).
+// Money is stored as whole cents (Int) - never Float - on purpose.
+
+import "std.vel"
+
+record Expense {
+    label: Text
+    amount: Int
+    day: Int
+}
+
+fn digit_value(c: Text) -> Int or fail {
+    let digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    let v = index_of(digits, c)
+    if v < 0 {
+        fail "not a digit: " + c
+    }
+    return v
+}
+
+fn parse_int(t: Text) -> Int or fail {
+    let cs = chars(t)
+    if length(cs) == 0 {
+        fail "empty input"
+    }
+    let n = 0
+    let i = 0
+    while i < length(cs) {
+        let d = try digit_value(get(cs, i))
+        n = n * 10 + d
+        i = i + 1
+    }
+    return n
+}
+
+fn money(cents: Int) -> Text
+requires cents >= 0
+{
+    let whole = cents / 100
+    let part = cents % 100
+    if part < 10 {
+        return whole + ".0" + part
+    }
+    return whole + "." + part
+}
+
+fn describe(e: Expense) -> Text {
+    return e.label + " - " + money(e.amount) + " (day " + e.day + ")"
+}
+
+fn total_of(xs: List of Expense) -> Int {
+    let sum = 0
+    let i = 0
+    while i < length(xs) {
+        sum = sum + get(xs, i).amount
+        i = i + 1
+    }
+    return sum
+}
+
+fn save_all(xs: List of Expense) uses fs {
+    let out = ""
+    let i = 0
+    while i < length(xs) {
+        let e = get(xs, i)
+        out = out + e.label + "|" + e.amount + "|" + e.day + "\n"
+        i = i + 1
+    }
+    write_file("ledger.txt", out)
+}
+
+fn parse_line(line: Text) -> Expense or fail {
+    let parts = split(line, "|")
+    if length(parts) != 3 {
+        fail "bad line: " + line
+    }
+    let amt = try parse_int(get(parts, 1))
+    let d = try parse_int(get(parts, 2))
+    return Expense(label: get(parts, 0), amount: amt, day: d)
+}
+
+fn load_all() -> List of Expense uses fs or fail {
+    if not file_exists("ledger.txt") {
+        fail "nothing saved yet - use save first"
+    }
+    let lines = split(read_file("ledger.txt"), "\n")
+    let out: List of Expense = []
+    let i = 0
+    while i < length(lines) {
+        let line = get(lines, i)
+        if length(line) > 0 {
+            out = push(out, try parse_line(line))
+        }
+        i = i + 1
+    }
+    if length(out) == 0 {
+        fail "the ledger file is empty"
+    }
+    return out
+}
+
+fn add_flow(xs: List of Expense) -> List of Expense uses io {
+    let label = ask("what for?")
+    let raw = ask("amount in cents (e.g. 2500 = 25.00)?")
+    check parse_int(raw) {
+        ok amt {
+            check parse_int(ask("day number?")) {
+                ok d {
+                    print("added: " + label + " (" + money(amt) + ")")
+                    return push(xs, Expense(label: label, amount: amt,
+                    day: d))
+                }
+                fail reason {
+                    print("bad day: " + reason)
+                }
+            }
+        }
+        fail reason {
+            print("bad amount: " + reason)
+        }
+    }
+    return xs
+}
+
+fn main() uses io, fs {
+    let xs: List of Expense = []
+    print("LEDGER - your expenses, checked by a compiler.")
+    let done = false
+    while not done {
+        let cmd = ask("(add / list / total / save / load / quit)")
+        if cmd == "add" {
+            xs = add_flow(xs)
+        } else if cmd == "list" {
+            if length(xs) == 0 {
+                print("(nothing yet)")
+            }
+            let i = 0
+            while i < length(xs) {
+                print("  " + describe(get(xs, i)))
+                i = i + 1
+            }
+        } else if cmd == "total" {
+            print("total: " + money(total_of(xs)))
+        } else if cmd == "save" {
+            save_all(xs)
+            print("saved " + length(xs) + " expense(s)")
+        } else if cmd == "load" {
+            check load_all() {
+                ok loaded {
+                    xs = loaded
+                    print("loaded " + length(xs) + " expense(s)")
+                }
+                fail reason {
+                    print("could not load: " + reason)
+                }
+            }
+        } else if cmd == "quit" {
+            done = true
+            print("bye")
+        } else {
+            print("unknown command: " + cmd)
+        }
+    }
+}
