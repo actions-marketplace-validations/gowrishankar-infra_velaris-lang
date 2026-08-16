@@ -1,0 +1,20 @@
+// v1.7: generics - one function, every type. Everything below main
+// comes from std.vel: the first standard library, written in Velaris.
+
+import "std.vel"
+
+fn double(n: Int) -> Int {
+    return n * 2
+}
+
+fn main() uses io {
+    let nums = [3, 1, 4, 1, 5]
+    let words = ["trust", "the", "compiler"]
+    print("first: " + first(nums) + " / " + first(words))
+    print("last: " + last(nums) + " / " + last(words))
+    print("reversed nums: " + reverse(nums))
+    print("reversed words: " + reverse(words))
+    print("where is 4? " + index_of(nums, 4))
+    print("has a 9? " + contains_item(nums, 9))
+    print("doubled: " + apply_to_each(nums, double))
+}

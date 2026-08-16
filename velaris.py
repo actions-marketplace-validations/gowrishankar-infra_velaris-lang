@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """
-Velaris v1.6 — "The language where you can trust code you didn't write."
+Velaris v1.7 — "The language where you can trust code you didn't write."
+
+New in v1.7: GENERICS - one function, every type.
+    fn first(xs: List of T) -> T for any T
+        requires length(xs) > 0
+    { return get(xs, 0) }
+    T is inferred at each call; conflicting uses are clear errors.
+    Plus: examples/std.vel - the first standard library, written in
+    Velaris itself.
 
 New in v1.6: FUNCTIONS ARE VALUES - pass them to other functions.
     fn apply(xs: List of Int, f: fn(Int) -> Int) -> List of Int { ... }
@@ -127,7 +135,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -136,7 +144,7 @@ from dataclasses import dataclass, field
 # 1. LEXER — turn raw text into a list of tokens
 # ---------------------------------------------------------------------------
 
-KEYWORDS = {"fn", "let", "return", "if", "else", "uses", "true", "false", "while", "requires", "ensures", "and", "or", "not", "invariant", "record", "import", "fail", "check", "try"}
+KEYWORDS = {"fn", "let", "return", "if", "else", "uses", "true", "false", "while", "requires", "ensures", "and", "or", "not", "invariant", "record", "import", "fail", "check", "try", "for"}
 
 TOKEN_SPEC = [
     ("COMMENT", r"//[^\n]*"),
@@ -187,6 +195,22 @@ def fmt_fn_type(param_types: list, ret: str | None) -> str:
     if ret and ret != "Unit":
         s += f" -> {ret}"
     return s
+
+
+def type_mentions(t: str, tv: str) -> bool:
+    if t == tv:
+        return True
+    if t.startswith("List of "):
+        return type_mentions(t[len("List of "):], tv)
+    if t.startswith("Map of "):
+        key, _, val = t[len("Map of "):].partition(" to ")
+        return type_mentions(key, tv) or type_mentions(val, tv)
+    sig = fn_sig_parts(t)
+    if sig is not None:
+        parts, ret = sig
+        return any(type_mentions(p, tv) for p in parts) or \
+            type_mentions(ret, tv)
+    return False
 
 
 def fn_sig_parts(t: str):
@@ -306,6 +330,7 @@ class Function:
     line: int
     src_file: str = ""
     can_fail: bool = False
+    type_vars: list = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +433,17 @@ class Parser:
             while self.peek().text == ",":
                 self.next()
                 effects.add(self.expect("IDENT").text)
+        type_vars = []
+        if self.peek().kind == "KEYWORD" and self.peek().text == "for":
+            self.next()
+            anykw = self.expect("IDENT")
+            if anykw.text != "any":
+                raise VelarisError("E100", "expected 'any' after 'for'",
+                    anykw.line, fixes=["write: for any T"])
+            type_vars.append(self.expect("IDENT").text)
+            while self.peek().text == ",":
+                self.next()
+                type_vars.append(self.expect("IDENT").text)
         can_fail = False
         if (self.peek().kind == "KEYWORD" and self.peek().text == "or"
                 and self.toks[self.i + 1].text == "fail"):
@@ -423,6 +459,7 @@ class Parser:
         f = Function(name, params, ret, effects, requires_, ensures_,
                      body, start.line)
         f.can_fail = can_fail
+        f.type_vars = type_vars
         return f
 
     def parse_block(self) -> list:
@@ -998,20 +1035,21 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
         f = table[name]
         return [t for _, t in f.params], (f.return_type or "Unit")
 
-    def valid_type(t: str) -> bool:
-        if t in KNOWN_TYPES or t in rec:
+    def valid_type(t: str, tvars: frozenset = frozenset()) -> bool:
+        if t in KNOWN_TYPES or t in rec or t in tvars:
             return True
         if t.startswith("List of "):
-            return valid_type(t[len("List of "):])
+            return valid_type(t[len("List of "):], tvars)
         if t.startswith("Map of "):
             rest = t[len("Map of "):]
             key, sep, val = rest.partition(" to ")
-            return sep != "" and key in ("Text", "Int") and valid_type(val)
+            return sep != "" and key in ("Text", "Int") and \
+                valid_type(val, tvars)
         sig = fn_sig_parts(t)
         if sig is not None:
             parts, ret = sig
-            return all(valid_type(p) for p in parts) and (
-                ret == "Unit" or valid_type(ret))
+            return all(valid_type(p, tvars) for p in parts) and (
+                ret == "Unit" or valid_type(ret, tvars))
         return False
 
     TYPE_HINT = ("use Int, Text, Bool, a record name, or "
@@ -1026,12 +1064,24 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
 
     # first: every declared type must be a real type
     for f in funcs:
+        tvs = frozenset(f.type_vars)
+        for tv in f.type_vars:
+            if tv in KNOWN_TYPES or tv in rec:
+                errors.append(blame(f, VelarisError("E541",
+                    f"type variable '{tv}' shadows a real type", f.line,
+                    fixes=["pick a fresh name like T, U, or Item"])))
+            elif not any(type_mentions(pt, tv) for _, pt in f.params):
+                errors.append(blame(f, VelarisError("E540",
+                    f"type variable '{tv}' must appear in at least one "
+                    f"parameter (a {tv} only in the return type cannot be "
+                    f"inferred)", f.line,
+                    fixes=[f"use {tv} in a parameter type"])))
         for pname, ptype in f.params:
-            if not valid_type(ptype):
+            if not valid_type(ptype, tvs):
                 raise VelarisError("E500", f"unknown type '{ptype}' for parameter "
                                   f"'{pname}' of '{f.name}'", f.line,
                                   fixes=[TYPE_HINT])
-        if f.return_type is not None and not valid_type(f.return_type):
+        if f.return_type is not None and not valid_type(f.return_type, tvs):
             raise VelarisError("E500", f"unknown return type '{f.return_type}' "
                               f"for '{f.name}'", f.line,
                               fixes=[TYPE_HINT])
@@ -1072,6 +1122,11 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                     return env[node.name]
                 f2 = table.get(node.name)
                 if f2 is not None:
+                    if f2.type_vars:
+                        raise VelarisError("E543",
+                            f"'{f2.name}' is generic - generic functions "
+                            f"cannot be passed as values yet", node.line,
+                            fixes=["call it directly instead"])
                     if f2.effects:
                         raise VelarisError("E530",
                             f"'{f2.name}' uses effects "
@@ -1265,6 +1320,76 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                             f"but this is {got}", node.line,
                             fixes=[f"pass a {want} value"])
                 return ret
+            if isinstance(node, Call) and (cg := table.get(node.name)) \
+                    is not None and cg.type_vars:
+                if cg.can_fail and not allow_fail:
+                    raise VelarisError("E520",
+                        f"'{node.name}' can fail - that cannot be ignored",
+                        node.line,
+                        fixes=[f"handle it with a check block",
+                               f"or pass it up with try {node.name}(...)"])
+                ptypes = [t for _, t in cg.params]
+                if len(node.args) != len(ptypes):
+                    raise VelarisError("E401",
+                        f"'{node.name}' expects {len(ptypes)} argument(s) "
+                        f"but got {len(node.args)}", node.line,
+                        fixes=[f"pass exactly {len(ptypes)} argument(s)"])
+                tvset = set(cg.type_vars)
+                bind: dict = {}
+
+                def unify(want: str, got: str) -> bool:
+                    if want in tvset:
+                        if want in bind:
+                            return bind[want] == got
+                        bind[want] = got
+                        return True
+                    if want == got:
+                        return True
+                    if want.startswith("List of ") and \
+                            got.startswith("List of "):
+                        return unify(want[8:], got[8:])
+                    if want.startswith("Map of ") and \
+                            got.startswith("Map of "):
+                        wk, _, wv = want[7:].partition(" to ")
+                        gk, _, gv = got[7:].partition(" to ")
+                        return unify(wk, gk) and unify(wv, gv)
+                    wf, gf = fn_sig_parts(want), fn_sig_parts(got)
+                    if wf is not None and gf is not None:
+                        (wp, wr), (gp, gr) = wf, gf
+                        return len(wp) == len(gp) and all(
+                            unify(a, b) for a, b in zip(wp, gp)) and \
+                            unify(wr, gr)
+                    return False
+
+                for i, (a, want) in enumerate(zip(node.args, ptypes), 1):
+                    got = infer(a)
+                    if not unify(want, got):
+                        so_far = ", ".join(f"{k} = {v}"
+                                           for k, v in bind.items())
+                        raise VelarisError("E542",
+                            f"'{node.name}' argument {i} should look like "
+                            f"{want}, but this is {got}"
+                            + (f" (so far: {so_far})" if so_far else ""),
+                            node.line,
+                            fixes=["make the arguments agree on what "
+                                   f"{', '.join(cg.type_vars)} is"])
+
+                def subst(t: str) -> str:
+                    if t in bind:
+                        return bind[t]
+                    if t.startswith("List of "):
+                        return "List of " + subst(t[8:])
+                    if t.startswith("Map of "):
+                        k, _, v = t[7:].partition(" to ")
+                        return f"Map of {subst(k)} to {subst(v)}"
+                    sig = fn_sig_parts(t)
+                    if sig is not None:
+                        parts, ret = sig
+                        return fmt_fn_type([subst(p) for p in parts],
+                                           subst(ret))
+                    return t
+
+                return subst(cg.return_type or "Unit")
             if isinstance(node, Call):
                 cfn = table.get(node.name)
                 if cfn is not None and cfn.can_fail and not allow_fail:

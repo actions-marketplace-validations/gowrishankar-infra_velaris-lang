@@ -1,0 +1,8 @@
+// T must mean ONE thing per call. A list of Ints with a Text needle
+// is a contradiction - named plainly, at compile time.
+
+import "std.vel"
+
+fn main() uses io {
+    print(index_of([1, 2, 3], "two"))
+}

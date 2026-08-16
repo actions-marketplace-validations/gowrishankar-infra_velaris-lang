@@ -12,7 +12,7 @@
     { "name": "keyword.declaration.velaris",
       "match": "\\b(fn|let|record)\\b" },
     { "name": "keyword.other.contract.velaris",
-      "match": "\\b(requires|ensures|invariant|uses)\\b" },
+      "match": "\\b(requires|ensures|invariant|uses|for|any)\\b" },
     { "name": "keyword.operator.logical.velaris",
       "match": "\\b(and|or|not)\\b" },
     { "name": "constant.language.velaris",

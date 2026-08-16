@@ -25,6 +25,8 @@ EXPECT = {
     "maps.vel": "RUNS",
     "failing.vel": "RUNS",
     "funcs.vel": "RUNS",
+    "generics.vel": "RUNS",
+    "generics_bad.vel": "REJECTED",
     "funcs_bad.vel": "REJECTED",
     "failing_bad.vel": "REJECTED",
     "maps_bad.vel": "REJECTED",
