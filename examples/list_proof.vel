@@ -3,15 +3,15 @@
 // before the program runs.
 
 fn head(xs: List of Int) -> Int
-    requires length(xs) > 0
-    ensures result == get(xs, 0)
+requires length(xs) > 0
+ensures result == get(xs, 0)
 {
     return get(xs, 0)
 }
 
 fn grow(xs: List of Int, v: Int) -> List of Int
-    ensures length(result) == length(xs) + 1
-    ensures get(result, length(xs)) == v
+ensures length(result) == length(xs) + 1
+ensures get(result, length(xs)) == v
 {
     return push(xs, v)
 }

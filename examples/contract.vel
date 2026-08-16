@@ -2,9 +2,9 @@
 // and Velaris enforces every one of them.
 
 fn discount(price: Int) -> Int
-    requires price >= 0
-    ensures result >= 0
-    ensures result <= price
+requires price >= 0
+ensures result >= 0
+ensures result <= price
 {
     if price > 100 {
         return price - 10
@@ -13,7 +13,7 @@ fn discount(price: Int) -> Int
 }
 
 fn absolute(n: Int) -> Int
-    ensures result >= 0
+ensures result >= 0
 {
     if n < 0 {
         return 0 - n

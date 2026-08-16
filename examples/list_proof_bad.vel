@@ -3,7 +3,7 @@
 // out-of-bounds read exists and rejects the file before running.
 
 fn last(xs: List of Int) -> Int
-    requires length(xs) > 0
+requires length(xs) > 0
 {
     return get(xs, length(xs))
 }

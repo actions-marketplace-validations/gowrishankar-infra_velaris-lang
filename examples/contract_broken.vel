@@ -4,7 +4,7 @@
 // Notice: not even the first print happens - the file is simply rejected.
 
 fn discount(price: Int) -> Int
-    ensures result >= 0
+ensures result >= 0
 {
     return price - 10
 }

@@ -2,6 +2,6 @@
 // a compile error, not a runtime surprise.
 
 fn main() uses io {
-    let m = {"a": 1, 2: 3}
+    let m = { "a": 1, 2: 3 }
     print(m)
 }

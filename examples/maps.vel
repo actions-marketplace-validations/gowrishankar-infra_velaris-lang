@@ -2,7 +2,7 @@
 // put returns a NEW map (immutable, like push for lists).
 
 fn main() uses io {
-    let ages = {"alice": 30, "bob": 25}
+    let ages = { "alice": 30, "bob": 25 }
     print(ages)
     print("alice is " + get(ages, "alice"))
     print("has carol? " + has(ages, "carol"))

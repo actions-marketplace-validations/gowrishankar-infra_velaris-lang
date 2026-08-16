@@ -9,7 +9,7 @@ fn main() uses io, rand {
     let found = false
     print("I picked a number from 1 to 100. Guess it!")
     while not found
-        invariant tries >= 0
+    invariant tries >= 0
     {
         let answer = ask("your guess:")
         let g = to_int(answer)

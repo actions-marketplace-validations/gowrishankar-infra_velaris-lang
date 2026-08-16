@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v1.9 — "The language where you can trust code you didn't write."
+Velaris v1.10 — "The language where you can trust code you didn't write."
+
+New in v1.10: a formatter - one canonical style for every .vel file.
+    velaris fmt program.vel            rewrite in place (if needed)
+    velaris fmt program.vel --stdout   print instead of writing
+    velaris fmt program.vel --check    exit 1 if not formatted (for CI)
 
 New in v1.9: a REPL - try Velaris line by line.
     velaris repl
@@ -58,6 +63,7 @@ New in v1.0: the testers' release.
 Usage:
   velaris program.vel                      run a program (after pip install)
   velaris repl                             interactive session
+  velaris fmt program.vel                  format to the canonical style
   velaris version                          print the version
   python velaris.py program.vel            run a program
   python velaris.py program.vel --json     errors as machine-readable JSON
@@ -150,7 +156,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.9.0"
+VERSION = "1.10.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -183,7 +189,7 @@ class Token:
     line: int
 
 
-def lex(source: str) -> list[Token]:
+def lex(source: str, keep_trivia: bool = False) -> list[Token]:
     tokens, line = [], 1
     pos = 0
     while pos < len(source):
@@ -194,8 +200,13 @@ def lex(source: str) -> list[Token]:
         kind, text = m.lastgroup, m.group()
         pos = m.end()
         if kind == "NEWLINE":
+            if keep_trivia:
+                tokens.append(Token("NEWLINE", "", line))
             line += 1
-        elif kind in ("SKIP", "COMMENT"):
+        elif kind == "COMMENT":
+            if keep_trivia:
+                tokens.append(Token("COMMENT", text.rstrip(), line))
+        elif kind == "SKIP":
             pass
         elif kind == "IDENT" and text in KEYWORDS:
             tokens.append(Token("KEYWORD", text, line))
@@ -2640,6 +2651,112 @@ def interpret(funcs: list[Function], native: dict | None = None) -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 
+UNARY_BEFORE = {"(", "[", "{", ",", ":", "=", "==", "!=", "<", ">",
+                "<=", ">=", "+", "-", "*", "/", "%"}
+UNARY_KEYWORDS = {"return", "fail", "and", "or", "not", "requires",
+                  "ensures", "invariant", "while", "if"}
+
+
+def format_source(source: str) -> str:
+    toks = lex(source, keep_trivia=True)
+    lines, cur = [], []
+    for t in toks:
+        if t.kind == "NEWLINE":
+            lines.append(cur)
+            cur = []
+        else:
+            cur.append(t)
+    if cur:
+        lines.append(cur)
+
+    def render(line_toks) -> str:
+        out = ""
+        prev = None
+        unary = False
+        for t in line_toks:
+            if t.kind == "COMMENT":
+                body = t.text[2:].strip()
+                comment = "// " + body if body else "//"
+                out = (out.rstrip() + "  " + comment) if out.strip() \
+                    else comment
+                prev = t
+                continue
+            if prev is None or unary:
+                space = False
+            elif t.text in (")", "]", ",", ".", ":"):
+                space = False
+            elif prev.text in ("(", "[", "."):
+                space = False
+            elif t.text == "(" and prev.kind == "IDENT":
+                space = False
+            else:
+                space = True          # includes symmetric { x } spacing
+            unary = (t.text == "-" and (
+                prev is None or prev.text in UNARY_BEFORE
+                or prev.kind == "ARROW"
+                or (prev.kind == "KEYWORD" and prev.text in UNARY_KEYWORDS)))
+            out += (" " if space else "") + t.text
+            prev = t
+        return out
+
+    depth = 0
+    out_lines: list[str] = []
+    blank = False
+    for line_toks in lines:
+        if not line_toks:
+            if out_lines and not blank:
+                out_lines.append("")
+            blank = True
+            continue
+        blank = False
+        lead = 0
+        while lead < len(line_toks) and line_toks[lead].text == "}":
+            lead += 1
+        d = max(depth - lead, 0)
+        text = render(line_toks)
+        out_lines.append("    " * d + text if text else "")
+        for t in line_toks:
+            if t.text == "{":
+                depth += 1
+            elif t.text == "}":
+                depth = max(depth - 1, 0)
+    while out_lines and out_lines[-1] == "":
+        out_lines.pop()
+    return "\n".join(out_lines) + "\n"
+
+
+def fmt_main(argv: list[str]) -> int:
+    files = [a for a in argv if not a.startswith("--")]
+    if not files:
+        print("usage: velaris fmt <file.vel> [--stdout | --check]",
+              file=sys.stderr)
+        return 1
+    status = 0
+    for path in files:
+        try:
+            source = open(path, encoding="utf-8").read()
+            formatted = format_source(source)
+        except (OSError, VelarisError) as e:
+            msg = e.human(path) if isinstance(e, VelarisError) else str(e)
+            print(msg, file=sys.stderr)
+            status = 1
+            continue
+        if "--stdout" in argv:
+            print(formatted, end="")
+        elif "--check" in argv:
+            if formatted != source:
+                print(f"{path}: needs formatting")
+                status = 1
+            else:
+                print(f"{path}: ok")
+        elif formatted != source:
+            open(path, "w", encoding="utf-8").write(formatted)
+            print(f"formatted {path}")
+        else:
+            print(f"{path}: already formatted")
+    return status
+
+
 def repl() -> int:
     print(f"Velaris {VERSION} - interactive session.")
     print("Definitions (fn / record / import) are fully checked before "
@@ -2743,6 +2860,8 @@ def main() -> int:
     if argv[:1] == ["version"]:
         print(f"Velaris {VERSION}")
         return 0
+    if argv[:1] == ["fmt"]:
+        return fmt_main(argv[1:])
     if argv[:1] == ["run"]:
         sys.argv.pop(1)
     if "--version" in sys.argv:

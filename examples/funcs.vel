@@ -10,8 +10,8 @@ fn is_even(n: Int) -> Bool {
     return n % 2 == 0
 }
 
-fn apply_to_each(xs: List of Int, f: fn(Int) -> Int) -> List of Int
-    requires length(xs) > 0
+fn apply_to_each(xs: List of Int, f: fn (Int) -> Int) -> List of Int
+requires length(xs) > 0
 {
     let out = [f(get(xs, 0))]
     let i = 1
@@ -22,7 +22,7 @@ fn apply_to_each(xs: List of Int, f: fn(Int) -> Int) -> List of Int
     return out
 }
 
-fn count_where(xs: List of Int, keep: fn(Int) -> Bool) -> Int {
+fn count_where(xs: List of Int, keep: fn (Int) -> Bool) -> Int {
     let n = 0
     let i = 0
     while i < length(xs) {
