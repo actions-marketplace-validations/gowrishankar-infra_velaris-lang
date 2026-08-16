@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
-Velaris v0.13 — "The language where you can trust code you didn't write."
+Velaris v0.14 — "The language where you can trust code you didn't write."
+
+New in v0.14: the usability pack.
+    else if chains, the % remainder operator, and text tools:
+    split, contains, upper, lower.
 
 New in v0.13: LIST PROOFS via Z3's theory of arrays.
     Contracts and code over lists (length, get, push) are now provable,
@@ -88,7 +92,7 @@ TOKEN_SPEC = [
     ("NUMBER",  r"\d+"),
     ("STRING",  r'"[^"\n]*"'),
     ("IDENT",   r"[A-Za-z_][A-Za-z0-9_]*"),
-    ("OP",      r"==|!=|<=|>=|[+\-*/<>=(){},:\[\]]"),
+    ("OP",      r"==|!=|<=|>=|[+\-*/%<>=(){},:\[\]]"),
 ]
 
 MASTER_RE = re.compile("|".join(f"(?P<{n}>{p})" for n, p in TOKEN_SPEC))
@@ -298,7 +302,11 @@ class Parser:
             other = []
             if self.peek().text == "else":
                 self.next()
-                other = self.parse_block()
+                if (self.peek().kind == "KEYWORD"
+                        and self.peek().text == "if"):
+                    other = [self.parse_statement()]   # else if chain
+                else:
+                    other = self.parse_block()
             return If(cond, then, other, t.line)
         return ExprStmt(self.parse_expr(), t.line)
 
@@ -351,7 +359,7 @@ class Parser:
 
     def parse_mul(self):
         left = self.parse_atom()
-        while self.peek().text in ("*", "/"):
+        while self.peek().text in ("*", "/", "%"):
             op = self.next()
             left = BinOp(op.text, left, self.parse_atom(), op.line)
         return left
@@ -439,6 +447,10 @@ BUILTINS = {
     "ask":        {"effects": {"io"},     "types": ["Text"],        "ret": "Text"},
     # pure helpers (no effects) - usable everywhere, including promises
     "to_int":     {"effects": set(),      "types": ["Text"],        "ret": "Int"},
+    "contains":   {"effects": set(),      "types": ["Text", "Text"], "ret": "Bool"},
+    "split":      {"effects": set(),      "types": ["Text", "Text"], "ret": "List of Text"},
+    "upper":      {"effects": set(),      "types": ["Text"],        "ret": "Text"},
+    "lower":      {"effects": set(),      "types": ["Text"],        "ret": "Text"},
     "length":     {"effects": set(),      "types": ["Any"],         "ret": "Int"},
     "push":       {"effects": set(),      "types": ["Any", "Any"],  "ret": "Any"},
     "get":        {"effects": set(),      "types": ["Any", "Any"],  "ret": "Any"},
@@ -670,7 +682,7 @@ def check_types(funcs: list[Function]) -> None:
                         return "Int"
                     raise VelarisError("E501", f"cannot add {l} and {r}", node.line,
                                       fixes=["'+' works on Int + Int, or joins Text"])
-                if op in ("-", "*", "/"):
+                if op in ("-", "*", "/", "%"):
                     if l == "Int" and r == "Int":
                         return "Int"
                     raise VelarisError("E501",
@@ -1240,8 +1252,8 @@ def native_eligible(funcs: list[Function]) -> set[str]:
             if isinstance(e, Not):
                 we(e.value)
             elif isinstance(e, BinOp):
-                if e.op == "/":
-                    ok[0] = False
+                if e.op in ("/", "%"):
+                    ok[0] = False       # backend semantics differ on negatives
                 else:
                     we(e.left); we(e.right)
             elif isinstance(e, Call):
@@ -1485,6 +1497,17 @@ def run_builtin(name: str, args: list, line: int):
                 f"'{args[0]}' is not a whole number", line,
                 fixes=["enter digits only, like 42 or -7"])
         return int(t)
+    if name == "contains":
+        return str(args[1]) in str(args[0])
+    if name == "split":
+        if args[1] == "":
+            raise VelarisError("E609", "cannot split by empty text", line,
+                               fixes=['use a separator like " " or ","'])
+        return str(args[0]).split(str(args[1]))
+    if name == "upper":
+        return str(args[0]).upper()
+    if name == "lower":
+        return str(args[0]).lower()
     if name == "length":
         return len(args[0])
     if name == "push":
@@ -1650,6 +1673,11 @@ def interpret(funcs: list[Function], native: dict | None = None) -> None:
                     raise VelarisError("E403", "division by zero", node.line,
                                       fixes=["check the divisor before dividing"])
                 return l // r
+            if node.op == "%":
+                if r == 0:
+                    raise VelarisError("E403", "remainder by zero", node.line,
+                                      fixes=["check the divisor before using %"])
+                return l % r
             return {"==": l == r, "!=": l != r, "<": l < r,
                     ">": l > r, "<=": l <= r, ">=": l >= r}[node.op]
 
