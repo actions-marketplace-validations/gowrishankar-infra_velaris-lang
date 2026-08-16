@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v1.2 — "The language where you can trust code you didn't write."
+Velaris v1.3 — "The language where you can trust code you didn't write."
+
+New in v1.3: Float - decimal numbers like 3.14.
+    Int and Float never mix silently: 1 + 2.5 is a compile error with a
+    fix (use to_float(1), or round(2.5) for an Int). Float math is
+    runtime-checked; proofs stay Int-only for now.
 
 New in v1.2: a browser playground - open playground/index.html and run
     Velaris with zero install (rebuild it with: python build_playground.py).
@@ -105,7 +110,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -121,6 +126,7 @@ TOKEN_SPEC = [
     ("NEWLINE", r"\n"),
     ("SKIP",    r"[ \t\r]+"),
     ("ARROW",   r"->"),
+    ("FLOAT",   r"\d+\.\d+"),
     ("NUMBER",  r"\d+"),
     ("STRING",  r'"(?:\\.|[^"\\\n])*"'),
     ("IDENT",   r"[A-Za-z_][A-Za-z0-9_]*"),
@@ -187,6 +193,10 @@ def unescape(raw: str, line: int) -> str:
 
 @dataclass
 class Num:      value: int
+@dataclass
+class FloatNum: value: float
+@dataclass
+class Neg:      value: object; line: int
 @dataclass
 class Str:      value: str
 @dataclass
@@ -471,7 +481,7 @@ class Parser:
     def parse_atom(self):
         t = self.next()
         if t.text == "-":                      # negative numbers: -7, -x
-            return BinOp("-", Num(0), self.parse_postfix(), t.line)
+            return Neg(self.parse_postfix(), t.line)
         if t.text == "[":                      # list literal: [1, 2, 3]
             items = []
             while self.peek().text != "]":
@@ -482,6 +492,8 @@ class Parser:
             return ListLit(items, t.line)
         if t.kind == "NUMBER":
             return Num(int(t.text))
+        if t.kind == "FLOAT":
+            return FloatNum(float(t.text))
         if t.kind == "STRING":
             return Str(unescape(t.text[1:-1], t.line))
         if t.kind == "KEYWORD" and t.text in ("true", "false"):
@@ -521,6 +533,8 @@ class Parser:
 def expr_str(e) -> str:
     """Turn an AST expression back into readable source text (for errors)."""
     if isinstance(e, Num):  return str(e.value)
+    if isinstance(e, FloatNum): return str(e.value)
+    if isinstance(e, Neg):  return f"-{expr_str(e.value)}"
     if isinstance(e, Str):  return f'"{e.value}"'
     if isinstance(e, Bool): return "true" if e.value else "false"
     if isinstance(e, Var):  return e.name
@@ -537,6 +551,7 @@ def expr_str(e) -> str:
 def expr_vars(e) -> set[str]:
     if isinstance(e, Var):   return {e.name}
     if isinstance(e, Not):   return expr_vars(e.value)
+    if isinstance(e, Neg):   return expr_vars(e.value)
     if isinstance(e, ListLit):
         out = set()
         for i in e.items:
@@ -639,6 +654,8 @@ BUILTINS = {
     # pure helpers (no effects) - usable everywhere, including promises
     "to_int":     {"effects": set(),      "types": ["Text"],        "ret": "Int"},
     "to_text":    {"effects": set(),      "types": ["Any"],         "ret": "Text"},
+    "to_float":   {"effects": set(),      "types": ["Int"],         "ret": "Float"},
+    "round":      {"effects": set(),      "types": ["Float"],       "ret": "Int"},
     "contains":   {"effects": set(),      "types": ["Text", "Text"], "ret": "Bool"},
     "split":      {"effects": set(),      "types": ["Text", "Text"], "ret": "List of Text"},
     "upper":      {"effects": set(),      "types": ["Text"],        "ret": "Text"},
@@ -648,7 +665,7 @@ BUILTINS = {
     "get":        {"effects": set(),      "types": ["Any", "Any"],  "ret": "Any"},
 }
 
-KNOWN_TYPES = {"Int", "Text", "Bool"}
+KNOWN_TYPES = {"Int", "Text", "Bool", "Float"}
 
 def check_effects(funcs: list[Function], errors: list) -> None:
     table = {f.name: f for f in funcs}
@@ -698,7 +715,7 @@ def check_effects(funcs: list[Function], errors: list) -> None:
                 walk(s, fn)
         elif isinstance(node, Assign):
             walk(node.value, fn)
-        elif isinstance(node, Not):
+        elif isinstance(node, (Not, Neg)):
             walk(node.value, fn)
         elif isinstance(node, ListLit):
             for it in node.items:
@@ -724,7 +741,7 @@ def check_effects(funcs: list[Function], errors: list) -> None:
         elif isinstance(node, BinOp):
             walk_pure(node.left, fn, where)
             walk_pure(node.right, fn, where)
-        elif isinstance(node, Not):
+        elif isinstance(node, (Not, Neg)):
             walk_pure(node.value, fn, where)
         elif isinstance(node, ListLit):
             for it in node.items:
@@ -816,6 +833,14 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
 
         def infer(node) -> str:
             if isinstance(node, Num):  return "Int"
+            if isinstance(node, FloatNum): return "Float"
+            if isinstance(node, Neg):
+                t = infer(node.value)
+                if t not in ("Int", "Float"):
+                    raise VelarisError("E501",
+                        f"'-' needs a number, but this is {t}", node.line,
+                        fixes=["negate an Int or Float value"])
+                return t
             if isinstance(node, Str):  return "Text"
             if isinstance(node, Bool): return "Bool"
             if isinstance(node, Var):
@@ -954,25 +979,33 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                         f"'{op}' needs yes/no values (Bool) on both sides, "
                         f"but this is {l} {op} {r}", node.line,
                         fixes=["use comparisons on both sides, like x > 0 and x < 10"])
+                NUM_FIX = ["make both sides the same number type",
+                           "convert with to_float(x), or round(x) for an Int"]
                 if op == "+":
                     if l == "Text" or r == "Text":
                         return "Text"                  # text joining, e.g. "n: " + 5
-                    if l == "Int" and r == "Int":
-                        return "Int"
-                    raise VelarisError("E501", f"cannot add {l} and {r}", node.line,
-                                      fixes=["'+' works on Int + Int, or joins Text"])
-                if op in ("-", "*", "/", "%"):
+                    if l == r and l in ("Int", "Float"):
+                        return l
+                    raise VelarisError("E501", f"cannot add {l} and {r}",
+                                       node.line, fixes=NUM_FIX)
+                if op == "%":
                     if l == "Int" and r == "Int":
                         return "Int"
                     raise VelarisError("E501",
-                        f"'{op}' needs Int on both sides, but this is {l} {op} {r}",
+                        f"'%' needs Int on both sides, but this is {l} % {r}",
                         node.line, fixes=["make both sides Int"])
+                if op in ("-", "*", "/"):
+                    if l == r and l in ("Int", "Float"):
+                        return l
+                    raise VelarisError("E501",
+                        f"'{op}' needs matching number types, but this is "
+                        f"{l} {op} {r}", node.line, fixes=NUM_FIX)
                 if op in ("<", ">", "<=", ">="):
-                    if l == "Int" and r == "Int":
+                    if l == r and l in ("Int", "Float"):
                         return "Bool"
                     raise VelarisError("E501",
-                        f"'{op}' compares numbers, but this is {l} {op} {r}",
-                        node.line, fixes=["make both sides Int"])
+                        f"'{op}' compares matching number types, but this is "
+                        f"{l} {op} {r}", node.line, fixes=NUM_FIX)
                 if l != r:                             # == and !=
                     raise VelarisError("E501",
                         f"cannot compare {l} with {r}", node.line,
@@ -1199,6 +1232,11 @@ def check_proofs(funcs: list[Function], errors: list) -> None:
             return env[node.name]
         if isinstance(node, Not):
             return z3.Not(to_z3(node.value, env, ctx))
+        if isinstance(node, Neg):
+            v = to_z3(node.value, env, ctx)
+            if isinstance(v, ListVal):
+                raise Unprovable()
+            return -v
         if isinstance(node, ListLit):
             arr = z3.K(z3.IntSort(), z3.IntVal(0))
             vals = [to_z3(it, env, ctx) for it in node.items]
@@ -1303,7 +1341,7 @@ def check_proofs(funcs: list[Function], errors: list) -> None:
         elif isinstance(node, BinOp):
             scan_calls(node.left, env, ctx)
             scan_calls(node.right, env, ctx)
-        elif isinstance(node, Not):
+        elif isinstance(node, (Not, Neg)):
             scan_calls(node.value, env, ctx)
         elif isinstance(node, ListLit):
             for it in node.items:
@@ -1539,7 +1577,7 @@ def native_eligible(funcs: list[Function]) -> set[str]:
         def we(e):
             if isinstance(e, (Num, Bool, Var)):
                 return
-            if isinstance(e, Not):
+            if isinstance(e, (Not, Neg)):
                 we(e.value)
             elif isinstance(e, BinOp):
                 if e.op in ("/", "%"):
@@ -1652,6 +1690,8 @@ def compile_native(funcs: list[Function]) -> dict:
                 return b.load(slots[e.name])
             if isinstance(e, Not):
                 return b.xor(ee(e.value), i64(1))
+            if isinstance(e, Neg):
+                return b.sub(i64(0), ee(e.value))
             if isinstance(e, Call):
                 return b.call(llvm_fns[e.name], [ee(a) for a in e.args])
             if isinstance(e, BinOp):
@@ -1802,6 +1842,10 @@ def run_builtin(name: str, args: list, line: int):
         return int(t)
     if name == "to_text":
         return to_text(args[0])
+    if name == "to_float":
+        return float(args[0])
+    if name == "round":
+        return int(round(args[0]))
     if name == "contains":
         return str(args[1]) in str(args[0])
     if name == "split":
@@ -1950,6 +1994,8 @@ def interpret(funcs: list[Function], native: dict | None = None) -> None:
 
     def eval_(node, env):
         if isinstance(node, Num):  return node.value
+        if isinstance(node, FloatNum): return node.value
+        if isinstance(node, Neg):  return -eval_(node.value, env)
         if isinstance(node, Str):  return node.value
         if isinstance(node, Bool): return node.value
         if isinstance(node, Var):
@@ -1984,6 +2030,8 @@ def interpret(funcs: list[Function], native: dict | None = None) -> None:
                 if r == 0:
                     raise VelarisError("E403", "division by zero", node.line,
                                       fixes=["check the divisor before dividing"])
+                if isinstance(l, float):
+                    return l / r
                 return l // r
             if node.op == "%":
                 if r == 0:

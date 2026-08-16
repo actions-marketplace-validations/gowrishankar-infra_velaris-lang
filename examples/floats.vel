@@ -1,0 +1,19 @@
+// v1.3: Float - decimal numbers. Int and Float never mix silently:
+// converting is always explicit, so precision changes are always visible.
+
+fn average(a: Float, b: Float, c: Float) -> Float {
+    return (a + b + c) / 3.0
+}
+
+fn to_fahrenheit(celsius: Float) -> Float {
+    return celsius * 9.0 / 5.0 + 32.0
+}
+
+fn main() uses io {
+    let avg = average(10.5, 20.25, 5.25)
+    print("average price: " + avg)
+    print("30C in F: " + to_fahrenheit(30.0))
+    print("rounded average: " + round(avg))
+    let count = 4
+    print("count as float: " + (to_float(count) + 0.5))
+}

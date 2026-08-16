@@ -21,6 +21,8 @@ EXPECT = {
     "uses_import.vel": "RUNS",
     "import_bad.vel": "REJECTED",
     "escapes.vel": "RUNS",
+    "floats.vel": "RUNS",
+    "floats_bad.vel": "REJECTED",
     "many_errors.vel": "REJECTED",
     "records_bad.vel": "REJECTED",
     "loop_proof_bad.vel": "REJECTED",

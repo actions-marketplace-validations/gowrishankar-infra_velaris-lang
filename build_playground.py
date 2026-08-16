@@ -186,9 +186,12 @@ json.dumps([o.getvalue(), e.getvalue()])
     out.textContent = "";
     if (stdout) out.append(stdout);
     if (stderr) {
-      const s = document.createElement("span");
-      s.className = "err"; s.textContent = stderr;
-      out.appendChild(s);
+      for (const ln of stderr.split("\\n")) {
+        const s = document.createElement("span");
+        s.className = ln.startsWith("note:") ? "note" : "err";
+        s.textContent = ln + "\\n";
+        out.appendChild(s);
+      }
     }
     if (!stdout && !stderr) {
       out.innerHTML = '<span class="note">(no output)</span>';
