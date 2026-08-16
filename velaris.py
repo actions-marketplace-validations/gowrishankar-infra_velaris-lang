@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v0.12 — "The language where you can trust code you didn't write."
+Velaris v0.13 — "The language where you can trust code you didn't write."
+
+New in v0.13: LIST PROOFS via Z3's theory of arrays.
+    Contracts and code over lists (length, get, push) are now provable,
+    and every 'get' carries a bounds obligation - reading past the end
+    of a list can be proven and rejected before the program runs (E705).
 
 New in v0.12: interactive programs.
     ask("your name?")   reads a line from the keyboard (an io effect)
@@ -801,6 +806,11 @@ def check_proofs(funcs: list[Function]) -> None:
     FELL_OFF = object()
     counter = [0]
 
+    class ListVal:
+        """A symbolic list: a Z3 array of Ints plus a length."""
+        def __init__(self, arr, length):
+            self.arr, self.length = arr, length
+
     def mk(name: str, t: str):
         return z3.Int(name) if t == "Int" else z3.Bool(name)
 
@@ -822,10 +832,17 @@ def check_proofs(funcs: list[Function]) -> None:
                        list(self.param_assum), self.caller)
 
     def has_fresh(e) -> bool:
-        """Does this Z3 expression mention a summarized call result?"""
+        """Does this Z3 expression mention a summarized/havoc value?"""
+        if isinstance(e, ListVal):
+            return has_fresh(e.arr) or has_fresh(e.length)
         if z3.is_const(e) and e.decl().name().startswith("__"):
             return True
         return any(has_fresh(c) for c in e.children())
+
+    def show_val(name, v, model):
+        if isinstance(v, ListVal):
+            return f"length({name}) = {model.eval(v.length, model_completion=True)}"
+        return f"{name} = {model.eval(v, model_completion=True)}"
 
     def bind_params(fnB: Function, args_z3: list) -> dict:
         return {pname: a for (pname, _), a in zip(fnB.params, args_z3)}
@@ -848,7 +865,7 @@ def check_proofs(funcs: list[Function]) -> None:
             if solver.check() == z3.sat:
                 m = solver.model()
                 vals = ", ".join(
-                    f"{pname} = {m.eval(a, model_completion=True)}"
+                    show_val(pname, a, m)
                     for (pname, _), a in zip(fnB.params, args_z3))
                 raise VelarisError("E701",
                     f"this call can break a promise: '{fnB.name}' requires "
@@ -888,6 +905,28 @@ def check_proofs(funcs: list[Function]) -> None:
             return env[node.name]
         if isinstance(node, Not):
             return z3.Not(to_z3(node.value, env, ctx))
+        if isinstance(node, ListLit):
+            arr = z3.K(z3.IntSort(), z3.IntVal(0))
+            vals = [to_z3(it, env, ctx) for it in node.items]
+            for idx, v in enumerate(vals):
+                if isinstance(v, ListVal):
+                    raise Unprovable()          # lists of lists: not yet
+                arr = z3.Store(arr, z3.IntVal(idx), v)
+            return ListVal(arr, z3.IntVal(len(node.items)))
+        if isinstance(node, Call) and node.name in ("length", "get", "push"):
+            a0 = to_z3(node.args[0], env, ctx)
+            if not isinstance(a0, ListVal):
+                raise Unprovable()              # length of Text: runtime only
+            if node.name == "length":
+                return a0.length
+            a1 = to_z3(node.args[1], env, ctx)
+            if node.name == "push":
+                return ListVal(z3.Store(a0.arr, a0.length, a1),
+                               a0.length + 1)
+            # get: prove the read stays inside the list (E705)
+            if ctx is not None:
+                prove_bounds(a1, a0.length, ctx, node.line)
+            return z3.Select(a0.arr, a1)
         if isinstance(node, Call):
             if ctx is None:            # inside a contract: no call summaries
                 raise Unprovable()
@@ -902,6 +941,15 @@ def check_proofs(funcs: list[Function]) -> None:
                              to_z3(node.right, env, ctx))
             l = to_z3(node.left, env, ctx)
             r = to_z3(node.right, env, ctx)
+            if isinstance(l, ListVal) or isinstance(r, ListVal):
+                if not (isinstance(l, ListVal) and isinstance(r, ListVal)):
+                    raise Unprovable()
+                if op == "==":
+                    return z3.And(l.arr == r.arr, l.length == r.length)
+                if op == "!=":
+                    return z3.Not(z3.And(l.arr == r.arr,
+                                         l.length == r.length))
+                raise Unprovable()
             if op == "+":  return l + r
             if op == "-":  return l - r
             if op == "*":  return l * r
@@ -913,16 +961,46 @@ def check_proofs(funcs: list[Function]) -> None:
             if op == ">=": return l >= r
         raise Unprovable()             # Str, ListLit, '/', anything else
 
+    def prove_bounds(idx, length, ctx, line):
+        """Prove 0 <= idx < length; report only provably-real violations."""
+        if has_fresh(idx) or has_fresh(length) or \
+                any(has_fresh(c) for c in ctx.conds):
+            return                       # runtime bounds check still guards
+        solver = z3.Solver()
+        solver.set("timeout", 3000)
+        solver.add(*ctx.param_assum)
+        solver.add(*ctx.conds)
+        solver.add(z3.Not(z3.And(idx >= 0, idx < length)))
+        if solver.check() == z3.sat:
+            m = solver.model()
+            raise VelarisError("E705",
+                f"this 'get' can reach position "
+                f"{m.eval(idx, model_completion=True)}, but the list has "
+                f"{m.eval(length, model_completion=True)} item(s) - proven "
+                f"without running the program", line,
+                fixes=["positions go from 0 to length - 1",
+                       "guard the read: if i < length(xs) { ... }"])
+
     def scan_calls(node, env, ctx):
         """Inside expressions we cannot fully model (like text joining),
-        still find user-function calls and prove their requires hold."""
+        still find user-function calls and prove their requires hold,
+        and prove every 'get' stays inside its list."""
         if isinstance(node, Call):
             for a in node.args:
                 scan_calls(a, env, ctx)
+            if node.name == "get" and len(node.args) == 2:
+                try:
+                    a0 = to_z3(node.args[0], env, ctx)
+                    a1 = to_z3(node.args[1], env, ctx)
+                    if isinstance(a0, ListVal):
+                        prove_bounds(a1, a0.length, ctx, node.line)
+                except Unprovable:
+                    pass
             fnB = table.get(node.name)
             if (fnB is not None and fnB.requires
                     and len(fnB.params) == len(node.args)
-                    and all(pt in ("Int", "Bool") for _, pt in fnB.params)):
+                    and all(pt in ("Int", "Bool", "List of Int")
+                            for _, pt in fnB.params)):
                 try:
                     args_z3 = [to_z3(a, env, ctx) for a in node.args]
                 except Unprovable:
@@ -979,14 +1057,24 @@ def check_proofs(funcs: list[Function]) -> None:
             raise Unprovable()
 
     def havoc_like(env, names):
-        """Fresh unknowns for every variable the loop can change."""
+        """Fresh unknowns for every variable the loop can change.
+        Returns (new_env, facts) - facts like 'list lengths stay >= 0'."""
         out = dict(env)
+        facts = []
         for n in names:
-            if n in env and env[n].sort() == z3.BoolSort():
+            old = env.get(n)
+            if isinstance(old, ListVal):
+                counter[0] += 1
+                arr = z3.Array(f"__{n}_arr_{counter[0]}",
+                               z3.IntSort(), z3.IntSort())
+                ln = z3.Int(f"__{n}_len_{counter[0]}")
+                out[n] = ListVal(arr, ln)
+                facts.append(ln >= 0)
+            elif old is not None and z3.is_bool(old):
                 out[n] = fresh("Bool", n)
             else:
                 out[n] = fresh("Int", n)
-        return out
+        return out, facts
 
     def explore(stmts, env, ctx):
         i = 0
@@ -1014,8 +1102,8 @@ def check_proofs(funcs: list[Function]) -> None:
                 changed = assigned_names(s.body, set())
                 # 2. PRESERVATION: from ANY state the invariants allow,
                 #    one loop step must land back inside the invariants
-                env_h = havoc_like(env, changed)
-                facts = []
+                env_h, hfacts = havoc_like(env, changed)
+                facts = list(hfacts)
                 for inv_expr, _ in s.invariants:
                     try:
                         facts.append(to_z3(inv_expr, env_h, None))
@@ -1035,8 +1123,8 @@ def check_proofs(funcs: list[Function]) -> None:
                     else:
                         exits.append((pctx, ret, penv))  # return inside loop
                 # 3. AFTERWARD: all we know is invariants hold, cond is false
-                env_a = havoc_like(env, changed)
-                facts_a = []
+                env_a, hfacts_a = havoc_like(env, changed)
+                facts_a = list(hfacts_a)
                 for inv_expr, _ in s.invariants:
                     try:
                         facts_a.append(to_z3(inv_expr, env_a, None))
@@ -1059,10 +1147,16 @@ def check_proofs(funcs: list[Function]) -> None:
 
     for fn in funcs:
         env = {}
+        list_facts = []
         for pname, ptype in fn.params:
             if ptype in ("Int", "Bool"):
                 env[pname] = mk(pname, ptype)
-        ctx = Ctx([], [], [], fn.name)
+            elif ptype == "List of Int":
+                arr = z3.Array(pname, z3.IntSort(), z3.IntSort())
+                ln = z3.Int(pname + "__n")
+                env[pname] = ListVal(arr, ln)
+                list_facts.append(ln >= 0)
+        ctx = Ctx([], list(list_facts), list(list_facts), fn.name)
         try:
             for r_expr, _ in fn.requires:
                 try:
@@ -1096,9 +1190,10 @@ def check_proofs(funcs: list[Function]) -> None:
                             raise Unprovable()
                         m = solver.model()
                         vals = ", ".join(
-                            f"{p} = {m.eval(v, model_completion=True)}"
+                            show_val(p, v, m)
                             for p, v in sorted(env.items()))
-                        rv = m.eval(ret, model_completion=True)
+                        rv = ("a list" if isinstance(ret, ListVal)
+                              else m.eval(ret, model_completion=True))
                         raise VelarisError("E700",
                             f"promise cannot be kept: '{fn.name}' ensures "
                             f"{expr_str(ens_expr)} - proven without running "

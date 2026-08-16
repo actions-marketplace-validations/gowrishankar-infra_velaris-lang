@@ -1,5 +1,6 @@
-// Asking for position 10 in a 3-item list: a clean runtime error
-// with the actual numbers, instead of a crash or silent garbage.
+// Asking for position 10 in a 3-item list. Since v0.13 this is PROVEN
+// out of bounds and rejected before the program runs (it used to be
+// caught at runtime). Reads the prover can't see remain runtime-checked.
 
 fn main() uses io {
     let xs = [1, 2, 3]

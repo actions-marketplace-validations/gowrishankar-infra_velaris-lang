@@ -169,9 +169,12 @@ pipeline order.
 ## Honest limitations (a.k.a. the roadmap)
 
 - Loops are proven only when you supply `invariant` clauses; **inferring
-  invariants automatically** and **list proofs via Z3's array theory**
-  remain open — both genuinely hard. Unproven invariants are checked at
-  runtime on every iteration instead.
+  invariants automatically** remains open (a live research area). Unproven
+  invariants are checked at runtime on every iteration instead.
+- List proofs (v0.13, via Z3's theory of arrays) cover `length`, `get`,
+  `push`, list equality, and out-of-bounds detection (`E705`); lists of
+  lists and quantified properties ("every element is positive") are future
+  work.
 - `fetch` is HTTP GET only for now — no POST, headers, or status codes yet.
 - Native compilation covers pure Int functions only, so far.
 - No modules/imports yet; one file per program.

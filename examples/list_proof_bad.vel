@@ -1,0 +1,13 @@
+// The classic off-by-one: 'last' reads position length(xs), which is
+// one PAST the end (positions go 0 to length-1). Velaris proves the
+// out-of-bounds read exists and rejects the file before running.
+
+fn last(xs: List of Int) -> Int
+    requires length(xs) > 0
+{
+    return get(xs, length(xs))
+}
+
+fn main() uses io {
+    print(last([1, 2, 3]))
+}
