@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v1.14 — "The language where you can trust code you didn't write."
+Velaris v1.15 — "The language where you can trust code you didn't write."
+
+New in v1.15: NATIVE Float and Bool. The LLVM backend now compiles pure
+    functions over Int, Float, and Bool (division and % stay interpreted
+    in both types, so dividing by zero is always a clean error, never a
+    silent infinity). Interpreted and native runs are verified to agree.
 
 New in v1.14: RECORD PROOFS. Promises about record fields are now
     proven before running - ensures result.x == p.x + dx is mathematics,
@@ -180,7 +185,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.14.0"
+VERSION = "1.15.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -2254,16 +2259,17 @@ def native_eligible(funcs: list[Function]) -> set[str]:
     table = {f.name: f for f in funcs}
 
     def locally_ok(fn: Function):
-        if fn.effects or fn.requires or fn.ensures or fn.can_fail:
+        if fn.effects or fn.requires or fn.ensures or fn.can_fail \
+                or fn.type_vars:
             return None
-        if fn.return_type != "Int":
+        if fn.return_type not in ("Int", "Float", "Bool"):
             return None
-        if any(pt != "Int" for _, pt in fn.params):
+        if any(pt not in ("Int", "Float", "Bool") for _, pt in fn.params):
             return None
         calls, ok = set(), [True]
 
         def we(e):
-            if isinstance(e, (Num, Bool, Var)):
+            if isinstance(e, (Num, FloatNum, Bool, Var)):
                 return
             if isinstance(e, (Not, Neg)):
                 we(e.value)
@@ -2336,13 +2342,52 @@ def compile_native(funcs: list[Function]) -> dict:
         return {}
 
     i64 = ir.IntType(64)
+    f64 = ir.DoubleType()
+    LTY = {"Int": i64, "Bool": i64, "Float": f64}
     module = ir.Module(name="velaris")
     table = {f.name: f for f in funcs}
     llvm_fns = {}
     for name in eligible:
         fn = table[name]
-        fty = ir.FunctionType(i64, [i64] * len(fn.params))
+        fty = ir.FunctionType(LTY[fn.return_type],
+                              [LTY[pt] for _, pt in fn.params])
         llvm_fns[name] = ir.Function(module, fty, name=name)
+
+    def var_types(fn: Function) -> dict:
+        """Sequentially infer each local's Velaris type for typed allocas."""
+        tenv = dict(fn.params)
+
+        def te(e) -> str:
+            if isinstance(e, Num):
+                return "Int"
+            if isinstance(e, FloatNum):
+                return "Float"
+            if isinstance(e, Bool):
+                return "Bool"
+            if isinstance(e, Var):
+                return tenv[e.name]
+            if isinstance(e, Not):
+                return "Bool"
+            if isinstance(e, Neg):
+                return te(e.value)
+            if isinstance(e, Call):
+                return table[e.name].return_type
+            if isinstance(e, BinOp):
+                if e.op in ("and", "or", "==", "!=", "<", ">", "<=", ">="):
+                    return "Bool"
+                return te(e.left)
+            return "Int"
+
+        def ts(stmts):
+            for s in stmts:
+                if isinstance(s, (Let, Assign)):
+                    tenv.setdefault(s.name, te(s.value))
+                elif isinstance(s, If):
+                    ts(s.then); ts(s.other)
+                elif isinstance(s, While):
+                    ts(s.body)
+        ts(fn.body)
+        return tenv
 
     def collect_names(stmts, out):
         for s in stmts:
@@ -2361,17 +2406,20 @@ def compile_native(funcs: list[Function]) -> dict:
         entry = lf.append_basic_block("entry")
         b = ir.IRBuilder(entry)
         slots = {}
+        tenv = var_types(fn)
         names = {p for p, _ in fn.params}
         collect_names(fn.body, names)
         for n in sorted(names):
-            slots[n] = b.alloca(i64, name=n)
+            slots[n] = b.alloca(LTY[tenv.get(n, "Int")], name=n)
         for (pname, _), arg in zip(fn.params, lf.args):
             arg.name = pname
             b.store(arg, slots[pname])
 
-        def ee(e):                                  # emit expression -> i64
+        def ee(e):                    # emit expression (i64 or double)
             if isinstance(e, Num):
                 return i64(e.value)
+            if isinstance(e, FloatNum):
+                return ir.Constant(f64, e.value)
             if isinstance(e, Bool):
                 return i64(1 if e.value else 0)
             if isinstance(e, Var):
@@ -2379,7 +2427,10 @@ def compile_native(funcs: list[Function]) -> dict:
             if isinstance(e, Not):
                 return b.xor(ee(e.value), i64(1))
             if isinstance(e, Neg):
-                return b.sub(i64(0), ee(e.value))
+                v = ee(e.value)
+                if v.type == f64:
+                    return b.fsub(ir.Constant(f64, 0.0), v)
+                return b.sub(i64(0), v)
             if isinstance(e, Call):
                 return b.call(llvm_fns[e.name], [ee(a) for a in e.args])
             if isinstance(e, BinOp):
@@ -2388,12 +2439,15 @@ def compile_native(funcs: list[Function]) -> dict:
                 if e.op == "or":
                     return b.or_(ee(e.left), ee(e.right))
                 l, r = ee(e.left), ee(e.right)
+                flt = l.type == f64
                 if e.op == "+":
-                    return b.add(l, r)
+                    return b.fadd(l, r) if flt else b.add(l, r)
                 if e.op == "-":
-                    return b.sub(l, r)
+                    return b.fsub(l, r) if flt else b.sub(l, r)
                 if e.op == "*":
-                    return b.mul(l, r)
+                    return b.fmul(l, r) if flt else b.mul(l, r)
+                if flt:
+                    return b.zext(b.fcmp_ordered(CMP[e.op], l, r), i64)
                 return b.zext(b.icmp_signed(CMP[e.op], l, r), i64)
             raise AssertionError("unreachable")
 
@@ -2439,7 +2493,8 @@ def compile_native(funcs: list[Function]) -> dict:
 
         es(fn.body)
         if not b.block.is_terminated:
-            b.ret(i64(0))
+            b.ret(ir.Constant(f64, 0.0)
+                  if fn.return_type == "Float" else i64(0))
 
     for init in ("initialize", "initialize_native_target",
                  "initialize_native_asmprinter"):
@@ -2470,11 +2525,18 @@ def compile_native(funcs: list[Function]) -> dict:
     _NATIVE_KEEPALIVE.append(engine)
 
     import ctypes
+    CT = {"Int": ctypes.c_int64, "Bool": ctypes.c_int64,
+          "Float": ctypes.c_double}
     out = {}
     for name in eligible:
-        n_args = len(table[name].params)
-        proto = ctypes.CFUNCTYPE(ctypes.c_int64, *([ctypes.c_int64] * n_args))
-        out[name] = proto(engine.get_function_address(name))
+        fn = table[name]
+        proto = ctypes.CFUNCTYPE(CT[fn.return_type],
+                                 *[CT[pt] for _, pt in fn.params])
+        raw = proto(engine.get_function_address(name))
+        if fn.return_type == "Bool":
+            out[name] = (lambda *a, _raw=raw: bool(_raw(*a)))
+        else:
+            out[name] = raw
     return out
 
 

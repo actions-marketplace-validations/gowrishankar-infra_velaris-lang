@@ -1,0 +1,28 @@
+// v1.15: pure Float and Bool functions run as machine code via LLVM.
+// (Division stays interpreted on purpose: dividing by zero must always
+// be a clean error, never a silent infinity.)
+
+fn axpy(a: Float, x: Float, y: Float) -> Float {
+    return a * x + y
+}
+
+fn is_hot(t: Float) -> Bool {
+    return t > 37.5
+}
+
+fn decay(n: Int, start: Float, rate: Float) -> Float {
+    let v = start
+    let i = 0
+    while i < n {
+        v = v * rate + 1.0
+        i = i + 1
+    }
+    return v
+}
+
+fn main() uses io {
+    print("axpy(2.0, 3.5, 1.25) = " + axpy(2.0, 3.5, 1.25))
+    print("is_hot(38.2) = " + is_hot(38.2))
+    print("is_hot(36.0) = " + is_hot(36.0))
+    print("decay(10, 1.0, 1.5) = " + decay(10, 1.0, 1.5))
+}

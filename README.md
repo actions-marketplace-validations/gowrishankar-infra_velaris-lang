@@ -219,7 +219,9 @@ pipeline order.
   lists and quantified properties ("every element is positive") are future
   work.
 - `fetch` is HTTP GET only for now — no POST, headers, or status codes yet.
-- Native compilation covers pure Int functions only, so far.
+- Native compilation covers pure Int, Float, and Bool functions (v1.15);
+  `/` and `%` stay interpreted in both modes so division by zero is always
+  a clean error. Text, lists, and records remain interpreted, so far.
 - Imports (v0.16) are a flat merge — `import "lib.vel"` pulls in that
   file's functions and records with duplicate-name protection; namespaces
   and a standard library are future work.
