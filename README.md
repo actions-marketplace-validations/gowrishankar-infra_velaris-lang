@@ -102,7 +102,8 @@ python velaris.py examples/bench.vel --time
 python velaris.py examples/proof_catch.vel        # watch a proof reject a bug
 ```
 
-Run the test suite (18 example programs, each with an expected verdict):
+Check your install with `python velaris.py --version`, then run the test
+suite (28 example programs, each with an expected verdict):
 
 ```
 python run_tests.py

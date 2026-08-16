@@ -92,6 +92,26 @@ print(get(xs, 0))               // 3  (out-of-range is a clean error)
 let ys = push(xs, 1)            // push returns a new, longer list
 ```
 
+Records group named fields into one immutable value:
+
+```
+record Point { x: Int  y: Int }
+
+let p = Point(x: 3, y: 4)          // build with named fields
+print(p.x)                          // read with a dot
+let q = Point(x: p.x + 1, y: p.y)  // "change" by building a new one
+```
+
+Trying to assign to a field (`p.x = 5`) is a compile error — records don't
+change, you make new ones. Missing fields, unknown fields, and wrong field
+types are all caught before running, and `to_text(x)` turns any value into
+Text when you need it inside a message.
+
+And programs can span files: `import "mathlib.vel"` pulls in another
+file's functions and records (paths relative to the importing file).
+Contracts, effects, and proofs all cross the boundary, and errors name
+the file the problem actually lives in.
+
 ## 4. Contracts: promises the language enforces
 
 Here's where Velaris leaves ordinary languages behind. Signatures can carry
@@ -206,7 +226,9 @@ python velaris.py examples/sneaky.vel --json
 ```
 
 This is deliberate: increasingly, the "developer" reading compiler errors is
-an AI agent in a fix loop. Velaris speaks both languages.
+an AI agent in a fix loop. Velaris speaks both languages. And since v1.0,
+one run reports every broken function at once (as a JSON array in `--json`
+mode), so a fixing agent — or you — sees the whole picture in one pass.
 
 ## 8. The workflow Velaris is built for
 

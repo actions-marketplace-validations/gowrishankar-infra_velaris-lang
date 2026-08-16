@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
 """
-Velaris v0.16 — "The language where you can trust code you didn't write."
+Velaris v1.0 — "The language where you can trust code you didn't write."
+
+New in v1.0: the testers' release.
+    * Multiple problems are reported in one run (one per function),
+      instead of stopping at the first.
+    * to_text(x) turns any value into Text.
+    * --version prints the version.
+
+Usage:
+  python velaris.py program.vel            run a program
+  python velaris.py program.vel --json     errors as machine-readable JSON
+  python velaris.py program.vel --time     show how long the run took
+  python velaris.py program.vel --no-native  force the interpreter
+  python velaris.py --version
 
 New in v0.16: IMPORTS - programs can span multiple files.
     import "mathlib.vel"
@@ -86,6 +99,8 @@ Usage:
 
 import json
 import os
+
+VERSION = "1.0.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -596,6 +611,7 @@ BUILTINS = {
     "ask":        {"effects": {"io"},     "types": ["Text"],        "ret": "Text"},
     # pure helpers (no effects) - usable everywhere, including promises
     "to_int":     {"effects": set(),      "types": ["Text"],        "ret": "Int"},
+    "to_text":    {"effects": set(),      "types": ["Any"],         "ret": "Text"},
     "contains":   {"effects": set(),      "types": ["Text", "Text"], "ret": "Bool"},
     "split":      {"effects": set(),      "types": ["Text", "Text"], "ret": "List of Text"},
     "upper":      {"effects": set(),      "types": ["Text"],        "ret": "Text"},
@@ -607,7 +623,7 @@ BUILTINS = {
 
 KNOWN_TYPES = {"Int", "Text", "Bool"}
 
-def check_effects(funcs: list[Function]) -> None:
+def check_effects(funcs: list[Function], errors: list) -> None:
     table = {f.name: f for f in funcs}
 
     def effects_of_callee(name: str, line: int) -> set[str]:
@@ -701,7 +717,7 @@ def check_effects(funcs: list[Function]) -> None:
             for expr, _ in fn.ensures:
                 walk_pure(expr, fn, "ensures")
         except VelarisError as e:
-            raise blame(fn, e)
+            errors.append(blame(fn, e))
 
 
 # ---------------------------------------------------------------------------
@@ -709,10 +725,11 @@ def check_effects(funcs: list[Function]) -> None:
 #     Types: Int, Text, Bool.  "Unit" means "returns nothing".
 # ---------------------------------------------------------------------------
 
-def check_types(funcs: list[Function], records: list) -> None:
+def check_types(funcs: list[Function], records: list, errors: list) -> None:
     table = {f.name: f for f in funcs}
     rec = {}
     for r in records:
+      try:
         if r.name in rec:
             raise VelarisError("E507", f"record '{r.name}' is defined twice",
                                r.line, fixes=["rename one of them"])
@@ -728,6 +745,8 @@ def check_types(funcs: list[Function], records: list) -> None:
                     fixes=["remove the duplicate field"])
             seen.add(fname)
         rec[r.name] = dict(r.fields)
+      except VelarisError as e:
+        errors.append(blame(r, e))
 
     def callee_sig(name: str) -> tuple[list[str], str]:
         if name in BUILTINS:
@@ -748,9 +767,9 @@ def check_types(funcs: list[Function], records: list) -> None:
     for r in records:
         for fname, ftype in r.fields:
             if not valid_type(ftype):
-                raise VelarisError("E500",
+                errors.append(blame(r, VelarisError("E500",
                     f"unknown type '{ftype}' for field '{fname}' of "
-                    f"record '{r.name}'", r.line, fixes=[TYPE_HINT])
+                    f"record '{r.name}'", r.line, fixes=[TYPE_HINT])))
 
     # first: every declared type must be a real type
     for f in funcs:
@@ -1023,7 +1042,7 @@ def check_types(funcs: list[Function], records: list) -> None:
         try:
             check_fn(fn)
         except VelarisError as e:
-            raise blame(fn, e)
+            errors.append(blame(fn, e))
 
 
 # ---------------------------------------------------------------------------
@@ -1037,7 +1056,7 @@ def check_types(funcs: list[Function], records: list) -> None:
 #       to runtime promise checks.
 # ---------------------------------------------------------------------------
 
-def check_proofs(funcs: list[Function]) -> None:
+def check_proofs(funcs: list[Function], errors: list) -> None:
     try:
         import z3
     except ImportError:
@@ -1463,7 +1482,8 @@ def check_proofs(funcs: list[Function]) -> None:
         except z3.Z3Exception:
             continue                    # solver hiccup: runtime still guards
         except VelarisError as e:
-            raise blame(fn, e)
+            errors.append(blame(fn, e))
+            continue
 
 
 # ---------------------------------------------------------------------------
@@ -1753,6 +1773,8 @@ def run_builtin(name: str, args: list, line: int):
                 f"'{args[0]}' is not a whole number", line,
                 fixes=["enter digits only, like 42 or -7"])
         return int(t)
+    if name == "to_text":
+        return to_text(args[0])
     if name == "contains":
         return str(args[1]) in str(args[0])
     if name == "split":
@@ -1961,6 +1983,9 @@ def interpret(funcs: list[Function], native: dict | None = None) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> int:
+    if "--version" in sys.argv:
+        print(f"Velaris {VERSION}")
+        return 0
     if len(sys.argv) < 2:
         print(__doc__)
         return 1
@@ -1968,9 +1993,23 @@ def main() -> int:
     as_json = "--json" in sys.argv
     try:
         funcs, records = load_program(filename)
-        check_effects(funcs)          # superpower 1: no hidden effects
-        check_types(funcs, records)   # superpower 2: no type surprises
-        check_proofs(funcs)           # superpower 3: broken promises proven early
+        errors: list[VelarisError] = []
+        check_effects(funcs, errors)  # superpower 1: no hidden effects
+        check_types(funcs, records, errors)  # superpower 2: no type surprises
+        if not errors:                # proofs assume well-formed code
+            check_proofs(funcs, errors)  # superpower 3: promises proven early
+        if errors:
+            errors.sort(key=lambda e: (e.file or filename, e.line))
+            if as_json:
+                print(json.dumps(
+                    [json.loads(e.machine(filename)) for e in errors],
+                    indent=2), file=sys.stderr)
+            else:
+                print("\n\n".join(e.human(filename) for e in errors),
+                      file=sys.stderr)
+                if len(errors) > 1:
+                    print(f"\nfound {len(errors)} problems", file=sys.stderr)
+            return 1
         native = {} if "--no-native" in sys.argv else compile_native(funcs)
         import time as _t
         t0 = _t.perf_counter()

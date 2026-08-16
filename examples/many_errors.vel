@@ -1,0 +1,21 @@
+// v1.0: Velaris reports MULTIPLE problems in one run (one per function)
+// instead of stopping at the first. Three broken functions, one compile,
+// three errors - each with its own location and fixes.
+
+fn leaky(n: Int) -> Int {
+    print("oops")
+    return n
+}
+
+fn wrong_types(flag: Bool) -> Int {
+    return flag + 1
+}
+
+fn mixed_list() -> Int {
+    let xs = [1, 2, "three"]
+    return get(xs, 0)
+}
+
+fn main() uses io {
+    print(leaky(1))
+}
