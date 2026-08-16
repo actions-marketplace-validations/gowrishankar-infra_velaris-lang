@@ -85,21 +85,26 @@ promises are never silently skipped.
 
 ## Quick start
 
-Requires Python 3.10+. Optional (but recommended):
+Requires Python 3.10+. From a clone of this repo:
 
 ```
-pip install z3-solver llvmlite
+pip install ".[full]"
+velaris examples/hello.vel
 ```
+
+(`[full]` brings z3-solver for compile-time proofs and llvmlite for
+native speed; plain `pip install .` works too — promises are then
+checked at runtime and everything runs interpreted.)
 
 Without `z3-solver`, promises are checked at runtime instead of proven.
 Without `llvmlite`, everything runs interpreted. Nothing else changes.
 
-Run a program:
+Run a program (either form works):
 
 ```
-python velaris.py examples/hello.vel
-python velaris.py examples/bench.vel --time
-python velaris.py examples/proof_catch.vel        # watch a proof reject a bug
+velaris examples/hello.vel
+velaris examples/bench.vel --time
+velaris examples/proof_catch.vel        # watch a proof reject a bug
 ```
 
 **Zero-install:** open `playground/index.html` in any browser to run

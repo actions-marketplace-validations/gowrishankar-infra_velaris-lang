@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Velaris v1.7 — "The language where you can trust code you didn't write."
+Velaris v1.8 — "The language where you can trust code you didn't write."
+
+New in v1.8: a real install.
+    pip install .          (from a clone; add [full] for proofs + native)
+    velaris program.vel    (the command, anywhere)
+    import "std.vel" now finds the shipped standard library from any
+    folder - imports check relative-to-your-file first, then stdlib.
 
 New in v1.7: GENERICS - one function, every type.
     fn first(xs: List of T) -> T for any T
@@ -44,6 +50,7 @@ New in v1.0: the testers' release.
     * --version prints the version.
 
 Usage:
+  velaris program.vel                      run a program (after pip install)
   python velaris.py program.vel            run a program
   python velaris.py program.vel --json     errors as machine-readable JSON
   python velaris.py program.vel --time     show how long the run took
@@ -135,7 +142,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.7.0"
+VERSION = "1.8.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -773,6 +780,13 @@ def load_program(entry: str):
         try:
             source = open(path, encoding="utf-8").read()
         except OSError:
+            if importer is not None:
+                shipped = os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)),
+                    "stdlib", os.path.basename(path))
+                if os.path.exists(shipped):
+                    visited.discard(ap)
+                    return load(shipped, importer, iline)
             if importer is None:
                 raise VelarisError("E001", f"cannot find file '{path}'", 1,
                     fixes=["check the file name spelling",
