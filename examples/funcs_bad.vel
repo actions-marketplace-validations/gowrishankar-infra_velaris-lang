@@ -1,0 +1,13 @@
+// An effectful function cannot travel as a value - if it could, a
+// "pure" helper taking a function could secretly print, fetch, or
+// write files through it. Rejected at compile time.
+
+fn shout(n: Int) -> Int uses io {
+    print("processing " + n)
+    return n
+}
+
+fn main() uses io {
+    let f = shout
+    print(f(1))
+}

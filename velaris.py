@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Velaris v1.5 — "The language where you can trust code you didn't write."
+Velaris v1.6 — "The language where you can trust code you didn't write."
+
+New in v1.6: FUNCTIONS ARE VALUES - pass them to other functions.
+    fn apply(xs: List of Int, f: fn(Int) -> Int) -> List of Int { ... }
+    apply(nums, double)
+    Only PURE functions (no effects, no fail) can be passed - so a
+    passed-in function can never smuggle hidden behavior.
 
 New in v1.5: failure is visible and UNIGNORABLE.
     fn parse(t: Text) -> Int or fail { ... fail "reason" ... }
@@ -121,7 +127,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -174,6 +180,38 @@ def lex(source: str) -> list[Token]:
             tokens.append(Token(kind, text, line))
     tokens.append(Token("EOF", "", line))
     return tokens
+
+
+def fmt_fn_type(param_types: list, ret: str | None) -> str:
+    s = "fn(" + ", ".join(param_types) + ")"
+    if ret and ret != "Unit":
+        s += f" -> {ret}"
+    return s
+
+
+def fn_sig_parts(t: str):
+    """Split 'fn(A, B) -> R' into ([A, B], R). None if not a fn type."""
+    if not t.startswith("fn("):
+        return None
+    depth, i, start, parts = 0, 3, 3, []
+    while i < len(t):
+        c = t[i]
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            if depth == 0:
+                break
+            depth -= 1
+        elif c == "," and depth == 0:
+            parts.append(t[start:i].strip())
+            start = i + 1
+        i += 1
+    last = t[start:i].strip()
+    if last:
+        parts.append(last)
+    rest = t[i + 1:]
+    ret = rest[4:].strip() if rest.startswith(" -> ") else "Unit"
+    return parts, ret
 
 
 ESCAPES = {"n": "\n", "t": "\t", '"': '"', "\\": "\\"}
@@ -473,6 +511,20 @@ class Parser:
         return ExprStmt(self.parse_expr(), t.line)
 
     def parse_type(self) -> str:
+        if self.peek().kind == "KEYWORD" and self.peek().text == "fn":
+            self.next()
+            self.expect("OP", "(")
+            parts = []
+            while self.peek().text != ")":
+                parts.append(self.parse_type())
+                if self.peek().text == ",":
+                    self.next()
+            self.expect("OP", ")")
+            ret = None
+            if self.peek().kind == "ARROW":
+                self.next()
+                ret = self.parse_type()
+            return fmt_fn_type(parts, ret)
         t = self.expect("IDENT")
         if t.text == "Map":
             of = self.expect("IDENT")
@@ -764,6 +816,26 @@ BUILTINS = {
 
 KNOWN_TYPES = {"Int", "Text", "Bool", "Float"}
 
+def local_names_of(fn: Function) -> set[str]:
+    out = {p for p, _ in fn.params}
+
+    def gather(stmts):
+        for s in stmts:
+            if isinstance(s, (Let, Assign)):
+                out.add(s.name)
+            elif isinstance(s, If):
+                gather(s.then); gather(s.other)
+            elif isinstance(s, While):
+                gather(s.body)
+            elif isinstance(s, Check):
+                if s.ok_name:
+                    out.add(s.ok_name)
+                out.add(s.fail_name)
+                gather(s.ok_body); gather(s.fail_body)
+    gather(fn.body)
+    return out
+
+
 def check_effects(funcs: list[Function], errors: list) -> None:
     table = {f.name: f for f in funcs}
 
@@ -776,8 +848,16 @@ def check_effects(funcs: list[Function], errors: list) -> None:
                           fixes=[f"define 'fn {name}(...)' somewhere",
                                  "check the spelling of the name"])
 
+    locals_cache: dict[str, set] = {}
+
     def walk(node, fn: Function):
         if isinstance(node, Call):
+            if fn.name not in locals_cache:
+                locals_cache[fn.name] = local_names_of(fn)
+            if node.name in locals_cache[fn.name]:
+                for a in node.args:          # a passed-in function is pure
+                    walk(a, fn)
+                return
             needed = effects_of_callee(node.name, node.line)
             missing = needed - fn.effects
             if missing:
@@ -834,6 +914,12 @@ def check_effects(funcs: list[Function], errors: list) -> None:
 
     def walk_pure(node, fn: Function, where: str):
         if isinstance(node, Call):
+            if fn.name not in locals_cache:
+                locals_cache[fn.name] = local_names_of(fn)
+            if node.name in locals_cache[fn.name]:
+                for a in node.args:
+                    walk_pure(a, fn, where)
+                return
             eff = effects_of_callee(node.name, node.line)
             if eff:
                 raise VelarisError("E310",
@@ -921,6 +1007,11 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
             rest = t[len("Map of "):]
             key, sep, val = rest.partition(" to ")
             return sep != "" and key in ("Text", "Int") and valid_type(val)
+        sig = fn_sig_parts(t)
+        if sig is not None:
+            parts, ret = sig
+            return all(valid_type(p) for p in parts) and (
+                ret == "Unit" or valid_type(ret))
         return False
 
     TYPE_HINT = ("use Int, Text, Bool, a record name, or "
@@ -977,11 +1068,26 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
             if isinstance(node, Str):  return "Text"
             if isinstance(node, Bool): return "Bool"
             if isinstance(node, Var):
-                if node.name not in env:
-                    raise VelarisError("E402", f"unknown variable '{node.name}'",
-                                      node.line,
-                                      fixes=[f"declare it first: let {node.name} = ..."])
-                return env[node.name]
+                if node.name in env:
+                    return env[node.name]
+                f2 = table.get(node.name)
+                if f2 is not None:
+                    if f2.effects:
+                        raise VelarisError("E530",
+                            f"'{f2.name}' uses effects "
+                            f"({', '.join(sorted(f2.effects))}) - only pure "
+                            f"functions can be passed as values", node.line,
+                            fixes=["pass a function with no 'uses' clause"])
+                    if f2.can_fail:
+                        raise VelarisError("E530",
+                            f"'{f2.name}' can fail - only functions that "
+                            f"cannot fail can be passed as values", node.line,
+                            fixes=["pass a function without 'or fail'"])
+                    return fmt_fn_type([t for _, t in f2.params],
+                                       f2.return_type)
+                raise VelarisError("E402", f"unknown variable '{node.name}'",
+                                  node.line,
+                                  fixes=[f"declare it first: let {node.name} = ..."])
             if isinstance(node, Not):
                 t = infer(node.value)
                 if t != "Bool":
@@ -1143,6 +1249,22 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                         f"'get' needs an Int position, but this is {t1}",
                         node.line, fixes=["positions are numbers, e.g. get(xs, 0)"])
                 return elem
+            if isinstance(node, Call) and node.name in env \
+                    and env[node.name].startswith("fn("):
+                parts, ret = fn_sig_parts(env[node.name])
+                if len(node.args) != len(parts):
+                    raise VelarisError("E401",
+                        f"'{node.name}' expects {len(parts)} argument(s) "
+                        f"but got {len(node.args)}", node.line,
+                        fixes=[f"pass exactly {len(parts)} argument(s)"])
+                for i, (a, want) in enumerate(zip(node.args, parts), 1):
+                    got = infer(a)
+                    if got != want:
+                        raise VelarisError("E501",
+                            f"'{node.name}' needs {want} for argument {i}, "
+                            f"but this is {got}", node.line,
+                            fixes=[f"pass a {want} value"])
+                return ret
             if isinstance(node, Call):
                 cfn = table.get(node.name)
                 if cfn is not None and cfn.can_fail and not allow_fail:
@@ -2066,6 +2188,8 @@ class RecordValue:
 
 
 def to_text(v) -> str:
+    if isinstance(v, Function):
+        return f"fn {v.name}"
     if isinstance(v, dict):
         return "{" + ", ".join(f"{to_text(k)}: {to_text(x)}"
                                for k, x in v.items()) + "}"
@@ -2192,6 +2316,10 @@ def interpret(funcs: list[Function], native: dict | None = None) -> None:
         if name in native:
             return native[name](*args)     # machine code, C-like speed
         fn = table[name]
+        return call_function(fn, args, line)
+
+    def call_function(fn: Function, args: list, line: int):
+        name = fn.name
         if len(args) != len(fn.params):
             raise VelarisError("E401",
                 f"'{name}' expects {len(fn.params)} argument(s) but got {len(args)}",
@@ -2290,11 +2418,17 @@ def interpret(funcs: list[Function], native: dict | None = None) -> None:
         if isinstance(node, Str):  return node.value
         if isinstance(node, Bool): return node.value
         if isinstance(node, Var):
-            if node.name not in env:
-                raise VelarisError("E402", f"unknown variable '{node.name}'", node.line,
-                                  fixes=[f"declare it first: let {node.name} = ..."])
-            return env[node.name]
+            if node.name in env:
+                return env[node.name]
+            if node.name in table:
+                return table[node.name]        # a function, as a value
+            raise VelarisError("E402", f"unknown variable '{node.name}'", node.line,
+                              fixes=[f"declare it first: let {node.name} = ..."])
         if isinstance(node, Call):
+            if node.name in env and isinstance(env[node.name], Function):
+                return call_function(env[node.name],
+                                     [eval_(a, env) for a in node.args],
+                                     node.line)
             return call(node.name, [eval_(a, env) for a in node.args], node.line)
         if isinstance(node, Not):
             return not eval_(node.value, env)
