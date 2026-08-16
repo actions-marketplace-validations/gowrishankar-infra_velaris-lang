@@ -1,0 +1,26 @@
+// v0.4: Velaris can finally count. Loops + changeable variables.
+
+fn sum_to(n: Int) -> Int {
+    let total = 0
+    let i = 1
+    while i <= n {
+        total = total + i
+        i = i + 1
+    }
+    return total
+}
+
+fn countdown(start: Int) uses io {
+    let i = start
+    while i > 0 {
+        print(i)
+        i = i - 1
+    }
+    print("liftoff!")
+}
+
+fn main() uses io {
+    countdown(3)
+    print("sum of 1..10 = " + sum_to(10))
+    print("sum of 1..100 = " + sum_to(100))
+}

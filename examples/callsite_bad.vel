@@ -1,0 +1,19 @@
+// The other direction: discount PROMISES to only accept price >= 0,
+// and main tries to call it with -3. In every mainstream language this
+// is found (if ever) when the code runs. Velaris proves the violation
+// and rejects the file before anything executes.
+
+fn discount(price: Int) -> Int
+    requires price >= 0
+    ensures result >= 0
+{
+    if price > 100 {
+        return price - 10
+    }
+    return price
+}
+
+fn main() uses io {
+    print("ok: " + discount(50))
+    print("bad: " + discount(-3))
+}

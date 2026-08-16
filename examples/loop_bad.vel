@@ -1,0 +1,12 @@
+// Sneaky type switch inside a loop: total starts as a number,
+// then someone tries to put text into it. Rejected before running.
+
+fn main() uses io {
+    let total = 0
+    let i = 0
+    while i < 3 {
+        total = "oops"
+        i = i + 1
+    }
+    print(total)
+}

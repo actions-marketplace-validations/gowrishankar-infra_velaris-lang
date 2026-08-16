@@ -1,0 +1,15 @@
+// An AI implemented discount with a hidden bug: for prices under 10
+// the result goes NEGATIVE.
+// Since v0.7 Velaris PROVES the promise false BEFORE running anything.
+// Notice: not even the first print happens - the file is simply rejected.
+
+fn discount(price: Int) -> Int
+    ensures result >= 0
+{
+    return price - 10
+}
+
+fn main() uses io {
+    print("discount(200) = " + discount(200))
+    print("discount(5) = " + discount(5))
+}

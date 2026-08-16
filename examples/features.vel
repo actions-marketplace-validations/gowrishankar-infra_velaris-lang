@@ -1,0 +1,42 @@
+// v0.6: Velaris feels like a real language now.
+// Negative numbers, and / or / not, and lists - with a contract on top.
+
+fn biggest(xs: List of Int) -> Int
+    requires length(xs) > 0
+{
+    let best = get(xs, 0)
+    let i = 1
+    while i < length(xs) {
+        if get(xs, i) > best {
+            best = get(xs, i)
+        }
+        i = i + 1
+    }
+    return best
+}
+
+fn describe(n: Int) -> Text {
+    if n < 0 and n > -10 {
+        return "small negative"
+    }
+    if n < 0 or n == 0 {
+        return "big negative or zero"
+    }
+    if not (n > 100) {
+        return "normal"
+    }
+    return "big"
+}
+
+fn main() uses io {
+    let scores = [42, -7, 99, 15]
+    print("scores: " + scores)
+    print("count: " + length(scores))
+    print("biggest: " + biggest(scores))
+    let more = push(scores, 120)
+    print("after push: " + more + " -> biggest now " + biggest(more))
+    print("describe(-3): " + describe(-3))
+    print("describe(-50): " + describe(-50))
+    print("describe(7): " + describe(7))
+    print("describe(500): " + describe(500))
+}

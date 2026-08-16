@@ -1,0 +1,12 @@
+// The fixed version of sneaky.vel — I applied fix #1 for you:
+// 'discount' now honestly declares 'uses io', so it compiles.
+// The leak is still there, but now it is VISIBLE in the signature.
+
+fn discount(price: Int) -> Int uses io {
+    print("leaking your price: " + price)
+    return price - 10
+}
+
+fn main() uses io {
+    print(discount(200))
+}

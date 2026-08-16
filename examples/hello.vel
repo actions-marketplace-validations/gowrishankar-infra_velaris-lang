@@ -1,0 +1,23 @@
+// An honest program. Effects are declared, so it compiles.
+
+fn add(a: Int, b: Int) -> Int {
+    return a + b
+}
+
+fn discount(price: Int) -> Int {
+    if price > 100 {
+        return price - 10
+    }
+    return price
+}
+
+fn greet(name: Text) uses io {
+    print("hello, " + name)
+}
+
+fn main() uses io {
+    greet("architect")
+    let total = add(40, 2)
+    print("total: " + total)
+    print("discounted 150: " + discount(150))
+}

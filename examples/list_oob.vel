@@ -1,0 +1,7 @@
+// Asking for position 10 in a 3-item list: a clean runtime error
+// with the actual numbers, instead of a crash or silent garbage.
+
+fn main() uses io {
+    let xs = [1, 2, 3]
+    print(get(xs, 10))
+}

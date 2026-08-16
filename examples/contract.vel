@@ -1,0 +1,28 @@
+// v0.5: contracts. A function's signature now states PROMISES,
+// and Velaris enforces every one of them.
+
+fn discount(price: Int) -> Int
+    requires price >= 0
+    ensures result >= 0
+    ensures result <= price
+{
+    if price > 100 {
+        return price - 10
+    }
+    return price
+}
+
+fn absolute(n: Int) -> Int
+    ensures result >= 0
+{
+    if n < 0 {
+        return 0 - n
+    }
+    return n
+}
+
+fn main() uses io {
+    print("discount(150) = " + discount(150))
+    print("discount(50) = " + discount(50))
+    print("absolute(0 - 7) = " + absolute(0 - 7))
+}

@@ -1,0 +1,6 @@
+// A list cannot secretly mix types - rejected before running.
+
+fn main() uses io {
+    let xs = [1, 2, "three"]
+    print(get(xs, 0))
+}

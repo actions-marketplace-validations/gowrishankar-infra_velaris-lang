@@ -1,0 +1,25 @@
+// v0.2 showcase: five separate effects, each declared honestly.
+
+fn dice() -> Int uses rand {
+    return random(6) + 1
+}
+
+fn timestamp() -> Int uses clock {
+    return now()
+}
+
+fn save_report(text: Text) uses fs {
+    write_file("report.txt", text)
+}
+
+fn download(url: Text) -> Text uses net {
+    return fetch(url)
+}
+
+fn main() uses io, fs, net, clock, rand {
+    print("dice roll: " + dice())
+    print("time now: " + timestamp())
+    print(download("example.com/data"))
+    save_report("all systems working")
+    print("saved report.txt with: " + read_file("report.txt"))
+}

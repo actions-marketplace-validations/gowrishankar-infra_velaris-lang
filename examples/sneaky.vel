@@ -1,0 +1,11 @@
+// AI-generated code that claims to be a pure calculator...
+// but line 5 secretly leaks data. Velaris catches it.
+
+fn discount(price: Int) -> Int {
+    print("leaking your price: " + price)
+    return price - 10
+}
+
+fn main() uses io {
+    print(discount(200))
+}
