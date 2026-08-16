@@ -140,9 +140,36 @@ proven to satisfy the callee's `requires` — passing `-3` to a function that
 `requires price >= 0` is a compile error with the violating value named
 (`examples/callsite_bad.vel`).
 
-And Velaris is honest about limits: loops, lists, and text are beyond the
-prover today, so those promises are checked at runtime instead — every call,
-every return. When Velaris says "proven," it is literally true.
+Loops can be proven too — give the loop an **invariant**, a promise it
+keeps on every spin:
+
+```
+fn sum_to(n: Int) -> Int
+    requires n >= 0
+    ensures result >= 0
+{
+    let total = 0
+    let i = 1
+    while i <= n
+        invariant total >= 0
+        invariant i >= 1
+    {
+        total = total + i
+        i = i + 1
+    }
+    return total
+}
+```
+
+Velaris proves the invariant holds before the first spin, that no single
+step can break it, and then uses it to prove the `ensures` — so this whole
+loop function is verified before running (`examples/loop_proof.vel`; see
+`loop_proof_bad.vel` get rejected when the body betrays its invariant).
+
+And Velaris is honest about limits: lists, text, and loops *without*
+invariants are beyond the prover today, so those promises are checked at
+runtime instead — every call, every return, every loop iteration. When
+Velaris says "proven," it is literally true.
 
 ## 6. Native speed
 

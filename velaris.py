@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """
-Velaris v0.9 — "The language where you can trust code you didn't write."
+Velaris v0.10 — "The language where you can trust code you didn't write."
+
+New in v0.10: LOOP INVARIANTS - the prover learned loops.
+    while i <= n
+        invariant total >= 0
+    { ... }
+    Velaris proves the invariant holds at loop entry, survives every step,
+    and uses it to prove the function's promises. Unproven invariants are
+    still checked at runtime on every iteration.
 
 New in v0.9: NATIVE SPEED via LLVM. Pure Int math functions (no effects,
     no contracts, no lists/text) are compiled to real machine code and
@@ -55,7 +63,7 @@ from dataclasses import dataclass, field
 # 1. LEXER — turn raw text into a list of tokens
 # ---------------------------------------------------------------------------
 
-KEYWORDS = {"fn", "let", "return", "if", "else", "uses", "true", "false", "while", "requires", "ensures", "and", "or", "not"}
+KEYWORDS = {"fn", "let", "return", "if", "else", "uses", "true", "false", "while", "requires", "ensures", "and", "or", "not", "invariant"}
 
 TOKEN_SPEC = [
     ("COMMENT", r"//[^\n]*"),
@@ -123,7 +131,9 @@ class Return:   value: object; line: int
 @dataclass
 class If:       cond: object; then: list; other: list; line: int
 @dataclass
-class While:    cond: object; body: list; line: int
+class While:
+    cond: object; body: list; line: int
+    invariants: list = field(default_factory=list)   # [(expr, line)]
 @dataclass
 class Assign:   name: str; value: object; line: int
 @dataclass
@@ -255,8 +265,13 @@ class Parser:
         if t.kind == "KEYWORD" and t.text == "while":
             self.next()
             cond = self.parse_expr()
+            invs = []
+            while (self.peek().kind == "KEYWORD"
+                   and self.peek().text == "invariant"):
+                kw = self.next()
+                invs.append((self.parse_expr(), kw.line))
             body = self.parse_block()
-            return While(cond, body, t.line)
+            return While(cond, body, t.line, invs)
         if t.kind == "IDENT" and self.toks[self.i + 1].text == "=":
             self.next()
             self.expect("OP", "=")
@@ -456,6 +471,8 @@ def check_effects(funcs: list[Function]) -> None:
                 walk(s, fn)
         elif isinstance(node, While):
             walk(node.cond, fn)
+            for inv_expr, _ in node.invariants:
+                walk_pure(inv_expr, fn, "invariant")
             for s in node.body:
                 walk(s, fn)
         elif isinstance(node, Assign):
@@ -700,6 +717,11 @@ def check_types(funcs: list[Function]) -> None:
                     raise VelarisError("E504",
                         f"'while' needs a yes/no condition (Bool), but this is {c}",
                         node.line, fixes=["use a comparison like i < 10"])
+                for inv_expr, iline in node.invariants:
+                    if infer(inv_expr) != "Bool":
+                        raise VelarisError("E505",
+                            "'invariant' must be a yes/no promise (Bool)",
+                            iline, fixes=["use a comparison like total >= 0"])
                 for s in node.body:
                     check_stmt(s)
             elif isinstance(node, Assign):
@@ -903,6 +925,57 @@ def check_proofs(funcs: list[Function]) -> None:
             for it in node.items:
                 scan_calls(it, env, ctx)
 
+    def assigned_names(stmts, out):
+        for s in stmts:
+            if isinstance(s, (Let, Assign)):
+                out.add(s.name)
+            elif isinstance(s, If):
+                assigned_names(s.then, out)
+                assigned_names(s.other, out)
+            elif isinstance(s, While):
+                assigned_names(s.body, out)
+        return out
+
+    def prove_invariant(inv_expr, iline, env, ctx, where):
+        """Prove one invariant under the given state; honest wording only."""
+        try:
+            goal = to_z3(inv_expr, env, None)
+        except Unprovable:
+            return                       # can't model it; runtime will check
+        solver = z3.Solver()
+        solver.set("timeout", 3000)
+        solver.add(*ctx.assum)
+        solver.add(*ctx.conds)
+        solver.add(z3.Not(goal))
+        verdict = solver.check()
+        if verdict == z3.sat:
+            m = solver.model()
+            names = sorted(n for n in expr_vars(inv_expr) if n in env)
+            vals = ", ".join(
+                f"{n} = {m.eval(env[n], model_completion=True)}"
+                for n in names)
+            raise VelarisError("E703",
+                f"cannot prove the loop keeps 'invariant "
+                f"{expr_str(inv_expr)}' {where} in '{ctx.caller}' - "
+                f"the promises allow: {vals}", iline,
+                fixes=["fix the loop so the invariant always holds",
+                       "or strengthen the invariant(s) to rule this "
+                       "state out",
+                       "or remove the invariant (it will then be checked "
+                       "at runtime instead)"])
+        if verdict != z3.unsat:
+            raise Unprovable()
+
+    def havoc_like(env, names):
+        """Fresh unknowns for every variable the loop can change."""
+        out = dict(env)
+        for n in names:
+            if n in env and env[n].sort() == z3.BoolSort():
+                out[n] = fresh("Bool", n)
+            else:
+                out[n] = fresh("Int", n)
+        return out
+
     def explore(stmts, env, ctx):
         i = 0
         while i < len(stmts):
@@ -911,7 +984,7 @@ def check_proofs(funcs: list[Function]) -> None:
                 env[s.name] = to_z3(s.value, env, ctx)
             elif isinstance(s, Return):
                 r = FELL_OFF if s.value is None else to_z3(s.value, env, ctx)
-                return [(ctx, r)]
+                return [(ctx, r, dict(env))]
             elif isinstance(s, If):
                 c = to_z3(s.cond, env, ctx)
                 rest = stmts[i + 1:]
@@ -919,15 +992,58 @@ def check_proofs(funcs: list[Function]) -> None:
                 no = explore(list(s.other) + rest, dict(env),
                              ctx.fork(z3.Not(c)))
                 return yes + no
+            elif isinstance(s, While):
+                if not s.invariants:
+                    raise Unprovable()   # no bridge across this loop
+                # 1. ENTRY: every invariant must hold before the first spin
+                for inv_expr, iline in s.invariants:
+                    prove_invariant(inv_expr, iline, env, ctx,
+                                    "when the loop starts")
+                changed = assigned_names(s.body, set())
+                # 2. PRESERVATION: from ANY state the invariants allow,
+                #    one loop step must land back inside the invariants
+                env_h = havoc_like(env, changed)
+                facts = []
+                for inv_expr, _ in s.invariants:
+                    try:
+                        facts.append(to_z3(inv_expr, env_h, None))
+                    except Unprovable:
+                        pass
+                cond_h = to_z3(s.cond, env_h, ctx)
+                ctx_body = Ctx(ctx.conds + facts + [cond_h],
+                               list(ctx.assum) + facts + [cond_h],
+                               list(ctx.param_assum), ctx.caller)
+                exits = []
+                for pctx, ret, penv in explore(list(s.body), dict(env_h),
+                                               ctx_body):
+                    if ret is FELL_OFF:
+                        for inv_expr, iline in s.invariants:
+                            prove_invariant(inv_expr, iline, penv, pctx,
+                                            "after one loop step")
+                    else:
+                        exits.append((pctx, ret, penv))  # return inside loop
+                # 3. AFTERWARD: all we know is invariants hold, cond is false
+                env_a = havoc_like(env, changed)
+                facts_a = []
+                for inv_expr, _ in s.invariants:
+                    try:
+                        facts_a.append(to_z3(inv_expr, env_a, None))
+                    except Unprovable:
+                        pass
+                cond_a = to_z3(s.cond, env_a, ctx)
+                ctx_after = Ctx(ctx.conds + facts_a + [z3.Not(cond_a)],
+                                list(ctx.assum) + facts_a + [z3.Not(cond_a)],
+                                list(ctx.param_assum), ctx.caller)
+                return exits + explore(stmts[i + 1:], env_a, ctx_after)
             elif isinstance(s, ExprStmt):
                 try:
                     to_z3(s.expr, env, ctx)
                 except Unprovable:
                     scan_calls(s.expr, env, ctx)   # still verify call sites
             else:
-                raise Unprovable()                 # while-loops etc.
+                raise Unprovable()
             i += 1
-        return [(ctx, FELL_OFF)]
+        return [(ctx, FELL_OFF, dict(env))]
 
     for fn in funcs:
         env = {}
@@ -946,7 +1062,7 @@ def check_proofs(funcs: list[Function]) -> None:
             paths = explore(list(fn.body), dict(env), ctx)
             if not fn.ensures:
                 continue
-            for pctx, ret in paths:
+            for pctx, ret, _ in paths:
                 if ret is FELL_OFF:
                     raise Unprovable()
                 for ens_expr, cline in fn.ensures:
@@ -984,6 +1100,8 @@ def check_proofs(funcs: list[Function]) -> None:
                         raise Unprovable()
         except Unprovable:
             continue                    # runtime promise checks still guard
+        except z3.Z3Exception:
+            continue                    # solver hiccup: runtime still guards
 
 
 # ---------------------------------------------------------------------------
@@ -1042,6 +1160,8 @@ def native_eligible(funcs: list[Function]) -> set[str]:
                 for x in s.then + s.other:
                     ws(x)
             elif isinstance(s, While):
+                if s.invariants:
+                    ok[0] = False      # invariant checks must not be skipped
                 we(s.cond)
                 for x in s.body:
                     ws(x)
@@ -1344,9 +1464,24 @@ def interpret(funcs: list[Function], native: dict | None = None) -> None:
             for s in branch:
                 run(s, env)
         elif isinstance(node, While):
+            def check_invariants():
+                for inv_expr, iline in node.invariants:
+                    if not eval_(inv_expr, env):
+                        names = sorted(n for n in expr_vars(inv_expr)
+                                       if n in env)
+                        vals = ", ".join(f"{n} = {to_text(env[n])}"
+                                         for n in names)
+                        raise VelarisError("E704",
+                            f"loop broke its promise: invariant "
+                            f"{expr_str(inv_expr)}  ({vals})", iline,
+                            fixes=["fix the loop body so the promise holds "
+                                   "on every step",
+                                   "or fix the invariant if it is wrong"])
+            check_invariants()
             while eval_(node.cond, env):
                 for s in node.body:
                     run(s, env)
+                check_invariants()
         elif isinstance(node, Assign):
             env[node.name] = eval_(node.value, env)
 

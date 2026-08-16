@@ -14,6 +14,8 @@ EXPECT = {
     "sneaky_fixed.vel": "RUNS",     "loop.vel": "RUNS",
     "contract.vel": "RUNS",         "features.vel": "RUNS",
     "compose.vel": "RUNS",          "bench.vel": "RUNS",
+    "loop_proof.vel": "RUNS",
+    "loop_proof_bad.vel": "REJECTED",
     "sneaky.vel": "REJECTED",       "caught.vel": "REJECTED",
     "types_bad.vel": "REJECTED",    "loop_bad.vel": "REJECTED",
     "contract_broken.vel": "REJECTED",

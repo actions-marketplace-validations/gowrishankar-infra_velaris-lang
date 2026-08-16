@@ -1,0 +1,22 @@
+// The loop body SUBTRACTS, so 'total' goes negative - the invariant
+// cannot survive a step. Velaris shows a state, allowed by the promises,
+// that one loop step breaks. Rejected before running.
+
+fn drain(n: Int) -> Int
+    requires n >= 0
+    ensures result >= 0
+{
+    let total = 0
+    let i = 1
+    while i <= n
+        invariant total >= 0
+    {
+        total = total - i
+        i = i + 1
+    }
+    return total
+}
+
+fn main() uses io {
+    print(drain(3))
+}

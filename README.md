@@ -58,9 +58,12 @@ error[E700] promise cannot be kept: 'pay_bonus' ensures result >= salary
 
 Proofs are *modular*: proving function A uses the contracts of the functions
 it calls, and every call site is proven to satisfy the callee's `requires`
-(error `E701`). Anything the prover can't handle (loops, lists, text) falls
-back silently to runtime contract checks — Velaris never claims "proven"
-unless it is literally true.
+(error `E701`). And loops are provable too: give a `while` loop an
+`invariant` clause and Velaris proves it holds at entry, survives every
+step, and carries the function's promises across the loop
+(`examples/loop_proof.vel`). Anything the prover can't handle (lists, text,
+loops without invariants) falls back silently to runtime contract checks —
+Velaris never claims "proven" unless it is literally true.
 
 Every error has a code, a location, a plain-English message, and numbered
 fixes — and `--json` emits the same error machine-readable, designed for AI
@@ -164,8 +167,10 @@ pipeline order.
 
 ## Honest limitations (a.k.a. the roadmap)
 
-- Proofs cover straight-line Int/Bool code; **loops need invariants** and
-  **lists need Z3's array theory** — both planned, both genuinely hard.
+- Loops are proven only when you supply `invariant` clauses; **inferring
+  invariants automatically** and **list proofs via Z3's array theory**
+  remain open — both genuinely hard. Unproven invariants are checked at
+  runtime on every iteration instead.
 - `fetch` is simulated (deterministic, offline-friendly) until the effect
   system meets real sockets.
 - Native compilation covers pure Int functions only, so far.

@@ -1,0 +1,25 @@
+// v0.10: the prover learned loops. An 'invariant' is a promise the loop
+// keeps on EVERY spin. Velaris proves it holds at the start, survives
+// every step, and uses it to prove the function's ensures - so a function
+// WITH A LOOP is now fully proven before running.
+
+fn sum_to(n: Int) -> Int
+    requires n >= 0
+    ensures result >= 0
+{
+    let total = 0
+    let i = 1
+    while i <= n
+        invariant total >= 0
+        invariant i >= 1
+    {
+        total = total + i
+        i = i + 1
+    }
+    return total
+}
+
+fn main() uses io {
+    print("sum_to(10) = " + sum_to(10))
+    print("sum_to(100) = " + sum_to(100))
+}
