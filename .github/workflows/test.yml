@@ -1,0 +1,36 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.10", "3.12"]
+        deps: [full, minimal]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install (full - with Z3 proofs and LLVM native)
+        if: matrix.deps == 'full'
+        run: pip install ".[full]"
+      - name: Install (minimal - runtime checks, interpreted)
+        if: matrix.deps == 'minimal'
+        run: pip install .
+      - name: Version
+        run: velaris --version
+      - name: Test suite
+        run: python run_tests.py
+      - name: Formatter check (repo is canonically formatted)
+        shell: bash
+        run: velaris fmt examples/*.vel stdlib/*.vel --check
+      - name: Playground builds
+        run: python build_playground.py

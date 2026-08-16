@@ -48,8 +48,18 @@ def main() -> int:
     here = Path(__file__).parent
     examples = here / "examples"
     extra = [a for a in sys.argv[1:] if a.startswith("--")]
+    expect = dict(EXPECT)
+    try:
+        import z3  # noqa: F401
+    except ImportError:
+        # Without the prover, proof_catch's bug is only reachable for
+        # years > 30, which its main deliberately never calls - that IS
+        # the demo's point. It runs clean under runtime checks.
+        expect["proof_catch.vel"] = "RUNS"
+        print("note: z3-solver absent - proof_catch.vel expected to RUN "
+              "(its bug is only findable by proof)")
     failed = 0
-    for name, want in EXPECT.items():
+    for name, want in expect.items():
         path = examples / name
         if not path.exists():
             print(f"MISSING   {name}")

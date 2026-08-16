@@ -1,5 +1,7 @@
 # Velaris
 
+![tests](https://github.com/gowrishankar-infra/velaris-lang/actions/workflows/test.yml/badge.svg)
+
 **The language where you can trust code you didn't write.**
 
 AI now writes a huge share of the world's code, but humans can't review it at

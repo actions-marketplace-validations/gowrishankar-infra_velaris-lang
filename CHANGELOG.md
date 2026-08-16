@@ -1,0 +1,64 @@
+# Velaris changelog
+
+## 1.11 - Language server
+`velaris lsp`: standard LSP over stdio. Effect/type errors on every
+keystroke, full pipeline with Z3 proofs on save; per-file diagnostics
+(bugs in imported files squiggle in those files). Dependency-free VS
+Code client bundled in `editor/vscode`.
+
+## 1.10 - Formatter
+`velaris fmt` (in-place, `--stdout`, `--check`). Comment-preserving,
+idempotent, proven meaning-safe by re-running the whole suite on
+formatted code. All repo examples reformatted.
+
+## 1.9 - REPL
+`velaris repl`: loose lines run immediately; fn/record/import
+definitions pass effects, types, and proofs before joining the session.
+CLI subcommands (run / repl / version). Unknown functions became a
+friendly E200 everywhere.
+
+## 1.8 - Real installation
+`pip install ".[full]"` and a `velaris` command. Standard-library
+search path: `import "std.vel"` works from any folder.
+
+## 1.7 - Generics + first stdlib
+`for any T` with call-site inference and clear conflict errors
+(bindings shown). `stdlib/std.vel`: first/last/reverse/index_of/
+contains_item/apply_to_each - written in Velaris.
+
+## 1.6 - First-class functions
+`fn(Int) -> Int` as a type; pass by name; call through parameters.
+Only pure functions travel as values, so nothing is smuggled.
+
+## 1.5 - Unignorable failure
+`-> Int or fail`, `fail "reason"`, mandatory `check { ok / fail }`
+handling, `try` propagation. Ignoring failure is a compile error.
+
+## 1.4 - Maps
+`{"a": 1}` typed `Map of K to V`; get/has/put/keys/length; typed keys
+and values; clean E610 for missing keys.
+
+## 1.3 - Float
+Decimal numbers with NO silent Int/Float mixing - conversion is
+explicit (`to_float`, `round`). Proper negation node.
+
+## 1.2 - Browser playground
+The real compiler running in-browser via Pyodide. Zero install.
+
+## 1.1 - Escapes + editor
+String escapes (\n \t \" \\) with friendly E002; VS Code syntax
+highlighting.
+
+## 1.0 - Testers' release
+Multi-error reporting (all broken functions in one run, JSON array for
+agents), `to_text`, `--version`, tutorial.
+
+## 0.x - The climb
+0.1 effects (io) - 0.2 effect split (io/net/fs/clock/rand) - 0.3 type
+checking - 0.4 loops - 0.5 contracts (requires/ensures) - 0.6 lists,
+and/or/not, negatives - 0.7 Z3 compile-time proofs - 0.8 modular
+verification with sound false-alarm discipline - 0.9 LLVM native
+compilation (~10,000x on hot loops) - 0.10 loop invariants - 0.11 real
+HTTP fetch - 0.12 interactive input - 0.13 list proofs via array
+theory with bounds obligations - 0.14 else-if, %, text tools - 0.15
+records - 0.16 imports with per-file error blame.

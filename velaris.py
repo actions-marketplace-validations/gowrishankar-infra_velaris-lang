@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v1.11 — "The language where you can trust code you didn't write."
+Velaris v1.12 — "The language where you can trust code you didn't write."
+
+New in v1.12: continuous integration + repo hygiene.
+    Every push is tested by GitHub Actions on Linux and Windows,
+    Python 3.10 and 3.12, WITH and WITHOUT the optional dependencies -
+    plus formatter and playground checks. CHANGELOG.md tells the story.
 
 New in v1.11: a LANGUAGE SERVER - errors as you type, in any LSP editor.
     velaris lsp
@@ -163,7 +168,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.11.0"
+VERSION = "1.12.0"
 import re
 import sys
 from dataclasses import dataclass, field

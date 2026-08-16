@@ -1,0 +1,39 @@
+# Contributing to Velaris
+
+Thanks for looking under the hood.
+
+## Setup
+
+```
+pip install ".[full]"     # z3-solver for proofs, llvmlite for native
+python run_tests.py       # 39 example programs, each with a verdict
+```
+
+## The one rule
+
+Every change must keep `run_tests.py` green in BOTH modes - with the
+optional dependencies and without them (`pip install .` in a clean
+venv). CI enforces this across Linux/Windows and Python 3.10/3.12.
+
+## Layout
+
+Everything is one readable file, `velaris.py`, in pipeline order:
+lexer -> parser -> loader -> effect checker -> type checker -> proof
+checker (Z3) -> native compiler (LLVM) -> interpreter -> formatter ->
+LSP -> REPL -> CLI. Examples live in `examples/` (half are DESIGNED to
+be rejected - each rejection demonstrates a guarantee). The standard
+library is `stdlib/std.vel`, written in Velaris.
+
+## Adding a feature
+
+New syntax touches, in order: KEYWORDS/lexer, AST dataclasses, parser,
+expr_str/expr_vars, effect walker (and walk_pure if usable in
+contracts), type checker, prover (or an honest Unprovable fallback),
+native eligibility, interpreter, formatter spacing if needed. Add at
+least one RUNS example and one REJECTED example, register both in
+run_tests.py, and run `velaris fmt` on them.
+
+## Error style
+
+Every error: a code (Exyz), a plain-English message, a location, and
+numbered fixes. Never claim "proven" unless it is literally true.
