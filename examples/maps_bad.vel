@@ -1,0 +1,7 @@
+// A map cannot mix key types - Text keys and Int keys in one map is
+// a compile error, not a runtime surprise.
+
+fn main() uses io {
+    let m = {"a": 1, 2: 3}
+    print(m)
+}

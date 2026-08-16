@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v1.3 — "The language where you can trust code you didn't write."
+Velaris v1.4 — "The language where you can trust code you didn't write."
+
+New in v1.4: MAPS - lookup tables, written {"alice": 30, "bob": 25}.
+    Typed as: Map of Text to Int (keys are Text or Int).
+    get(m, key) reads, has(m, key) checks, put(m, key, v) returns a new
+    map, keys(m) lists the keys, length(m) counts entries.
 
 New in v1.3: Float - decimal numbers like 3.14.
     Int and Float never mix silently: 1 + 2.5 is a compile error with a
@@ -110,7 +115,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -231,6 +236,8 @@ class RecordDef:
     src_file: str = ""
 @dataclass
 class ListLit:  items: list; line: int
+@dataclass
+class MapLit:   entries: list; line: int         # [(key_expr, val_expr)]
 @dataclass
 class ExprStmt: expr: object; line: int
 
@@ -418,6 +425,17 @@ class Parser:
 
     def parse_type(self) -> str:
         t = self.expect("IDENT")
+        if t.text == "Map":
+            of = self.expect("IDENT")
+            if of.text != "of":
+                raise VelarisError("E100", "expected 'of' after 'Map'",
+                    of.line, fixes=["write map types like: Map of Text to Int"])
+            key = self.expect("IDENT").text
+            to = self.expect("IDENT")
+            if to.text != "to":
+                raise VelarisError("E100", "expected 'to' after the key type",
+                    to.line, fixes=["write map types like: Map of Text to Int"])
+            return f"Map of {key} to " + self.parse_type()
         if t.text == "List":
             of = self.expect("IDENT")
             if of.text != "of":
@@ -482,6 +500,16 @@ class Parser:
         t = self.next()
         if t.text == "-":                      # negative numbers: -7, -x
             return Neg(self.parse_postfix(), t.line)
+        if t.text == "{":                      # map literal: {"a": 1}
+            entries = []
+            while self.peek().text != "}":
+                k = self.parse_expr()
+                self.expect("OP", ":")
+                entries.append((k, self.parse_expr()))
+                if self.peek().text == ",":
+                    self.next()
+            self.expect("OP", "}")
+            return MapLit(entries, t.line)
         if t.text == "[":                      # list literal: [1, 2, 3]
             items = []
             while self.peek().text != "]":
@@ -542,6 +570,9 @@ def expr_str(e) -> str:
     if isinstance(e, BinOp): return f"{expr_str(e.left)} {e.op} {expr_str(e.right)}"
     if isinstance(e, Not):   return f"not {expr_str(e.value)}"
     if isinstance(e, ListLit): return "[" + ", ".join(expr_str(i) for i in e.items) + "]"
+    if isinstance(e, MapLit):
+        return "{" + ", ".join(f"{expr_str(k)}: {expr_str(v)}"
+                               for k, v in e.entries) + "}"
     if isinstance(e, FieldGet): return f"{expr_str(e.obj)}.{e.field}"
     if isinstance(e, RecordLit):
         return e.name + "(" + ", ".join(f"{f}: {expr_str(v)}" for f, v in e.fields) + ")"
@@ -558,6 +589,11 @@ def expr_vars(e) -> set[str]:
             out |= expr_vars(i)
         return out
     if isinstance(e, BinOp): return expr_vars(e.left) | expr_vars(e.right)
+    if isinstance(e, MapLit):
+        out = set()
+        for k, v in e.entries:
+            out |= expr_vars(k) | expr_vars(v)
+        return out
     if isinstance(e, FieldGet): return expr_vars(e.obj)
     if isinstance(e, RecordLit):
         out = set()
@@ -659,6 +695,9 @@ BUILTINS = {
     "contains":   {"effects": set(),      "types": ["Text", "Text"], "ret": "Bool"},
     "split":      {"effects": set(),      "types": ["Text", "Text"], "ret": "List of Text"},
     "upper":      {"effects": set(),      "types": ["Text"],        "ret": "Text"},
+    "put":        {"effects": set(),      "types": ["Any", "Any", "Any"], "ret": "Any"},
+    "has":        {"effects": set(),      "types": ["Any", "Any"],  "ret": "Bool"},
+    "keys":       {"effects": set(),      "types": ["Any"],         "ret": "Any"},
     "lower":      {"effects": set(),      "types": ["Text"],        "ret": "Text"},
     "length":     {"effects": set(),      "types": ["Any"],         "ret": "Int"},
     "push":       {"effects": set(),      "types": ["Any", "Any"],  "ret": "Any"},
@@ -720,6 +759,9 @@ def check_effects(funcs: list[Function], errors: list) -> None:
         elif isinstance(node, ListLit):
             for it in node.items:
                 walk(it, fn)
+        elif isinstance(node, MapLit):
+            for k, v in node.entries:
+                walk(k, fn); walk(v, fn)
         elif isinstance(node, FieldGet):
             walk(node.obj, fn)
         elif isinstance(node, RecordLit):
@@ -746,6 +788,9 @@ def check_effects(funcs: list[Function], errors: list) -> None:
         elif isinstance(node, ListLit):
             for it in node.items:
                 walk_pure(it, fn, where)
+        elif isinstance(node, MapLit):
+            for k, v in node.entries:
+                walk_pure(k, fn, where); walk_pure(v, fn, where)
         elif isinstance(node, FieldGet):
             walk_pure(node.obj, fn, where)
         elif isinstance(node, RecordLit):
@@ -801,9 +846,13 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
     def valid_type(t: str) -> bool:
         if t in KNOWN_TYPES or t in rec:
             return True
-        inner = t[len("List of "):]
-        return t.startswith("List of ") and (inner in KNOWN_TYPES
-                                             or inner in rec)
+        if t.startswith("List of "):
+            return valid_type(t[len("List of "):])
+        if t.startswith("Map of "):
+            rest = t[len("Map of "):]
+            key, sep, val = rest.partition(" to ")
+            return sep != "" and key in ("Text", "Int") and valid_type(val)
+        return False
 
     TYPE_HINT = ("use Int, Text, Bool, a record name, or "
                  "List of <one of those>")
@@ -900,6 +949,34 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                         node.line,
                         fixes=[f"its fields are: {', '.join(rec[t])}"])
                 return rec[t][node.field]
+            if isinstance(node, MapLit):
+                if not node.entries:
+                    raise VelarisError("E506",
+                        "cannot tell what an empty map holds", node.line,
+                        fixes=['put at least one entry in it, e.g. {"a": 0}'])
+                kt = infer(node.entries[0][0])
+                vt = infer(node.entries[0][1])
+                if kt not in ("Text", "Int"):
+                    raise VelarisError("E501",
+                        f"map keys must be Text or Int, but this is {kt}",
+                        node.line, fixes=["use Text or Int keys"])
+                seen_const = set()
+                for k, v in node.entries:
+                    if infer(k) != kt:
+                        raise VelarisError("E501",
+                            f"a map cannot mix {kt} and {infer(k)} keys",
+                            node.line, fixes=["keep every key the same type"])
+                    if infer(v) != vt:
+                        raise VelarisError("E501",
+                            f"a map cannot mix {vt} and {infer(v)} values",
+                            node.line, fixes=["keep every value the same type"])
+                    if isinstance(k, (Str, Num)):
+                        if k.value in seen_const:
+                            raise VelarisError("E509",
+                                f"map key {expr_str(k)} is given twice",
+                                node.line, fixes=["give each key once"])
+                        seen_const.add(k.value)
+                return f"Map of {kt} to {vt}"
             if isinstance(node, ListLit):
                 if not node.items:
                     raise VelarisError("E506",
@@ -913,23 +990,61 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                             f"a list cannot mix {t0} and {t}", node.line,
                             fixes=["keep every item in a list the same type"])
                 return "List of " + t0
-            if isinstance(node, Call) and node.name in ("length", "push", "get"):
-                n_want = 1 if node.name == "length" else 2
+            if isinstance(node, Call) and node.name in (
+                    "length", "push", "get", "put", "has", "keys"):
+                n_want = {"length": 1, "keys": 1, "push": 2, "get": 2,
+                          "has": 2, "put": 3}[node.name]
                 if len(node.args) != n_want:
                     raise VelarisError("E401",
                         f"'{node.name}' expects {n_want} argument(s) "
                         f"but got {len(node.args)}", node.line,
                         fixes=[f"pass exactly {n_want} argument(s)"])
                 t0 = infer(node.args[0])
+                is_map = t0.startswith("Map of ")
+                if is_map:
+                    key_t, _, val_t = t0[len("Map of "):].partition(" to ")
                 if node.name == "length":
-                    if t0 == "Text" or t0.startswith("List of "):
+                    if t0 == "Text" or t0.startswith("List of ") or is_map:
                         return "Int"
                     raise VelarisError("E501",
-                        f"'length' works on Text or a list, but this is {t0}",
-                        node.line, fixes=["pass a Text value or a list"])
+                        f"'length' works on Text, a list, or a map, "
+                        f"but this is {t0}",
+                        node.line, fixes=["pass a Text value, list, or map"])
+                if node.name == "keys":
+                    if not is_map:
+                        raise VelarisError("E501",
+                            f"'keys' works on a map, but this is {t0}",
+                            node.line, fixes=["pass a map"])
+                    return "List of " + key_t
+                if node.name in ("has", "put"):
+                    if not is_map:
+                        raise VelarisError("E501",
+                            f"'{node.name}' works on a map, but this is {t0}",
+                            node.line, fixes=["pass a map as the first argument"])
+                    if infer(node.args[1]) != key_t:
+                        raise VelarisError("E501",
+                            f"this map has {key_t} keys, but this key is "
+                            f"{infer(node.args[1])}", node.line,
+                            fixes=[f"use {'an' if key_t == 'Int' else 'a'} {key_t} key"])
+                    if node.name == "has":
+                        return "Bool"
+                    if infer(node.args[2]) != val_t:
+                        raise VelarisError("E501",
+                            f"this map holds {val_t} values, cannot put "
+                            f"{infer(node.args[2])}", node.line,
+                            fixes=[f"put {'an' if val_t == 'Int' else 'a'} {val_t} value"])
+                    return t0
+                if node.name == "get" and is_map:
+                    if infer(node.args[1]) != key_t:
+                        raise VelarisError("E501",
+                            f"this map has {key_t} keys, but this key is "
+                            f"{infer(node.args[1])}", node.line,
+                            fixes=[f"use {'an' if key_t == 'Int' else 'a'} {key_t} key"])
+                    return val_t
                 if not t0.startswith("List of "):
                     raise VelarisError("E501",
-                        f"'{node.name}' needs a list first, but this is {t0}",
+                        f"'{node.name}' needs a list first, but this is {t0}"
+                        + (" - use put for maps" if node.name == "push" else ""),
                         node.line, fixes=["pass a list as the first argument"])
                 elem = t0[len("List of "):]
                 t1 = infer(node.args[1])
@@ -1346,6 +1461,9 @@ def check_proofs(funcs: list[Function], errors: list) -> None:
         elif isinstance(node, ListLit):
             for it in node.items:
                 scan_calls(it, env, ctx)
+        elif isinstance(node, MapLit):
+            for k, v in node.entries:
+                scan_calls(k, env, ctx); scan_calls(v, env, ctx)
         elif isinstance(node, FieldGet):
             scan_calls(node.obj, env, ctx)
         elif isinstance(node, RecordLit):
@@ -1809,6 +1927,9 @@ class RecordValue:
 
 
 def to_text(v) -> str:
+    if isinstance(v, dict):
+        return "{" + ", ".join(f"{to_text(k)}: {to_text(x)}"
+                               for k, x in v.items()) + "}"
     if isinstance(v, RecordValue):
         inner = ", ".join(f"{k}: {to_text(x)}" for k, x in v.fields.items())
         return f"{v.rname}({inner})"
@@ -1861,6 +1982,21 @@ def run_builtin(name: str, args: list, line: int):
         return len(args[0])
     if name == "push":
         return args[0] + [args[1]]
+    if name == "put":
+        m, k, v = args
+        out = dict(m); out[k] = v
+        return out
+    if name == "has":
+        return args[1] in args[0]
+    if name == "keys":
+        return list(args[0].keys())
+    if name == "get" and isinstance(args[0], dict):
+        m, k = args
+        if k not in m:
+            raise VelarisError("E610",
+                f"map has no key {to_text(k) if not isinstance(k, str) else chr(39) + k + chr(39)}",
+                line, fixes=["check first: if has(m, key) { ... }"])
+        return m[k]
     if name == "get":
         xs, i = args
         if i < 0 or i >= len(xs):
@@ -2014,6 +2150,8 @@ def interpret(funcs: list[Function], native: dict | None = None) -> None:
             return eval_(node.obj, env).fields[node.field]
         if isinstance(node, ListLit):
             return [eval_(i, env) for i in node.items]
+        if isinstance(node, MapLit):
+            return {eval_(k, env): eval_(v, env) for k, v in node.entries}
         if isinstance(node, BinOp):
             if node.op == "and":
                 return eval_(node.left, env) and eval_(node.right, env)
