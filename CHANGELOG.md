@@ -1,5 +1,12 @@
 # Velaris changelog
 
+## 1.19 - Standard library sprint
+std.vel grows to sixteen functions, all in Velaris: sort (ensures
+is_sorted(result)), min/max (ensures membership), sum, keep_if,
+count_where, join, range_list, is_sorted, insert_sorted; apply_to_each
+and reverse rewritten with typed lets, dropping their nonempty
+requirements. Library requires are enforced at importer call sites.
+
 ## 1.18 - Float proofs (real IEEE-754)
 Float promises proven in Z3's floating-point theory - bit-for-bit the
 machine's arithmetic. The prover refutes real-number identities that

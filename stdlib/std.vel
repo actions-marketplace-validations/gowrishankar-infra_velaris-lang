@@ -1,6 +1,6 @@
-// The Velaris standard library, seed edition - written in Velaris
-// itself. Generic, pure, and contracted. Import with:
-// import "std.vel"
+// The Velaris standard library - written in Velaris itself.
+// Generic, pure, and contracted; misusing a requires here is caught
+// at YOUR call site, at compile time. Import with: import "std.vel"
 
 fn first(xs: List of T) -> T for any T
 requires length(xs) > 0
@@ -14,11 +14,9 @@ requires length(xs) > 0
     return get(xs, length(xs) - 1)
 }
 
-fn reverse(xs: List of T) -> List of T for any T
-requires length(xs) > 0
-{
-    let out = [get(xs, length(xs) - 1)]
-    let i = length(xs) - 2
+fn reverse(xs: List of T) -> List of T for any T {
+    let out: List of T = []
+    let i = length(xs) - 1
     while i >= 0 {
         out = push(out, get(xs, i))
         i = i - 1
@@ -41,13 +39,136 @@ fn contains_item(xs: List of T, item: T) -> Bool for any T {
     return index_of(xs, item) >= 0
 }
 
-fn apply_to_each(xs: List of T, f: fn (T) -> T) -> List of T for any T
-requires length(xs) > 0
-{
-    let out = [f(get(xs, 0))]
-    let i = 1
+fn apply_to_each(xs: List of T, f: fn (T) -> T) -> List of T for any T {
+    let out: List of T = []
+    let i = 0
     while i < length(xs) {
         out = push(out, f(get(xs, i)))
+        i = i + 1
+    }
+    return out
+}
+
+fn keep_if(xs: List of T, keep: fn (T) -> Bool) -> List of T for any T {
+    let out: List of T = []
+    let i = 0
+    while i < length(xs) {
+        let v = get(xs, i)
+        if keep(v) {
+            out = push(out, v)
+        }
+        i = i + 1
+    }
+    return out
+}
+
+fn count_where(xs: List of T, keep: fn (T) -> Bool) -> Int for any T {
+    return length(keep_if(xs, keep))
+}
+
+fn sum_of(xs: List of Int) -> Int {
+    let total = 0
+    let i = 0
+    while i < length(xs) {
+        total = total + get(xs, i)
+        i = i + 1
+    }
+    return total
+}
+
+fn max_of(xs: List of Int) -> Int
+requires length(xs) > 0
+ensures contains_item(xs, result)
+{
+    let best = get(xs, 0)
+    let i = 1
+    while i < length(xs) {
+        let v = get(xs, i)
+        if v > best {
+            best = v
+        }
+        i = i + 1
+    }
+    return best
+}
+
+fn min_of(xs: List of Int) -> Int
+requires length(xs) > 0
+ensures contains_item(xs, result)
+{
+    let best = get(xs, 0)
+    let i = 1
+    while i < length(xs) {
+        let v = get(xs, i)
+        if v < best {
+            best = v
+        }
+        i = i + 1
+    }
+    return best
+}
+
+fn is_sorted(xs: List of Int) -> Bool {
+    let i = 1
+    while i < length(xs) {
+        if get(xs, i - 1) > get(xs, i) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+fn insert_sorted(xs: List of Int, v: Int) -> List of Int {
+    let out: List of Int = []
+    let placed = false
+    let i = 0
+    while i < length(xs) {
+        let cur = get(xs, i)
+        if not placed and v <= cur {
+            out = push(out, v)
+            placed = true
+        }
+        out = push(out, cur)
+        i = i + 1
+    }
+    if not placed {
+        out = push(out, v)
+    }
+    return out
+}
+
+fn sort(xs: List of Int) -> List of Int
+ensures length(result) == length(xs)
+ensures is_sorted(result)
+{
+    let out: List of Int = []
+    let i = 0
+    while i < length(xs) {
+        out = insert_sorted(out, get(xs, i))
+        i = i + 1
+    }
+    return out
+}
+
+fn join(xs: List of Text, sep: Text) -> Text {
+    if length(xs) == 0 {
+        return ""
+    }
+    let out = get(xs, 0)
+    let i = 1
+    while i < length(xs) {
+        out = out + sep + get(xs, i)
+        i = i + 1
+    }
+    return out
+}
+
+fn range_list(a: Int, b: Int) -> List of Int {
+    let out: List of Int = []
+    let i = a
+    while i < b {
+        out = push(out, i)
         i = i + 1
     }
     return out

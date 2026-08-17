@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v1.18 — "The language where you can trust code you didn't write."
+Velaris v1.19 — "The language where you can trust code you didn't write."
+
+New in v1.19: a grown-up standard library. stdlib/std.vel now holds
+    sixteen functions written in Velaris - including sort, which
+    ensures is_sorted(result) using is_sorted, also from the library.
+    Violating a library requires is a compile error at your call site.
 
 New in v1.18: FLOAT PROOFS - real IEEE-754, not pretend-math.
     Promises about Float values are proven in Z3's floating-point
@@ -202,7 +207,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.18.0"
+VERSION = "1.19.0"
 import re
 import sys
 from dataclasses import dataclass, field

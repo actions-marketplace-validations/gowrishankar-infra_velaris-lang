@@ -1,0 +1,10 @@
+// max_of requires a nonempty list. This list is provably empty, so
+// the call is refused at compile time - the library's contract,
+// enforced at YOUR call site.
+
+import "std.vel"
+
+fn main() uses io {
+    let empty: List of Int = []
+    print(max_of(empty))
+}

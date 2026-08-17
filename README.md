@@ -166,6 +166,14 @@ fn biggest(xs: List of Int) -> Int
 }
 ```
 
+The standard library (`stdlib/std.vel`) is written in Velaris and keeps
+its own promises: `first` / `last` / `reverse` / `index_of` /
+`contains_item` / `apply_to_each` / `keep_if` / `count_where` /
+`sum_of` / `max_of` / `min_of` / `sort` (which *ensures*
+`is_sorted(result)`) / `is_sorted` / `join` / `range_list`. Violating a
+library `requires` — like `max_of` on a provably empty list — is a
+compile error at your call site.
+
 Failure is part of the signature, and ignoring it doesn't compile:
 
 ```

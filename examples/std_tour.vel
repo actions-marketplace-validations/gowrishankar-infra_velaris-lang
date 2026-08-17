@@ -1,0 +1,22 @@
+// v1.19: the standard library, grown up. Everything below is written
+// in Velaris, in stdlib/std.vel - sort PROMISES is_sorted(result),
+// and is_sorted is itself a Velaris function. The library keeps its
+// own promises with the same machinery it offers you.
+
+import "std.vel"
+
+fn is_even(n: Int) -> Bool {
+    return n % 2 == 0
+}
+
+fn main() uses io {
+    let xs = [5, 3, 8, 1, 9, 2]
+    print("sorted: " + sort(xs))
+    print("min " + min_of(xs) + ", max " + max_of(xs)
+    + ", sum " + sum_of(xs))
+    print("evens: " + keep_if(xs, is_even))
+    print("even count: " + count_where(xs, is_even))
+    print("joined: " + join(["proof", "speed", "trust"], " + "))
+    print("range: " + range_list(3, 9))
+    print("reversed: " + reverse(sort(xs)))
+}
