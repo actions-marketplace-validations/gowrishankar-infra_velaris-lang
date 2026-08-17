@@ -13,13 +13,13 @@ all in the signature.">
         --err:#e5484d; --mint:#7ee2c0; }
 * { box-sizing:border-box; margin:0; }
 html { scroll-behavior:smooth; }
-body { background:var(--paper); color:var(--ink); font:clamp(15px,1.1vw + 12px,16.5px)/1.65
+body { background:var(--paper); color:var(--ink); font:clamp(15px,0.5vw + 11px,18px)/1.65
   -apple-system,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
   -webkit-font-smoothing:antialiased; }
 nav { position:sticky; top:0; background:rgba(255,255,255,.86);
   backdrop-filter:blur(10px); border-bottom:1px solid var(--line);
   z-index:10; }
-nav .in { max-width:1080px; margin:0 auto;
+nav .in { max-width:clamp(900px,86vw,1480px); margin:0 auto;
   padding:12px clamp(14px,3vw,24px); display:flex;
   gap:clamp(13px,2.4vw,26px); align-items:center; flex-wrap:wrap; }
 .brand { font-weight:700; font-size:17px; letter-spacing:-.02em;
@@ -32,19 +32,19 @@ nav a { color:var(--mut); text-decoration:none; font-size:14.5px;
 nav a:hover, nav a.here { color:var(--ink); }
 nav .ver { margin-left:auto; font-size:12.5px; color:var(--mut);
   border:1px solid var(--line); border-radius:99px; padding:3px 11px; }
-main { max-width:760px; margin:0 auto;
-  padding:clamp(28px,6vw,52px) clamp(16px,4vw,24px) 110px;
+main { max-width:clamp(760px,74vw,1240px); margin:0 auto;
+  padding:clamp(28px,5vw,56px) clamp(16px,4vw,32px) 110px;
   overflow-wrap:break-word; }
-main.wide { max-width:1080px; }
-h1 { font-size:clamp(32px,4.6vw,44px); letter-spacing:-.03em;
+main.wide { max-width:clamp(900px,86vw,1480px); }
+h1 { font-size:clamp(32px,2.6vw + 14px,58px); letter-spacing:-.03em;
   line-height:1.12; font-weight:750; }
-h2 { font-size:clamp(20px,2.4vw,24px); letter-spacing:-.02em;
+h2 { font-size:clamp(20px,1.2vw + 12px,30px); letter-spacing:-.02em;
   margin:2.2em 0 .7em; font-weight:700; }
 h3 { font-size:18px; margin:1.6em 0 .5em; font-weight:650; }
 p, li { color:#2a3138; }
 p { margin:.85em 0; }
-.lead { font-size:clamp(16.5px,1.9vw,19px); color:var(--mut);
-  max-width:640px; }
+.lead { font-size:clamp(16.5px,0.8vw + 10px,22px); color:var(--mut);
+  max-width:52ch; }
 a { color:var(--brand); text-decoration:none; }
 a:hover { text-decoration:underline; }
 code { background:var(--alt); border:1px solid var(--line);
@@ -53,7 +53,7 @@ code { background:var(--alt); border:1px solid var(--line);
 pre { background:var(--term); color:var(--term-ink); border-radius:12px;
   padding:clamp(13px,2.5vw,18px) clamp(14px,3vw,20px); overflow-x:auto;
   margin:1.2em 0; -webkit-overflow-scrolling:touch;
-  font:clamp(12px,1.6vw,13.5px)/1.6 ui-monospace,"SF Mono",Consolas,
+  font:clamp(12px,0.5vw + 8px,15px)/1.6 ui-monospace,"SF Mono",Consolas,
   monospace; }
 pre code { background:none; border:none; padding:0; color:inherit;
   font:inherit; }
@@ -75,19 +75,19 @@ pre code { background:none; border:none; padding:0; color:inherit;
 .eyebrow { color:var(--brand); font-weight:650; font-size:13.5px;
   letter-spacing:.06em; text-transform:uppercase; margin-bottom:14px; }
 .grid { display:grid; grid-template-columns:repeat(auto-fit,
-  minmax(230px,1fr)); gap:16px; margin:34px 0; }
+  minmax(clamp(230px,22vw,300px),1fr)); gap:16px; margin:34px 0; }
 .card { border:1px solid var(--line); border-radius:14px;
   padding:20px 22px; background:var(--paper); }
-.card b { font-size:15.5px; letter-spacing:-.01em; }
-.card p { font-size:14px; color:var(--mut); margin:.5em 0 0; }
-.sig { color:var(--ink); font:14px ui-monospace,"SF Mono",Consolas,
+.card b { font-size:clamp(15px,0.4vw + 10px,17.5px); letter-spacing:-.01em; }
+.card p { font-size:clamp(13.5px,0.4vw + 9px,16px); color:var(--mut); margin:.5em 0 0; }
+.sig { color:var(--ink); font:clamp(13px,0.45vw + 9px,15.5px) ui-monospace,"SF Mono",Consolas,
   monospace; font-weight:600; }
-.contract { color:var(--brand); font:13px ui-monospace,"SF Mono",
+.contract { color:var(--brand); font:clamp(12px,0.4vw + 8px,14.5px) ui-monospace,"SF Mono",
   Consolas,monospace; margin:5px 0 0 20px; }
 .fnrow { border:1px solid var(--line); border-radius:12px;
   padding:15px 18px; margin:11px 0; }
 table { border-collapse:collapse; width:100%; margin:1.2em 0;
-  font-size:clamp(13px,1.5vw,14.5px); display:block; overflow-x:auto;
+  font-size:clamp(13px,0.5vw + 9px,16px); display:block; overflow-x:auto;
   -webkit-overflow-scrolling:touch; white-space:nowrap; }
 table tr td:last-child { white-space:normal; min-width:220px; }
 td, th { border-bottom:1px solid var(--line); padding:9px 12px;
@@ -105,7 +105,7 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 </style></head><body>
 <nav><div class="in"><a class="brand" href="index.html">
 <span class="dot"></span>Velaris</a><a href="index.html" class="">Home</a><a href="tutorial.html" class="">Tutorial</a><a href="library.html" class="">Library</a><a href="errors.html" class="here">Errors</a><a href="playground.html" class="">Playground</a>
-<span class="ver">v2.3.1</span></div></nav>
+<span class="ver">v2.3.2</span></div></nav>
 <main class=""><h1>Error reference</h1>
 <p class="lead">Every error Velaris can give &mdash; scraped from the compiler source itself, so this page cannot go stale. Braces are filled with your program&rsquo;s names and values; every error also arrives with numbered fixes, and as JSON with <code>--json</code>.</p><table><tr><th>Code</th><th>Message template</th></tr>
 <tr><td class="ecode">E000</td><td>unexpected character {source[pos]!r}</td></tr>
