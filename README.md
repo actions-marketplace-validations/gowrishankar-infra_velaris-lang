@@ -225,13 +225,17 @@ pipeline order.
 - Imports (v0.16) are a flat merge — `import "lib.vel"` pulls in that
   file's functions and records with duplicate-name protection; namespaces
   and a standard library are future work.
+- Float proofs (v1.18) use Z3's genuine IEEE-754 theory - the prover
+  refutes `x + 0.1 + 0.1 == x + 0.2` with the exact double that breaks
+  it. Refutation searches over floats may take ~15s; positive proofs
+  are fast. `/` and `%` stay runtime-only in proofs, as in native.
 - Quantified list promises (v1.16): `all_of(xs, p)` / `any_of(xs, p)`
   with a simple pure predicate become real Z3 foralls/exists - proven
   where the solver can settle them, runtime-checked where it cannot.
 - Record proofs (v1.14) cover records whose fields are Int, Bool, or
   other such records — promises like `ensures result.x == p.x + dx` are
-  proven before running. Records containing lists or Floats stay
-  runtime-checked.
+  proven before running. Records containing lists stay
+  runtime-checked; Float fields are proven (v1.18).
 - The prover is deliberately conservative: it only reports "proven" when the
   counterexample involves no summarized calls, so its claims are always
   literally true.

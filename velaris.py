@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Velaris v1.17 — "The language where you can trust code you didn't write."
+Velaris v1.18 — "The language where you can trust code you didn't write."
+
+New in v1.18: FLOAT PROOFS - real IEEE-754, not pretend-math.
+    Promises about Float values are proven in Z3's floating-point
+    theory, bit-for-bit the arithmetic your machine performs. The
+    prover will happily refute x + 0.1 + 0.1 == x + 0.2, because in
+    floating point it is false - and Velaris does not pretend.
 
 New in v1.17: FAILURE-AWARE PROOFS. The prover now understands fail,
     check, and try - so promises on 'or fail' functions are proven for
@@ -196,7 +202,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.17.0"
+VERSION = "1.18.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1776,7 +1782,8 @@ def check_proofs(funcs: list[Function], records: list,
         fs = rec_fields.get(name)
         if fs is None:
             return False
-        return all(ft in ("Int", "Bool") or provable_rec(ft, seen | {name})
+        return all(ft in ("Int", "Bool", "Float")
+                   or provable_rec(ft, seen | {name})
                    for _, ft in fs)
 
     class Unprovable(Exception):
@@ -1784,6 +1791,10 @@ def check_proofs(funcs: list[Function], records: list,
 
     FELL_OFF = object()
     FAILED = object()
+    saw_fp = [False]                   # FP queries earn a bigger budget
+
+    def solver_budget() -> int:
+        return 30000 if saw_fp[0] else 3000
     counter = [0]
 
     class RecVal:
@@ -1797,7 +1808,12 @@ def check_proofs(funcs: list[Function], records: list,
             self.arr, self.length = arr, length
 
     def mk(name: str, t: str):
-        return z3.Int(name) if t == "Int" else z3.Bool(name)
+        if t == "Int":
+            return z3.Int(name)
+        if t == "Float":
+            saw_fp[0] = True
+            return z3.FP(name, z3.Float64())
+        return z3.Bool(name)
 
     def mk_rec(prefix: str, rname: str) -> "RecVal":
         out = {}
@@ -1871,7 +1887,7 @@ def check_proofs(funcs: list[Function], records: list,
                     any(has_fresh(c) for c in ctx.conds):
                 continue        # could be a false alarm; runtime will guard
             solver = z3.Solver()
-            solver.set("timeout", 3000)
+            solver.set("timeout", solver_budget())
             solver.add(*ctx.param_assum)
             solver.add(*ctx.conds)
             solver.add(z3.Not(need))
@@ -1927,8 +1943,8 @@ def check_proofs(funcs: list[Function], records: list,
         fnB = table.get(node.name)
 
         def summarizable(t):
-            return t in ("Int", "Bool") or (t in rec_fields
-                                            and provable_rec(t))
+            return t in ("Int", "Bool", "Float") or (
+                t in rec_fields and provable_rec(t))
 
         if (fnB is None or fnB.effects or fnB.type_vars
                 or (fnB.can_fail and not allow_fail)
@@ -1954,6 +1970,9 @@ def check_proofs(funcs: list[Function], records: list,
 
     def to_z3(node, env, ctx):
         if isinstance(node, Num):  return z3.IntVal(node.value)
+        if isinstance(node, FloatNum):
+            saw_fp[0] = True
+            return z3.FPVal(node.value, z3.Float64())
         if isinstance(node, Bool): return z3.BoolVal(node.value)
         if isinstance(node, Var):
             if node.name not in env:
@@ -2051,8 +2070,14 @@ def check_proofs(funcs: list[Function], records: list,
             if op == "+":  return l + r
             if op == "-":  return l - r
             if op == "*":  return l * r
-            if op == "==": return l == r
-            if op == "!=": return l != r
+            if op == "==":
+                if z3.is_fp(l) or z3.is_fp(r):
+                    return z3.fpEQ(l, r)     # IEEE: NaN != NaN, +0 == -0
+                return l == r
+            if op == "!=":
+                if z3.is_fp(l) or z3.is_fp(r):
+                    return z3.Not(z3.fpEQ(l, r))
+                return l != r
             if op == "<":  return l < r
             if op == ">":  return l > r
             if op == "<=": return l <= r
@@ -2065,7 +2090,7 @@ def check_proofs(funcs: list[Function], records: list,
                 any(has_fresh(c) for c in ctx.conds):
             return                       # runtime bounds check still guards
         solver = z3.Solver()
-        solver.set("timeout", 3000)
+        solver.set("timeout", solver_budget())
         solver.add(*ctx.param_assum)
         solver.add(*ctx.conds)
         solver.add(z3.Not(z3.And(idx >= 0, idx < length)))
@@ -2097,7 +2122,7 @@ def check_proofs(funcs: list[Function], records: list,
             fnB = table.get(node.name)
             if (fnB is not None and fnB.requires
                     and len(fnB.params) == len(node.args)
-                    and all(pt in ("Int", "Bool", "List of Int")
+                    and all(pt in ("Int", "Bool", "Float", "List of Int")
                             or (pt in rec_fields and provable_rec(pt))
                             for _, pt in fnB.params)):
                 try:
@@ -2140,7 +2165,7 @@ def check_proofs(funcs: list[Function], records: list,
         except Unprovable:
             return                       # can't model it; runtime will check
         solver = z3.Solver()
-        solver.set("timeout", 3000)
+        solver.set("timeout", solver_budget())
         solver.add(*ctx.assum)
         solver.add(*ctx.conds)
         solver.add(z3.Not(goal))
@@ -2182,6 +2207,8 @@ def check_proofs(funcs: list[Function], records: list,
                 facts.append(ln >= 0)
             elif old is not None and z3.is_bool(old):
                 out[n] = fresh("Bool", n)
+            elif old is not None and z3.is_fp(old):
+                out[n] = fresh("Float", n)
             else:
                 out[n] = fresh("Int", n)
         return out, facts
@@ -2289,10 +2316,11 @@ def check_proofs(funcs: list[Function], records: list,
         return [(ctx, FELL_OFF, dict(env))]
 
     for fn in funcs:
+        saw_fp[0] = False              # FP budget only when FP appears
         env = {}
         list_facts = []
         for pname, ptype in fn.params:
-            if ptype in ("Int", "Bool"):
+            if ptype in ("Int", "Bool", "Float"):
                 env[pname] = mk(pname, ptype)
             elif ptype == "List of Int":
                 arr = z3.Array(pname, z3.IntSort(), z3.IntSort())
@@ -2323,7 +2351,7 @@ def check_proofs(funcs: list[Function], records: list,
                     e2["result"] = ret
                     goal = to_z3(ens_expr, e2, None)
                     solver = z3.Solver()
-                    solver.set("timeout", 3000)
+                    solver.set("timeout", solver_budget())
                     solver.add(*pctx.assum)
                     solver.add(*pctx.conds)
                     solver.add(z3.Not(goal))

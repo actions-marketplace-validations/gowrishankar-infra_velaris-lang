@@ -1,0 +1,23 @@
+// v1.18: Float promises proven in genuine IEEE-754 arithmetic -
+// the same bit-for-bit math your processor performs, NaN rules and
+// rounding included. (x >= 0.0 in a requires also rules out NaN,
+// because NaN fails every comparison - the prover knows that too.)
+
+fn bump(x: Float) -> Float
+requires x >= 0.0
+ensures result >= 1.0
+{
+    return x + 1.0
+}
+
+fn magnitude_up(x: Float) -> Float
+requires x >= 1.0
+ensures result >= x
+{
+    return x * 2.0
+}
+
+fn main() uses io {
+    print("bump(0.5) = " + bump(0.5))
+    print("magnitude_up(3.25) = " + magnitude_up(3.25))
+}

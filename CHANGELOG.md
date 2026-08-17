@@ -1,5 +1,11 @@
 # Velaris changelog
 
+## 1.18 - Float proofs (real IEEE-754)
+Float promises proven in Z3's floating-point theory - bit-for-bit the
+machine's arithmetic. The prover refutes real-number identities that
+rounding breaks, with the exact double as counterexample. FP queries
+get a bigger solver budget; integer proofs stay instant.
+
 ## 1.17 - Failure-aware proofs
 The prover understands fail / check / try: promises on 'or fail'
 functions are proven for every returning path, fail-guards become
