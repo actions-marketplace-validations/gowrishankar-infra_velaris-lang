@@ -6,15 +6,15 @@ record Point {
 }
 
 fn shift(p: Point, dx: Int) -> Point
-    requires dx >= 0
-    ensures result.x == p.x + dx
-    ensures result.y == p.y
+requires dx >= 0
+ensures result.x == p.x + dx
+ensures result.y == p.y
 {
     return Point(x: p.x + dx, y: p.y)
 }
 
 fn distance_sq(p: Point) -> Int
-    ensures result >= 0
+ensures result >= 0
 {
     return p.x * p.x + p.y * p.y
 }
