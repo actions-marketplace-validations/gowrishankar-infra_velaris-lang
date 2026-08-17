@@ -105,7 +105,7 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 </style></head><body>
 <nav><div class="in"><a class="brand" href="index.html">
 <span class="dot"></span>Velaris</a><a href="index.html" class="">Home</a><a href="tutorial.html" class="">Tutorial</a><a href="library.html" class="here">Library</a><a href="errors.html" class="">Errors</a><a href="floats.html" class="">Floats</a><a href="playground.html" class="">Playground</a>
-<span class="ver">v2.13.0</span></div></nav>
+<span class="ver">v2.14.0</span></div></nav>
 <main class=""><h1>Standard library</h1>
 <p class="lead">Every function below is written in Velaris and parsed onto this page by the real compiler &mdash; contracts included. A violated <code>requires</code> is a compile error at your call site.</p>
 <div class="fnrow">
@@ -177,6 +177,7 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 <tr><td><code>args</code></td><td>io</td><td></td><td>List of Text</td></tr>
 <tr><td><code>ask</code></td><td>io</td><td>Text</td><td>Text</td></tr>
 <tr><td><code>chars</code></td><td>pure</td><td>Text</td><td>List of Text</td></tr>
+<tr><td><code>code_at</code></td><td>pure</td><td>Text, Int</td><td>Int</td></tr>
 <tr><td><code>contains</code></td><td>pure</td><td>Text, Text</td><td>Bool</td></tr>
 <tr><td><code>fetch</code> <span class="ecode">or fail</span></td><td>net</td><td>Text</td><td>Text</td></tr>
 <tr><td><code>fetch_status</code> <span class="ecode">or fail</span></td><td>net</td><td>Text</td><td>Int</td></tr>

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v2.13 — "The language where you can trust code you didn't write."
+Velaris v2.14 — "The language where you can trust code you didn't write."
 
-New in v2.13: NATIVE LISTS. Pure functions that read List of Int
-    compile to machine code (~290x on list scans), with every native
-    read bounds-guarded so an out-of-range position gives the usual
-    error instead of touching memory it should not.
+New in v2.14: native TEXT reads (as Unicode code points, so length
+    still counts characters), the code_at builtin, and a better rule:
+    a function whose promises are PROVEN may run natively, because a
+    proven promise has nothing left to check.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -240,7 +240,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.13.0"
+VERSION = "2.14.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1137,6 +1137,7 @@ BUILTINS = {
     "file_exists": {"effects": {"fs"},    "types": ["Text"],        "ret": "Bool"},
     "put":        {"effects": set(),      "types": ["Any", "Any", "Any"], "ret": "Any"},
     "get_or":     {"effects": set(),      "types": ["Any", "Any", "Any"], "ret": "Any"},
+    "code_at":    {"effects": set(),      "types": ["Text", "Int"], "ret": "Int"},
     "args":       {"effects": {"io"},     "types": [],              "ret": "List of Text"},
     "post":       {"effects": {"net"},    "types": ["Text", "Text"], "ret": "Text"},
     "fetch_status": {"effects": {"net"},  "types": ["Text"],        "ret": "Int"},
@@ -2117,6 +2118,8 @@ def check_proofs(funcs: list[Function], records: list,
 
     MAP_SORTS = {"Int": lambda: z3.IntSort(), "Bool": lambda: z3.BoolSort(),
                  "Text": lambda: z3.StringSort()}
+    CODE_AT = z3.Function("code_at", z3.StringSort(), z3.IntSort(),
+                          z3.IntSort())
 
     def map_parts(t: str):
         """('Map of Text to Int') -> ('Text', 'Int') if both are modelable."""
@@ -2367,6 +2370,14 @@ def check_proofs(funcs: list[Function], records: list,
             if node.name == "all_of":
                 return z3.ForAll([k], z3.Implies(inside, body))
             return z3.Exists([k], z3.And(inside, body))
+        if isinstance(node, Call) and node.name == "code_at":
+            t = to_z3(node.args[0], env, ctx)
+            i = to_z3(node.args[1], env, ctx)
+            if not (z3.is_string(t) and z3.is_int(i)):
+                raise Unprovable()
+            # the exact character is unknown to the prover, but it IS a
+            # value - enough to reason about the code around it
+            return CODE_AT(t, i)
         if isinstance(node, Call) and node.name in ("put", "get_or", "has"):
             base = to_z3(node.args[0], env, ctx)
             if isinstance(base, MapVal):
@@ -2407,7 +2418,9 @@ def check_proofs(funcs: list[Function], records: list,
         if isinstance(node, Call) and node.name in ("length", "get", "push"):
             a0 = to_z3(node.args[0], env, ctx)
             if not isinstance(a0, ListVal):
-                raise Unprovable()              # length of Text: runtime only
+                if z3.is_string(a0):
+                    return z3.Length(a0)        # characters in the text
+                raise Unprovable()
             if node.name == "length":
                 return a0.length
             a1 = to_z3(node.args[1], env, ctx)
@@ -2948,34 +2961,47 @@ def check_proofs(funcs: list[Function], records: list,
 # 4d. NATIVE COMPILER (v0.9) — compile pure Int functions to machine code
 #     via LLVM. Eligible: params and return are Int; body uses only math,
 #     comparisons, and/or/not, if, while, let/assign, and calls to other
-#     eligible functions. No effects, no contracts (those must keep their
-#     runtime promise checks), no '/', no Text, no lists.
+#     eligible functions. No effects; contracts are allowed once PROVEN
+#     (an unproven promise still needs its runtime check); no '/';
+#     lists and text may be READ (bounds-guarded), not built.
 # ---------------------------------------------------------------------------
 
 _NATIVE_KEEPALIVE = []          # prevents the JIT engine being garbage-collected
 
 
-def native_eligible(funcs: list[Function]) -> set[str]:
+def native_eligible(funcs: list[Function],
+                    proven: set = frozenset()) -> set[str]:
     table = {f.name: f for f in funcs}
 
     def locally_ok(fn: Function):
-        if fn.effects or fn.requires or fn.ensures or fn.can_fail \
-                or fn.type_vars:
+        if fn.effects or fn.can_fail or fn.type_vars:
             return None
+        if (fn.requires or fn.ensures) and fn.name not in proven:
+            return None       # unproven promises still need runtime checks
         if fn.return_type not in ("Int", "Float", "Bool"):
             return None
-        if any(pt not in ("Int", "Float", "Bool", "List of Int")
+        if any(pt not in ("Int", "Float", "Bool", "List of Int", "Text")
                for _, pt in fn.params):
             return None
         list_params = {p for p, t in fn.params if t == "List of Int"}
+        text_params = {p for p, t in fn.params if t == "Text"}
         calls, ok = set(), [True]
 
         def we(e):
+            if isinstance(e, Var) and e.name in text_params:
+                ok[0] = False        # any use other than length/code_at
+                return
             if isinstance(e, (Num, FloatNum, Bool, Var)):
                 return
             if (isinstance(e, Call) and e.name in ("length", "get")
                     and e.args and isinstance(e.args[0], Var)
                     and e.args[0].name in list_params):
+                for a in e.args[1:]:
+                    we(a)
+                return
+            if (isinstance(e, Call) and e.name in ("length", "code_at")
+                    and e.args and isinstance(e.args[0], Var)
+                    and e.args[0].name in text_params):
                 for a in e.args[1:]:
                     we(a)
                 return
@@ -3038,8 +3064,9 @@ def native_eligible(funcs: list[Function]) -> set[str]:
     return set(cand)
 
 
-def compile_native(funcs: list[Function]) -> dict:
-    eligible = native_eligible(funcs)
+def compile_native(funcs: list[Function],
+                   proven: set = frozenset()) -> dict:
+    eligible = native_eligible(funcs, proven)
     if not eligible:
         return {}
     try:
@@ -3054,11 +3081,16 @@ def compile_native(funcs: list[Function]) -> dict:
     i64p = ir.PointerType(i64)
     LTY = {"Int": i64, "Bool": i64, "Float": f64}
 
+    i32 = ir.IntType(32)
+    i32p = ir.PointerType(i32)
+
     def llvm_params(fn):
         out = []
         for _, pt in fn.params:
             if pt == "List of Int":
                 out += [i64p, i64]        # data pointer, then length
+            elif pt == "Text":
+                out += [i32p, i64]        # code points, then length
             else:
                 out.append(LTY[pt])
         return out
@@ -3094,6 +3126,8 @@ def compile_native(funcs: list[Function]) -> dict:
             if isinstance(e, Neg):
                 return te(e.value)
             if isinstance(e, Call):
+                if e.name in ("length", "get", "code_at"):
+                    return "Int"        # builtin reads used natively
                 return table[e.name].return_type
             if isinstance(e, BinOp):
                 if e.op in ("and", "or", "==", "!=", "<", ">", "<=", ">="):
@@ -3133,15 +3167,18 @@ def compile_native(funcs: list[Function]) -> dict:
         names = {p for p, _ in fn.params}
         collect_names(fn.body, names)
         lists = {}                     # name -> (data pointer, length)
-        list_names = {p for p, t in fn.params if t == "List of Int"}
+        texts = {}                     # name -> (code points, length)
+        list_names = {p for p, t in fn.params
+                      if t in ("List of Int", "Text")}
         for n in sorted(names - list_names):
             slots[n] = b.alloca(LTY[tenv.get(n, "Int")], name=n)
         ai = 0
         for pname, ptype in fn.params:
-            if ptype == "List of Int":
+            if ptype in ("List of Int", "Text"):
                 data, ln = lf.args[ai], lf.args[ai + 1]
                 data.name, ln.name = pname + "_data", pname + "_len"
-                lists[pname] = (data, ln)
+                (lists if ptype == "List of Int" else texts)[pname] = (
+                    data, ln)
                 ai += 2
             else:
                 lf.args[ai].name = pname
@@ -3164,6 +3201,32 @@ def compile_native(funcs: list[Function]) -> dict:
                 if v.type == f64:
                     return b.fsub(ir.Constant(f64, 0.0), v)
                 return b.sub(i64(0), v)
+            if (isinstance(e, Call) and e.name in ("length", "code_at")
+                    and e.args and isinstance(e.args[0], Var)
+                    and e.args[0].name in texts):
+                data, ln = texts[e.args[0].name]
+                if e.name == "length":
+                    return ln
+                idx = ee(e.args[1])
+                inside = b.and_(b.icmp_signed(">=", idx, i64(0)),
+                                b.icmp_signed("<", idx, ln))
+                ok_bb = lf.append_basic_block("char_ok")
+                bad_bb = lf.append_basic_block("char_out")
+                cont_bb = lf.append_basic_block("char_done")
+                b.cbranch(inside, ok_bb, bad_bb)
+                b.position_at_end(ok_bb)
+                ch = b.zext(b.load(b.gep(data, [idx])), i64)
+                b.branch(cont_bb)
+                b.position_at_end(bad_bb)
+                b.store(i64(1), oob)
+                b.store(idx, oob_idx)
+                b.store(ln, oob_len)
+                b.branch(cont_bb)
+                b.position_at_end(cont_bb)
+                phi = b.phi(i64)
+                phi.add_incoming(ch, ok_bb)
+                phi.add_incoming(i64(0), bad_bb)
+                return phi
             if (isinstance(e, Call) and e.name in ("length", "get")
                     and e.args and isinstance(e.args[0], Var)
                     and e.args[0].name in lists):
@@ -3193,7 +3256,9 @@ def compile_native(funcs: list[Function]) -> dict:
             if isinstance(e, Call):
                 args_ll = []
                 for a in e.args:
-                    if isinstance(a, Var) and a.name in lists:
+                    if isinstance(a, Var) and a.name in texts:
+                        args_ll += list(texts[a.name])
+                    elif isinstance(a, Var) and a.name in lists:
                         args_ll += list(lists[a.name])
                     else:
                         args_ll.append(ee(a))
@@ -3293,6 +3358,7 @@ def compile_native(funcs: list[Function]) -> dict:
     CT = {"Int": ctypes.c_int64, "Bool": ctypes.c_int64,
           "Float": ctypes.c_double}
     I64P = ctypes.POINTER(ctypes.c_int64)
+    I32P = ctypes.POINTER(ctypes.c_uint32)
     oob_addr = engine.get_global_value_address("velaris_oob")
     idx_addr = engine.get_global_value_address("velaris_oob_idx")
     len_addr = engine.get_global_value_address("velaris_oob_len")
@@ -3308,7 +3374,11 @@ def compile_native(funcs: list[Function]) -> dict:
             cargs = []
             keep = []                    # keep buffers alive for the call
             for t, v in zip(types, vals):
-                if t == "List of Int":
+                if t == "Text":
+                    buf = (ctypes.c_uint32 * len(v))(*[ord(c) for c in v])
+                    keep.append(buf)
+                    cargs += [ctypes.cast(buf, I32P), len(v)]
+                elif t == "List of Int":
                     buf = (ctypes.c_int64 * len(v))(*v)
                     keep.append(buf)
                     cargs += [ctypes.cast(buf, I64P), len(v)]
@@ -3319,9 +3389,12 @@ def compile_native(funcs: list[Function]) -> dict:
             if flag[0]:                  # the read was refused, not made
                 i, n = flag_i[0], flag_n[0]
                 flag[0] = 0
+                what = ("text" if any(t == "Text" for t in types)
+                        else "list")
+                unit = "character" if what == "text" else "item"
                 raise VelarisError("E602",
-                    f"position {i} is outside the list "
-                    f"(it has {n} item(s))", fn.line,
+                    f"position {i} is outside the {what} "
+                    f"(it has {n} {unit}(s))", fn.line,
                     fixes=["positions go from 0 to length - 1",
                            "check with length(...) before using get"])
             return bool(r) if wants_bool else r
@@ -3332,7 +3405,9 @@ def compile_native(funcs: list[Function]) -> dict:
         fn = table[name]
         ctypes_args = []
         for _, pt in fn.params:
-            if pt == "List of Int":
+            if pt == "Text":
+                ctypes_args += [I32P, ctypes.c_int64]
+            elif pt == "List of Int":
                 ctypes_args += [I64P, ctypes.c_int64]
             else:
                 ctypes_args.append(CT[pt])
@@ -3432,6 +3507,15 @@ def run_builtin(name: str, args: list, line: int):
         return args[1] in args[0]
     if name == "keys":
         return list(args[0].keys())
+    if name == "code_at":
+        t, i = args
+        if i < 0 or i >= len(t):
+            raise VelarisError("E602",
+                f"position {i} is outside the text (it has {len(t)} "
+                f"character(s))", line,
+                fixes=["positions go from 0 to length - 1",
+                       "check with length(...) before using code_at"])
+        return ord(t[i])
     if name == "get_or":
         m, k, d = args
         return m.get(k, d)
@@ -4357,8 +4441,9 @@ def main() -> int:
         errors: list[VelarisError] = []
         check_effects(funcs, errors)  # superpower 1: no hidden effects
         check_types(funcs, records, errors)  # superpower 2: no type surprises
+        proven: set = set()
         if not errors:                # proofs assume well-formed code
-            check_proofs(funcs, records, errors)  # promises proven early
+            check_proofs(funcs, records, errors, proven)
         if errors:
             seen_err, unique = set(), []
             for e in errors:            # two checkers can spot one problem
@@ -4378,7 +4463,8 @@ def main() -> int:
                 if len(errors) > 1:
                     print(f"\nfound {len(errors)} problems", file=sys.stderr)
             return 1
-        native = {} if "--no-native" in sys.argv else compile_native(funcs)
+        native = ({} if "--no-native" in sys.argv
+                  else compile_native(funcs, proven))
         import time as _t
         t0 = _t.perf_counter()
         interpret(funcs, native)

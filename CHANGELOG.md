@@ -1,5 +1,27 @@
 # Velaris changelog
 
+## 2.14 - Native text reads, and proven functions run fast
+Text scanning compiles to machine code. Text crosses into native code
+as Unicode code points plus a length, so `length` still counts
+characters and non-English text behaves identically - verified against
+300 random strings including accents and emoji. Reads are
+bounds-guarded like list reads. Measured: 696.8 ms interpreted, 22.3 ms
+native.
+
+New builtin `code_at(text, i)` gives the code point at a position with
+no allocation - the operation native scanning needs, and useful
+interpreted too.
+
+Two rules changed for the better. A function whose promises are
+**proven** may now compile natively: an unproven promise still needs
+its runtime check, but a proven one is already true, so there is
+nothing to check. And the prover learned `length` on text and a sound
+uninterpreted model of `code_at`, so text-scanning loops can be proven
+at all.
+
+Building text (concatenation) stays interpreted - that allocates, and
+allocation gets its own release.
+
 ## 2.13 - Native lists
 Pure functions that read `List of Int` now compile to machine code.
 The list crosses into native code as a pointer plus a length, and every
