@@ -1,5 +1,15 @@
 # Velaris changelog
 
+## 2.5 - Namespaced imports
+`import "lib/geo.vel" as geo` then `geo.distance(a, b)`. A named import
+prefixes that library's functions, rewriting its internal references so
+the library is unchanged from the inside. Two libraries exporting the
+same name can now be used in one file, which was impossible before.
+Unknown namespaces and unknown functions inside a namespace get their
+own messages (E200 lists what the namespace does offer), and a local
+variable may not shadow an import name (E514). Plus a written piece on
+why float proofs use IEEE-754 rather than reals: docs/floats.md.
+
 ## 2.4 - The everyday things
 Function values inline: `keep_if(xs, fn(n: Int) -> Bool { return n > 4 })`.
 They are lifted to real top-level functions, so types, effects, proofs

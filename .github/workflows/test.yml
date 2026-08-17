@@ -31,7 +31,7 @@ jobs:
         run: python run_tests.py
       - name: Formatter check (repo is canonically formatted)
         shell: bash
-        run: velaris fmt examples/*.vel stdlib/*.vel --check
+        run: velaris fmt examples/*.vel examples/lib/*.vel stdlib/*.vel --check
       - name: Playground builds
         run: python build_playground.py
       - name: Docs site builds

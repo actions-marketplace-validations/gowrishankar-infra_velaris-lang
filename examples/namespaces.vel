@@ -1,0 +1,13 @@
+// v2.5: two libraries, both with a function called 'distance' and one
+// called 'scale'. Give each import a name and both can be used in the
+// same file, with no guessing about which one you meant.
+
+import "lib/geo.vel" as geo
+import "lib/money.vel" as money
+
+fn main() uses io {
+    print(format("geo.distance(3, 10)   = {}", geo.distance(3, 10)))
+    print(format("money.distance(3, 10) = {}", money.distance(3, 10)))
+    print(format("geo.scale(7, 3)       = {}", geo.scale(7, 3)))
+    print(format("money.scale(250, 3)   = {}", money.scale(250, 3)))
+}

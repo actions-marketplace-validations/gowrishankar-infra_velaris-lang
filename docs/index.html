@@ -104,8 +104,8 @@ footer { border-top:1px solid var(--line); color:var(--mut);
   font-size:13.5px; padding:26px 24px; text-align:center; }
 </style></head><body>
 <nav><div class="in"><a class="brand" href="index.html">
-<span class="dot"></span>Velaris</a><a href="index.html" class="here">Home</a><a href="tutorial.html" class="">Tutorial</a><a href="library.html" class="">Library</a><a href="errors.html" class="">Errors</a><a href="playground.html" class="">Playground</a>
-<span class="ver">v2.4.0</span></div></nav>
+<span class="dot"></span>Velaris</a><a href="index.html" class="here">Home</a><a href="tutorial.html" class="">Tutorial</a><a href="library.html" class="">Library</a><a href="errors.html" class="">Errors</a><a href="floats.html" class="">Floats</a><a href="playground.html" class="">Playground</a>
+<span class="ver">v2.5.0</span></div></nav>
 <main class="">
 <div class="hero">
 <div class="eyebrow">A programming language</div>
@@ -167,6 +167,13 @@ written in Velaris. Violating a library <code>requires</code> is a
 compile error at <i>your</i> call site. Browse the
 <a href="library.html">library reference</a>, generated from the real
 compiler with contracts included.</p>
+
+<h2>Honest about floating point</h2>
+<p>Most verifiers model floats as real numbers, which makes proofs fast
+and occasionally false. Velaris proves in genuine IEEE-754, so it
+<b>refuses</b> to certify <code>x + 0.1 + 0.1 == x + 0.2</code> and
+hands you the exact double that breaks it &mdash;
+<a href="floats.html">here is why that matters</a>.</p>
 
 <h2>Built for the age of generated code</h2>
 <p>Increasingly, the developer reading your compiler&rsquo;s output is

@@ -1,0 +1,8 @@
+// Asking a namespace for a function it doesn't have. The compiler
+// answers with what that namespace actually offers.
+
+import "lib/geo.vel" as geo
+
+fn main() uses io {
+    print(geo.area(3, 4))
+}

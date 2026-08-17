@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """
-Velaris v2.4 — "The language where you can trust code you didn't write."
+Velaris v2.5 — "The language where you can trust code you didn't write."
 
-New in v2.4: the everyday things.
-    fn(x: Int) -> Bool { ... }   function values written inline
-    format("hi {}, {} left", name, n)   text with holes
-    args()                       command line arguments
-    post(url, body) / fetch_status(url)   more than HTTP GET
+New in v2.5: namespaced imports.
+    import "lib/geo.vel" as geo   then   geo.distance(a, b)
+    Two libraries with the same function names can now live together.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -238,7 +236,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.4.0"
+VERSION = "2.5.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -504,7 +502,12 @@ class Parser:
             if t.kind == "KEYWORD" and t.text == "import":
                 self.next()
                 s = self.expect("STRING")
-                imports.append((unescape(s.text[1:-1], s.line), t.line))
+                alias = None
+                if self.peek().kind == "IDENT" and self.peek().text == "as":
+                    self.next()
+                    alias = self.expect("IDENT").text
+                imports.append(
+                    (unescape(s.text[1:-1], s.line), t.line, alias))
             elif t.kind == "KEYWORD" and t.text == "record":
                 records.append(self.parse_record())
             else:
@@ -833,6 +836,19 @@ class Parser:
             self.expect("OP", ")")
             return e
         if t.kind == "IDENT":
+            if (self.peek().text == "." and
+                    self.toks[self.i + 1].kind == "IDENT" and
+                    self.toks[self.i + 2].text == "("):
+                self.next()                        # '.'
+                fname = self.next().text           # function in namespace
+                self.next()                        # '('
+                qargs = []
+                while self.peek().text != ")":
+                    qargs.append(self.parse_expr())
+                    if self.peek().text == ",":
+                        self.next()
+                self.expect("OP", ")")
+                return Call(f"{t.text}.{fname}", qargs, t.line)
             if (self.peek().text == "("
                     and self.toks[self.i + 1].kind == "IDENT"
                     and self.toks[self.i + 2].text == ":"):
@@ -917,12 +933,72 @@ def expr_vars(e) -> set[str]:
 #     every function and record came from.
 # ---------------------------------------------------------------------------
 
+def qualify(fs: list, alias: str) -> None:
+    """Rename a library's functions to alias.name, in place.
+
+    References the library makes to its own functions are renamed too,
+    so a namespaced import behaves exactly like the flat one from the
+    inside - only the importer sees the prefix.
+    """
+    import dataclasses
+    local = {f.name for f in fs}
+    new_name = {n: f"{alias}.{n}" for n in local}
+
+    def walk(node):
+        if isinstance(node, list):
+            for x in node:
+                walk(x)
+            return
+        if isinstance(node, tuple):
+            for x in node:
+                walk(x)
+            return
+        if not dataclasses.is_dataclass(node):
+            return
+        if isinstance(node, (Call, Var)) and node.name in new_name:
+            node.name = new_name[node.name]
+        for fld in dataclasses.fields(node):
+            if fld.name == "name":
+                continue
+            walk(getattr(node, fld.name))
+
+    for f in fs:
+        walk(f.body)
+        walk([e for e, _ in f.requires])
+        walk([e for e, _ in f.ensures])
+    for f in fs:
+        f.name = new_name[f.name]
+
+
+def unknown_function(name: str, line: int, known) -> VelarisError:
+    """One clear message for an unknown name, namespace-aware."""
+    if "." in name:
+        ns, _, fname = name.partition(".")
+        spaces = sorted({n.split(".")[0] for n in known if "." in n})
+        if ns in spaces:
+            near = sorted(n.split(".", 1)[1] for n in known
+                          if n.startswith(ns + "."))
+            return VelarisError("E200",
+                f"'{ns}' has no function called '{fname}'", line,
+                fixes=[f"available in '{ns}': {', '.join(near[:8])}"
+                       + (" ..." if len(near) > 8 else ""),
+                       "check the spelling of the name"])
+        return VelarisError("E200", f"no import is named '{ns}'", line,
+            fixes=[f'name an import: import "lib.vel" as {ns}',
+                   (f"names in scope: {', '.join(spaces)}" if spaces
+                    else "an import only gets a name if you write 'as'")])
+    return VelarisError("E200", f"unknown function '{name}'", line,
+                        fixes=[f"define 'fn {name}(...)' somewhere",
+                               "check the spelling of the name"])
+
+
 def load_program(entry: str, entry_source: str | None = None):
     funcs, records = [], []
     fn_src, rec_src = {}, {}
     visited = set()
 
-    def load(path: str, importer: str | None, iline: int = 1):
+    def load(path: str, importer: str | None, iline: int = 1,
+             alias: str | None = None):
         ap = os.path.abspath(path)
         if ap in visited:
             return                       # already loaded (diamond or cycle)
@@ -940,7 +1016,7 @@ def load_program(entry: str, entry_source: str | None = None):
                     "stdlib", os.path.basename(path))
                 if os.path.exists(shipped):
                     visited.discard(ap)
-                    return load(shipped, importer, iline)
+                    return load(shipped, importer, iline, alias)
             if importer is None:
                 raise VelarisError("E001", f"cannot find file '{path}'", 1,
                     fixes=["check the file name spelling",
@@ -957,8 +1033,11 @@ def load_program(entry: str, entry_source: str | None = None):
             e.file = e.file or path
             raise
         base = os.path.dirname(path)
-        for ipath, iline in imports:
-            load(os.path.join(base, ipath) if base else ipath, path, iline)
+        for ipath, iline, ialias in imports:   # ialias: don't shadow alias
+            load(os.path.join(base, ipath) if base else ipath, path, iline,
+                 ialias)
+        if alias:
+            qualify(fs, alias)
         for f in fs:
             f.src_file = path
             if f.name in fn_src:
@@ -1063,9 +1142,7 @@ def check_effects(funcs: list[Function], errors: list) -> None:
             return BUILTINS[name]["effects"]
         if name in table:
             return table[name].effects
-        raise VelarisError("E200", f"unknown function '{name}'", line,
-                          fixes=[f"define 'fn {name}(...)' somewhere",
-                                 "check the spelling of the name"])
+        raise unknown_function(name, line, table)
 
     locals_cache: dict[str, set] = {}
 
@@ -1211,9 +1288,11 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
       except VelarisError as e:
         errors.append(blame(r, e))
 
-    def callee_sig(name: str) -> tuple[list[str], str]:
+    def callee_sig(name: str, line: int = 1) -> tuple[list[str], str]:
         if name in BUILTINS:
             return BUILTINS[name]["types"], BUILTINS[name]["ret"]
+        if name not in table:
+            raise unknown_function(name, line, table)
         f = table[name]
         return [t for _, t in f.params], (f.return_type or "Unit")
 
@@ -1278,7 +1357,19 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                 return False
         return False
 
+    NAMESPACES = {n.split(".")[0] for n in table if "." in n}
+
+    def no_shadow(name: str, line: int) -> None:
+        if name in NAMESPACES:
+            raise VelarisError("E514",
+                f"'{name}' is the name of an import, so it cannot also be "
+                f"a variable", line,
+                fixes=[f"rename the variable",
+                       f"or give the import another name: as {name}_lib"])
+
     def check_fn(fn: Function) -> None:
+        for _pname, _ in fn.params:
+            no_shadow(_pname, fn.line)
         env = dict(fn.params)                       # variable -> type
         declared_ret = fn.return_type or "Unit"
 
@@ -1661,7 +1752,7 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                                f"{{ ok v {{ ... }} fail reason {{ ... }} }}",
                                f"or pass it up (inside a fallible "
                                f"function): try {node.name}(...)"])
-                ptypes, ret = callee_sig(node.name)
+                ptypes, ret = callee_sig(node.name, node.line)
                 if node.name == "format":          # text, then one value
                     if not node.args:              # per {} placeholder
                         raise VelarisError("E401",
@@ -1751,6 +1842,7 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
 
         def check_stmt(node) -> None:
             if isinstance(node, Let):
+                no_shadow(node.name, node.line)
                 if node.ann is not None:
                     if not valid_type(node.ann, frozenset(fn.type_vars)):
                         raise VelarisError("E500",
@@ -3038,9 +3130,7 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
             return native[name](*args)     # machine code, C-like speed
         fn = table.get(name)
         if fn is None:
-            raise VelarisError("E200", f"unknown function '{name}'", line,
-                               fixes=[f"define 'fn {name}(...)' somewhere",
-                                      "check the spelling of the name"])
+            raise unknown_function(name, line, table)
         return call_function(fn, args, line)
 
     def call_function(fn: Function, args: list, line: int):

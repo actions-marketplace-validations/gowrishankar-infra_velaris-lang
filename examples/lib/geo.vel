@@ -1,0 +1,12 @@
+// A tiny library with a 'distance' function.
+
+fn distance(a: Int, b: Int) -> Int {
+    if a > b {
+        return a - b
+    }
+    return b - a
+}
+
+fn scale(v: Int, by: Int) -> Int {
+    return v * by
+}

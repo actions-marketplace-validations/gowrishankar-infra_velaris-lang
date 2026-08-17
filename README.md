@@ -45,6 +45,9 @@ refutes it with an exact counterexample when it lies.
 | **Failure is unignorable** | `-> Int or fail` in the signature; callers must `check` or `try`. Forgetting the error path is a compile error — builtins included. |
 | **Fast where it's safe** | Pure `Int` / `Float` / `Bool` functions JIT to native code via LLVM (~10,000× on hot loops), differential-tested against the interpreter. |
 
+Why floats are proven in IEEE-754 rather than as real numbers, and what
+that costs: [docs/floats.md](docs/floats.md).
+
 The prover **never** claims "proven without running" unless the
 counterexample is premise-complete — untranslatable assumptions abandon
 the proof to runtime checks rather than risk a false alarm. Soundness
@@ -89,6 +92,16 @@ post(url, body) / fetch_status(url)                      // not just GET
 Function values are lifted to real functions, so proofs and native
 compilation apply to them unchanged. They can't capture surrounding
 variables — the compiler tells you to pass them in instead.
+
+## Imports
+
+```
+import "lib/geo.vel" as geo      // named: geo.distance(a, b)
+import "std.vel"                 // flat: sort(xs)
+```
+
+A named import prefixes that library's functions, so two libraries that
+both export `distance` can be used in the same file.
 
 ## Tooling
 

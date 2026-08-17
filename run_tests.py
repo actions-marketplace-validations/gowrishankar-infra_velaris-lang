@@ -34,6 +34,8 @@ EXPECT = {
     "fp_proof.vel": "RUNS",
     "std_tour.vel": "RUNS",
     "lambdas.vel": "RUNS",
+    "namespaces.vel": "RUNS",
+    "ns_bad.vel": "REJECTED",
     "tools.vel": "RUNS",
     "lambda_bad.vel": "REJECTED",
     "builtin_unhandled.vel": "REJECTED",

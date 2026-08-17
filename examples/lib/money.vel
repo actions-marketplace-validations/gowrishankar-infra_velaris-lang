@@ -1,0 +1,11 @@
+// A different library that also has 'distance' - and a 'scale' that
+// means something else entirely. Without namespaces these two files
+// could not be used together at all.
+
+fn distance(a: Int, b: Int) -> Int {
+    return (a - b) * 100
+}
+
+fn scale(cents: Int, by: Int) -> Int {
+    return cents * by
+}

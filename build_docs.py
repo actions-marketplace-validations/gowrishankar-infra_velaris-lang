@@ -118,7 +118,7 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 
 PAGES = [("index.html", "Home"), ("tutorial.html", "Tutorial"),
          ("library.html", "Library"), ("errors.html", "Errors"),
-         ("playground.html", "Playground")]
+         ("floats.html", "Floats"), ("playground.html", "Playground")]
 
 
 def shell(title: str, here: str, body: str, wide: bool = False) -> str:
@@ -315,6 +315,13 @@ compile error at <i>your</i> call site. Browse the
 <a href="library.html">library reference</a>, generated from the real
 compiler with contracts included.</p>
 
+<h2>Honest about floating point</h2>
+<p>Most verifiers model floats as real numbers, which makes proofs fast
+and occasionally false. Velaris proves in genuine IEEE-754, so it
+<b>refuses</b> to certify <code>x + 0.1 + 0.1 == x + 0.2</code> and
+hands you the exact double that breaks it &mdash;
+<a href="floats.html">here is why that matters</a>.</p>
+
 <h2>Built for the age of generated code</h2>
 <p>Increasingly, the developer reading your compiler&rsquo;s output is
 an AI in a fix loop. Every Velaris error has a stable code, a
@@ -334,6 +341,10 @@ compiler source itself.</p>"""
     shell("Library", "library.html", library_page()), encoding="utf-8")
 (OUT / "errors.html").write_text(
     shell("Errors", "errors.html", errors_page()), encoding="utf-8")
+(OUT / "floats.html").write_text(
+    shell("Floats", "floats.html",
+          md_to_html((HERE / "docs" / "floats.md").read_text(
+              encoding="utf-8"))), encoding="utf-8")
 play = (HERE / "playground" / "index.html").read_text(encoding="utf-8")
 (OUT / "playground.html").write_text(play, encoding="utf-8")
 n_err = errors_page().count('class="ecode"')
