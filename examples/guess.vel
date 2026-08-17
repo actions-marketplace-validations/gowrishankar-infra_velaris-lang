@@ -12,15 +12,19 @@ fn main() uses io, rand {
     invariant tries >= 0
     {
         let answer = ask("your guess:")
-        let g = to_int(answer)
-        tries = tries + 1
-        if g == secret {
-            found = true
-        } else {
-            if g < secret {
-                print("higher!")
-            } else {
-                print("lower!")
+        check to_int(answer) {
+            ok g {
+                tries = tries + 1
+                if g == secret {
+                    found = true
+                } else if g < secret {
+                    print("higher!")
+                } else {
+                    print("lower!")
+                }
+            }
+            fail why {
+                print("that is not a number - " + why)
             }
         }
     }

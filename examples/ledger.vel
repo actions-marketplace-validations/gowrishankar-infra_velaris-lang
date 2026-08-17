@@ -87,7 +87,7 @@ fn load_all() -> List of Expense uses fs or fail {
     if not file_exists("ledger.txt") {
         fail "nothing saved yet - use save first"
     }
-    let lines = split(read_file("ledger.txt"), "\n")
+    let lines = split(try read_file("ledger.txt"), "\n")
     let out: List of Expense = []
     let i = 0
     while i < length(lines) {

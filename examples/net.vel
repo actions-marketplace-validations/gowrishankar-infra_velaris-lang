@@ -1,14 +1,20 @@
-// v0.11: fetch is REAL - this program performs an actual HTTP GET.
-// It needs an internet connection, so it is NOT part of run_tests.py.
-// The point of Velaris: this power is VISIBLE. 'uses net' is right
-// there in the signature - and a function without it can never do this.
+// fetch is REAL - this program performs an actual HTTP GET. It needs
+// an internet connection, so it is NOT part of run_tests.py.
+// Since v2.0 the network's unreliability is part of the signature:
+// fetch can fail, so homepage says 'or fail', and main handles it.
 
-fn homepage(url: Text) -> Text uses net {
-    return fetch(url)
+fn homepage(url: Text) -> Text uses net or fail {
+    return try fetch(url)
 }
 
 fn main() uses io, net {
-    let body = homepage("https://raw.githubusercontent.com/octocat/Hello-World/master/README")
-    print("fetched " + length(body) + " characters:")
-    print(body)
+    check homepage("https://raw.githubusercontent.com/octocat/Hello-World/master/README") {
+        ok body {
+            print("fetched " + length(body) + " characters:")
+            print(body)
+        }
+        fail why {
+            print("the network said no: " + why)
+        }
+    }
 }

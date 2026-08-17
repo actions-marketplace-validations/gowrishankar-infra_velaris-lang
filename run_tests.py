@@ -33,6 +33,7 @@ EXPECT = {
     "fail_proof.vel": "RUNS",
     "fp_proof.vel": "RUNS",
     "std_tour.vel": "RUNS",
+    "builtin_unhandled.vel": "REJECTED",
     "std_bad.vel": "REJECTED",
     "fp_proof_bad.vel": "REJECTED",
     "fail_proof_bad.vel": "REJECTED",

@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """
-Velaris v1.20 — "The language where you can trust code you didn't write."
+Velaris v2.0 — "The language where you can trust code you didn't write."
+
+v2.0 - THE BUILTINS KEEP THE LANGUAGE'S PROMISE (breaking change):
+    to_int, get-on-a-map, read_file, and fetch can now FAIL instead of
+    killing the program - and therefore must be called through check
+    or try, like any fallible function. The compiler walks you to
+    every call that needs updating (error E520). get on a LIST is
+    unchanged: list bounds are the prover's job. New: get_or(m, k,
+    default) - a total map lookup that never fails.
 
 New in v1.20: sort_by in the standard library (generic sorting by an
     Int key function), and the ledger app gains a 'report' command
@@ -211,7 +219,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.20.0"
+VERSION = "2.0.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -927,6 +935,8 @@ def blame(fn_or_rec, err: VelarisError) -> VelarisError:
 #    Rule: a function may only cause effects it declares with `uses`.
 # ---------------------------------------------------------------------------
 
+FALLIBLE_BUILTINS = {"to_int", "read_file", "fetch"}   # + get on maps
+
 BUILTINS = {
     # name          effects needed      argument types        returns
     "print":      {"effects": {"io"},    "types": ["Any"],         "ret": "Unit"},
@@ -947,6 +957,7 @@ BUILTINS = {
     "chars":      {"effects": set(),      "types": ["Text"],        "ret": "List of Text"},
     "file_exists": {"effects": {"fs"},    "types": ["Text"],        "ret": "Bool"},
     "put":        {"effects": set(),      "types": ["Any", "Any", "Any"], "ret": "Any"},
+    "get_or":     {"effects": set(),      "types": ["Any", "Any", "Any"], "ret": "Any"},
     "has":        {"effects": set(),      "types": ["Any", "Any"],  "ret": "Bool"},
     "keys":       {"effects": set(),      "types": ["Any"],         "ret": "Any"},
     "all_of":     {"effects": set(),      "types": ["Any", "Any"],  "ret": "Bool"},
@@ -1192,6 +1203,16 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                               f"for '{f.name}'", f.line,
                               fixes=[TYPE_HINT])
 
+    def builtin_call_fallible(node, infer) -> bool:
+        if node.name in FALLIBLE_BUILTINS:
+            return True
+        if node.name == "get" and node.args:
+            try:
+                return infer(node.args[0]).startswith("Map of ")
+            except VelarisError:
+                return False
+        return False
+
     def check_fn(fn: Function) -> None:
         env = dict(fn.params)                       # variable -> type
         declared_ret = fn.return_type or "Unit"
@@ -1206,7 +1227,9 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                                f"'{fn.name}'",
                                "or handle it here with a check block"])
                 callee = table.get(node.value.name)
-                if callee is None or not callee.can_fail:
+                user_ok = callee is not None and callee.can_fail
+                if not user_ok and not builtin_call_fallible(node.value,
+                                                             infer):
                     raise VelarisError("E522",
                         f"'{node.value.name}' cannot fail - call it "
                         f"directly without 'try'", node.line,
@@ -1364,9 +1387,10 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                                f"returning Bool"])
                 return "Bool"
             if isinstance(node, Call) and node.name in (
-                    "length", "push", "get", "put", "has", "keys"):
+                    "length", "push", "get", "put", "has", "keys",
+                    "get_or"):
                 n_want = {"length": 1, "keys": 1, "push": 2, "get": 2,
-                          "has": 2, "put": 3}[node.name]
+                          "has": 2, "put": 3, "get_or": 3}[node.name]
                 if len(node.args) != n_want:
                     raise VelarisError("E401",
                         f"'{node.name}' expects {n_want} argument(s) "
@@ -1407,7 +1431,35 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                             f"{infer(node.args[2])}", node.line,
                             fixes=[f"put {'an' if val_t == 'Int' else 'a'} {val_t} value"])
                     return t0
+                if node.name == "get_or":
+                    if not is_map:
+                        raise VelarisError("E501",
+                            f"'get_or' works on a map, but this is {t0}",
+                            node.line, fixes=["pass a map first"])
+                    if infer(node.args[1]) != key_t:
+                        raise VelarisError("E501",
+                            f"this map has {key_t} keys, but this key is "
+                            f"{infer(node.args[1])}", node.line,
+                            fixes=[f"use {'an' if key_t == 'Int' else 'a'} "
+                                   f"{key_t} key"])
+                    if infer(node.args[2]) != val_t:
+                        raise VelarisError("E501",
+                            f"this map holds {val_t} values, but the "
+                            f"default is {infer(node.args[2])}", node.line,
+                            fixes=[f"use {'an' if val_t == 'Int' else 'a'} "
+                                   f"{val_t} default"])
+                    return val_t
                 if node.name == "get" and is_map:
+                    if not allow_fail:
+                        raise VelarisError("E520",
+                            "'get' on a map can fail - the key may be "
+                            "missing, and that cannot be ignored",
+                            node.line,
+                            fixes=["handle it: check get(m, key) "
+                                   "{ ok v { ... } fail why { ... } }",
+                                   "or use get_or(m, key, default) "
+                                   "which never fails",
+                                   "or pass it up with: try get(m, key)"])
                     if infer(node.args[1]) != key_t:
                         raise VelarisError("E501",
                             f"this map has {key_t} keys, but this key is "
@@ -1448,6 +1500,15 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                             f"but this is {got}", node.line,
                             fixes=[f"pass a {want} value"])
                 return ret
+            if isinstance(node, Call) and node.name in FALLIBLE_BUILTINS \
+                    and not allow_fail:
+                raise VelarisError("E520",
+                    f"'{node.name}' can fail - that cannot be ignored",
+                    node.line,
+                    fixes=[f"handle it: check {node.name}(...) "
+                           f"{{ ok v {{ ... }} fail reason {{ ... }} }}",
+                           f"or pass it up (inside a fallible function): "
+                           f"try {node.name}(...)"])
             if isinstance(node, Call) and (cg := table.get(node.name)) \
                     is not None and cg.type_vars:
                 if cg.can_fail and not allow_fail:
@@ -1672,7 +1733,9 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                         node.line, fixes=['write a message: fail "why"'])
             elif isinstance(node, Check):
                 callee = table.get(node.subject.name)
-                if callee is None or not callee.can_fail:
+                user_ok = callee is not None and callee.can_fail
+                if not user_ok and not builtin_call_fallible(node.subject,
+                                                             infer):
                     raise VelarisError("E522",
                         f"'{node.subject.name}' cannot fail - call it "
                         f"directly, no check needed", node.line,
@@ -2753,9 +2816,7 @@ def run_builtin(name: str, args: list, line: int):
         t = str(args[0]).strip()
         body = t[1:] if t.startswith("-") else t
         if not body.isdigit():
-            raise VelarisError("E608",
-                f"'{args[0]}' is not a whole number", line,
-                fixes=["enter digits only, like 42 or -7"])
+            raise FailSignal(f"'{args[0]}' is not a whole number")
         return int(t)
     if name == "to_text":
         return to_text(args[0])
@@ -2790,12 +2851,14 @@ def run_builtin(name: str, args: list, line: int):
         return args[1] in args[0]
     if name == "keys":
         return list(args[0].keys())
+    if name == "get_or":
+        m, k, d = args
+        return m.get(k, d)
     if name == "get" and isinstance(args[0], dict):
         m, k = args
         if k not in m:
-            raise VelarisError("E610",
-                f"map has no key {to_text(k) if not isinstance(k, str) else chr(39) + k + chr(39)}",
-                line, fixes=["check first: if has(m, key) { ... }"])
+            key_txt = f"'{k}'" if isinstance(k, str) else to_text(k)
+            raise FailSignal(f"map has no key {key_txt}")
         return m[k]
     if name == "get":
         xs, i = args
@@ -2809,8 +2872,7 @@ def run_builtin(name: str, args: list, line: int):
         try:
             return open(args[0], encoding="utf-8").read()
         except OSError:
-            raise VelarisError("E404", f"cannot read file '{args[0]}'", line,
-                              fixes=["check the file exists and the path is correct"])
+            raise FailSignal(f"cannot read file '{args[0]}'")
     if name == "write_file":
         with open(args[0], "w", encoding="utf-8") as f:
             f.write(str(args[1]))
@@ -2827,9 +2889,7 @@ def run_builtin(name: str, args: list, line: int):
             with urllib.request.urlopen(req, timeout=10) as resp:
                 return resp.read(65536).decode("utf-8", errors="replace")
         except Exception:
-            raise VelarisError("E606", f"cannot reach '{url}'", line,
-                               fixes=["check the address is correct",
-                                      "check your internet connection"])
+            raise FailSignal(f"cannot reach '{url}'")
     if name == "now":
         return int(_time.time())
     if name == "random":

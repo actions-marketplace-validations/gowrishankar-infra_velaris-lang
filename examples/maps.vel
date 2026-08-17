@@ -1,18 +1,27 @@
-// v1.4: maps - lookup tables. Keys are Text or Int; get/has/put/keys.
-// put returns a NEW map (immutable, like push for lists).
+// Maps: lookup tables. Since v2.0, get on a map CAN FAIL (the key
+// may be missing) - so it is handled with check, passed up with try,
+// or replaced with get_or(m, key, default), which never fails.
 
 fn main() uses io {
     let ages = { "alice": 30, "bob": 25 }
     print(ages)
-    print("alice is " + get(ages, "alice"))
+    check get(ages, "alice") {
+        ok a {
+            print("alice is " + a)
+        }
+        fail why {
+            print(why)
+        }
+    }
     print("has carol? " + has(ages, "carol"))
+    print("carol or 0: " + get_or(ages, "carol", 0))
     let ages2 = put(ages, "carol", 41)
     print("now " + length(ages2) + " people")
     let names = keys(ages2)
     let i = 0
     while i < length(names) {
         let n = get(names, i)
-        print(n + " -> " + get(ages2, n))
+        print(n + " -> " + get_or(ages2, n, 0))
         i = i + 1
     }
 }

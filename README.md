@@ -175,7 +175,10 @@ its own promises: `first` / `last` / `reverse` / `index_of` /
 library `requires` — like `max_of` on a provably empty list — is a
 compile error at your call site.
 
-Failure is part of the signature, and ignoring it doesn't compile:
+Failure is part of the signature, and ignoring it doesn't compile —
+including the builtins: `to_int`, `get` on a map, `read_file`, and
+`fetch` are fallible (since v2.0) and must be handled with `check` /
+`try`, while `get_or(m, key, default)` offers a never-failing lookup:
 
 ```
 fn parse_age(t: Text) -> Int or fail {

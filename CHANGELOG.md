@@ -1,5 +1,15 @@
 # Velaris changelog
 
+## 2.0 - The builtins keep the language's promise (BREAKING)
+to_int, get-on-a-map, read_file, and fetch are now fallible: they must
+be called through check or try, and their failures can finally be
+handled instead of killing the program. Migration is compiler-guided -
+error E520 points at every call needing a wrap. get on a LIST is
+unchanged (bounds are the prover's domain, proven at compile time).
+New: get_or(m, key, default), a total map lookup. All examples
+migrated; guess.vel now survives typos, net.vel survives outages, and
+the ledger's loader shrank.
+
 ## 1.20 - sort_by + ledger reports
 std.vel gains generic sort_by(xs, key) - sort anything by an Int key
 function. The ledger uses it for a new report command: sorted-by-amount

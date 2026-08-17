@@ -17,5 +17,12 @@ fn main() uses io, fs, clock, rand {
     print("dice roll: " + dice())
     print("time now: " + timestamp())
     save_report("all systems working")
-    print("saved report.txt with: " + read_file("report.txt"))
+    check read_file("report.txt") {
+        ok content {
+            print("saved report.txt with: " + content)
+        }
+        fail why {
+            print("could not read it back: " + why)
+        }
+    }
 }

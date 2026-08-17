@@ -1,0 +1,7 @@
+// v2.0: the builtins keep the language's promise. to_int can fail,
+// so calling it bare - failure ignored - does not compile.
+
+fn main() uses io {
+    let answer = ask("a number please:")
+    print(to_int(answer) * 2)
+}
