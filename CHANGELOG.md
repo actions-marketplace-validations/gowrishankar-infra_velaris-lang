@@ -1,5 +1,10 @@
 # Velaris changelog
 
+## 2.5.1 - One problem, one message
+The effect checker and type checker could both report the same unknown
+function, so a single mistake printed twice. Identical errors are now
+reported once.
+
 ## 2.5 - Namespaced imports
 `import "lib/geo.vel" as geo` then `geo.distance(a, b)`. A named import
 prefixes that library's functions, rewriting its internal references so

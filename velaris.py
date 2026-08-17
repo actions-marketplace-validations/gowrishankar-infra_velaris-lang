@@ -236,7 +236,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.5.0"
+VERSION = "2.5.1"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -3796,6 +3796,13 @@ def main() -> int:
         if not errors:                # proofs assume well-formed code
             check_proofs(funcs, records, errors)  # promises proven early
         if errors:
+            seen_err, unique = set(), []
+            for e in errors:            # two checkers can spot one problem
+                key = (e.code, e.file or filename, e.line, e.message)
+                if key not in seen_err:
+                    seen_err.add(key)
+                    unique.append(e)
+            errors[:] = unique
             errors.sort(key=lambda e: (e.file or filename, e.line))
             if as_json:
                 print(json.dumps(
