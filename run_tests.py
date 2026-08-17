@@ -38,6 +38,8 @@ EXPECT = {
     "div_proof.vel": "RUNS",
     "wordcount.vel": "RUNS",
     "map_proof.vel": "RUNS",
+    "lambda_contract.vel": "RUNS",
+    "lambda_contract_bad.vel": "REJECTED",
     "map_bad.vel": "REJECTED",
     "div_bad.vel": "REJECTED",
     "ns_bad.vel": "REJECTED",

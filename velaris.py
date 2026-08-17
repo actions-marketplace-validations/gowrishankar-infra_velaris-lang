@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Velaris v2.9 — "The language where you can trust code you didn't write."
+Velaris v2.10 — "The language where you can trust code you didn't write."
 
-New in v2.9: MAP PROOFS. A map is modelled as its values plus which
-    keys are present, so promises about put / get_or / has are proven
-    before the program runs - the last major type to get a proof story.
+New in v2.10: function values can carry promises.
+    keep_if(xs, fn(n: Int) -> Bool ensures result == (n > 5) { ... })
+    Proven like any other function, because lambdas become real ones.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -239,7 +239,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.9.0"
+VERSION = "2.10.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -609,10 +609,17 @@ class Parser:
                 fixes=["write: fn(x: Int) -> Bool { return x > 0 }"])
         self.next()
         ret = self.parse_type()
+        requires_, ensures_ = [], []      # a function value can promise too
+        while (self.peek().kind == "KEYWORD"
+               and self.peek().text in ("requires", "ensures")):
+            kw = self.next()
+            clause = (self.parse_expr(), kw.line)
+            (requires_ if kw.text == "requires" else ensures_).append(clause)
         body = self.parse_block()
         Parser.lambda_n += 1
         name = f"fn#{Parser.lambda_n}"
-        f = Function(name, params, ret, set(), [], [], body, start.line)
+        f = Function(name, params, ret, set(), requires_, ensures_,
+                     body, start.line)
         f.can_fail = False
         f.type_vars = []
         f.is_lambda = True
@@ -877,6 +884,13 @@ class Parser:
             return Var(t.text, t.line)
         raise VelarisError("E101", f"unexpected '{t.text}'", t.line,
                           fixes=["expected a number, string, variable, or function call"])
+
+
+def nice_name(name: str) -> str:
+    """Lifted lambdas get generated names; show something readable."""
+    if name.startswith("fn#"):
+        return "this function value"
+    return f"'{name}'"
 
 
 def expr_str(e) -> str:
@@ -2778,7 +2792,7 @@ def check_proofs(funcs: list[Function], records: list,
                         else:
                             rv = m.eval(ret, model_completion=True)
                         raise VelarisError("E700",
-                            f"promise cannot be kept: '{fn.name}' ensures "
+                            f"promise cannot be kept: {nice_name(fn.name)} ensures "
                             f"{expr_str(ens_expr)} - proven without running "
                             f"the program: {vals} gives result = {rv}",
                             cline,
@@ -3299,7 +3313,7 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
         for expr, cline in fn.requires:
             if not eval_(expr, dict(entry)):
                 raise VelarisError("E600",
-                    f"broken promise: '{name}' requires "
+                    f"broken promise: {nice_name(name)} requires "
                     f"{expr_str(expr)}  ({vals(expr)})", cline,
                     fixes=["check the value before calling this function",
                            "or loosen the promise if it is too strict"])
@@ -3318,7 +3332,7 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
             check_env["result"] = retval
             if not eval_(expr, check_env):
                 raise VelarisError("E601",
-                    f"broken promise: '{name}' ensures "
+                    f"broken promise: {nice_name(name)} ensures "
                     f"{expr_str(expr)}  ({vals(expr, (retval,))})", cline,
                     fixes=["the code does not keep this promise - fix the code",
                            "or fix the promise if it is wrong"])

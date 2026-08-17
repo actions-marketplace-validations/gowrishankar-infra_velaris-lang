@@ -1,0 +1,12 @@
+// The inline function promises its result never shrinks, then
+// subtracts one. Proven wrong before anything runs.
+
+import "std.vel"
+
+fn main() uses io {
+    print(apply_to_each([1, 2], fn(n: Int) -> Int
+    ensures result >= n
+    {
+        return n - 1
+    }))
+}

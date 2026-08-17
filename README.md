@@ -90,7 +90,8 @@ post(url, body) / fetch_status(url)                      // not just GET
 ```
 
 Function values are lifted to real functions, so proofs and native
-compilation apply to them unchanged. They can't capture surrounding
+compilation apply to them unchanged — and they can carry their own
+`requires` / `ensures`, proven like any other function's. They can't capture surrounding
 variables — the compiler tells you to pass them in instead.
 
 ## Two real programs

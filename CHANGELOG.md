@@ -1,5 +1,13 @@
 # Velaris changelog
 
+## 2.10 - Contracts on function values
+An inline function can carry `requires` and `ensures` of its own, and
+they are proven like any other function's - so a function value is a
+first class citizen rather than a convenience. Because lambdas are
+lifted to real functions, this needed no new machinery in the prover.
+Errors about them now say "this function value" instead of leaking the
+generated name.
+
 ## 2.9 - Map proofs
 Maps are now modelled symbolically - the values, plus which keys are
 actually present - so `put`, `get_or` and `has` take part in proofs.
