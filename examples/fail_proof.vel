@@ -1,0 +1,39 @@
+// v1.17: the prover understands failure. On every path that RETURNS,
+// it knows the fail-conditions did not hold - so failing early on bad
+// input makes the remaining promise easier to prove. And promises of
+// fallible functions flow through try and check like any other fact.
+
+fn checked_half(n: Int) -> Int or fail
+ensures result >= 0
+{
+    if n < 0 {
+        fail "negative input: " + n
+    }
+    return n - n + n
+}
+
+fn boosted(n: Int) -> Int or fail
+ensures result >= 10
+{
+    let h = try checked_half(n)
+    return h + 10
+}
+
+fn main() uses io {
+    check boosted(4) {
+        ok v {
+            print("boosted(4) = " + v)
+        }
+        fail reason {
+            print("no: " + reason)
+        }
+    }
+    check boosted(-3) {
+        ok v {
+            print("boosted(-3) = " + v)
+        }
+        fail reason {
+            print("no: " + reason)
+        }
+    }
+}

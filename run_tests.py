@@ -30,6 +30,8 @@ EXPECT = {
     "rec_proof.vel": "RUNS",
     "native_float.vel": "RUNS",
     "qlist_proof.vel": "RUNS",
+    "fail_proof.vel": "RUNS",
+    "fail_proof_bad.vel": "REJECTED",
     "qlist_bad.vel": "REJECTED",
     "rec_proof_bad.vel": "REJECTED",
     "generics_bad.vel": "REJECTED",

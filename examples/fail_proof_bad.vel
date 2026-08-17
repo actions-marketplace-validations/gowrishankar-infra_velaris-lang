@@ -1,0 +1,22 @@
+// The fail-guard lets 0 through, and the promise demands strictly
+// positive. The prover finds the one value the guard misses.
+
+fn positive_only(n: Int) -> Int or fail
+ensures result > 0
+{
+    if n < 0 {
+        fail "negative"
+    }
+    return n
+}
+
+fn main() uses io {
+    check positive_only(5) {
+        ok v {
+            print(v)
+        }
+        fail reason {
+            print(reason)
+        }
+    }
+}

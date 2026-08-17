@@ -1,5 +1,11 @@
 # Velaris changelog
 
+## 1.17 - Failure-aware proofs
+The prover understands fail / check / try: promises on 'or fail'
+functions are proven for every returning path, fail-guards become
+facts on those paths, and fallible callees' promises flow through try
+and check. CI actions bumped past the Node 20 deprecation.
+
 ## 1.16 - Quantified list proofs
 `all_of` / `any_of` with a predicate function; in contracts they become
 Z3 foralls/exists with the predicate's body symbolically inlined.

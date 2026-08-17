@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v1.16 — "The language where you can trust code you didn't write."
+Velaris v1.17 — "The language where you can trust code you didn't write."
+
+New in v1.17: FAILURE-AWARE PROOFS. The prover now understands fail,
+    check, and try - so promises on 'or fail' functions are proven for
+    every path that actually returns. Failing early on bad input makes
+    the remaining promise EASIER to prove, and the prover knows it.
 
 New in v1.16: QUANTIFIED LIST PROOFS.
     all_of(xs, p) / any_of(xs, p) ask whether a predicate holds for
@@ -191,7 +196,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.16.0"
+VERSION = "1.17.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1778,6 +1783,7 @@ def check_proofs(funcs: list[Function], records: list,
         pass
 
     FELL_OFF = object()
+    FAILED = object()
     counter = [0]
 
     class RecVal:
@@ -1916,7 +1922,7 @@ def check_proofs(funcs: list[Function], records: list,
         return z3.Or(*[z3.And(*(cs + [r])) if cs else r
                        for cs, r in branches])
 
-    def summarize_call(node: Call, env, ctx):
+    def summarize_call(node: Call, env, ctx, allow_fail: bool = False):
         """Model a call to a pure user function by its contract."""
         fnB = table.get(node.name)
 
@@ -1924,7 +1930,8 @@ def check_proofs(funcs: list[Function], records: list,
             return t in ("Int", "Bool") or (t in rec_fields
                                             and provable_rec(t))
 
-        if (fnB is None or fnB.effects or fnB.can_fail or fnB.type_vars
+        if (fnB is None or fnB.effects or fnB.type_vars
+                or (fnB.can_fail and not allow_fail)
                 or not summarizable(fnB.return_type or "")
                 or any(not summarizable(pt) for _, pt in fnB.params)):
             raise Unprovable()
@@ -2183,6 +2190,39 @@ def check_proofs(funcs: list[Function], records: list,
         i = 0
         while i < len(stmts):
             s = stmts[i]
+            if isinstance(s, FailStmt):
+                return [(ctx, FAILED, dict(env))]  # this path never returns
+            if isinstance(s, Check):
+                rest = stmts[i + 1:]
+                rv = summarize_call(s.subject, env, ctx, allow_fail=True)
+                env_ok = dict(env)
+                if s.ok_name is not None:
+                    env_ok[s.ok_name] = rv
+                ok_paths = explore(list(s.ok_body) + rest, env_ok, ctx)
+                env_fail = dict(env)
+                env_fail.pop(s.fail_name, None)   # a Text reason: unmodeled
+                fail_paths = explore(list(s.fail_body) + rest, env_fail,
+                                     ctx)
+                return ok_paths + fail_paths
+            if (isinstance(s, (Let, Assign)) and
+                    isinstance(s.value, TryExpr)):
+                rest = stmts[i + 1:]
+                rv = summarize_call(s.value.value, env, ctx,
+                                    allow_fail=True)
+                env2 = dict(env)
+                env2[s.name] = rv
+                return (explore(rest, env2, ctx)
+                        + [(ctx, FAILED, dict(env))])
+            if isinstance(s, Return) and isinstance(s.value, TryExpr):
+                rv = summarize_call(s.value.value, env, ctx,
+                                    allow_fail=True)
+                return [(ctx, rv, dict(env)), (ctx, FAILED, dict(env))]
+            if (isinstance(s, ExprStmt)
+                    and isinstance(s.expr, TryExpr)):
+                rest = stmts[i + 1:]
+                summarize_call(s.expr.value, env, ctx, allow_fail=True)
+                return (explore(rest, dict(env), ctx)
+                        + [(ctx, FAILED, dict(env))])
             if isinstance(s, (Let, Assign)):
                 env[s.name] = to_z3(s.value, env, ctx)
             elif isinstance(s, Return):
@@ -2274,6 +2314,8 @@ def check_proofs(funcs: list[Function], records: list,
             if not fn.ensures:
                 continue
             for pctx, ret, _ in paths:
+                if ret is FAILED:
+                    continue           # ensures speaks only of returns
                 if ret is FELL_OFF:
                     raise Unprovable()
                 for ens_expr, cline in fn.ensures:
