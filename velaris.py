@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
-Velaris v1.19 — "The language where you can trust code you didn't write."
+Velaris v1.20 — "The language where you can trust code you didn't write."
+
+New in v1.20: sort_by in the standard library (generic sorting by an
+    Int key function), and the ledger app gains a 'report' command
+    built on it - sorted listing, biggest, smallest, totals.
 
 New in v1.19: a grown-up standard library. stdlib/std.vel now holds
     sixteen functions written in Velaris - including sort, which
@@ -207,7 +211,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.19.0"
+VERSION = "1.20.0"
 import re
 import sys
 from dataclasses import dataclass, field

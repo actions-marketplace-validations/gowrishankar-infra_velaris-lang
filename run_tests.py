@@ -58,7 +58,8 @@ EXPECT = {
 # scripted keyboard input for interactive examples
 STDIN = {
     "ledger.vel": ("add\nchai\n2500\n1\nadd\nbook\n45000\n2\n"
-                   "list\ntotal\nsave\nload\nlist\n"
+                   "add\nauto\n12000\n2\n"
+                   "list\ntotal\nreport\nsave\nload\nreport\n"
                    "add\npen\nabc\nquit\n"),
 }
 

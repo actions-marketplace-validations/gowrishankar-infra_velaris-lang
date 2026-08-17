@@ -151,6 +151,39 @@ ensures is_sorted(result)
     return out
 }
 
+fn insert_by(xs: List of T, v: T, key: fn (T) -> Int) -> List of T
+for any T
+{
+    let out: List of T = []
+    let placed = false
+    let i = 0
+    while i < length(xs) {
+        let cur = get(xs, i)
+        if not placed and key(v) <= key(cur) {
+            out = push(out, v)
+            placed = true
+        }
+        out = push(out, cur)
+        i = i + 1
+    }
+    if not placed {
+        out = push(out, v)
+    }
+    return out
+}
+
+fn sort_by(xs: List of T, key: fn (T) -> Int) -> List of T for any T
+ensures length(result) == length(xs)
+{
+    let out: List of T = []
+    let i = 0
+    while i < length(xs) {
+        out = insert_by(out, get(xs, i), key)
+        i = i + 1
+    }
+    return out
+}
+
 fn join(xs: List of Text, sep: Text) -> Text {
     if length(xs) == 0 {
         return ""

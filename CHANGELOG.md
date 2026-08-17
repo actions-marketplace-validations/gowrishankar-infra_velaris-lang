@@ -1,5 +1,10 @@
 # Velaris changelog
 
+## 1.20 - sort_by + ledger reports
+std.vel gains generic sort_by(xs, key) - sort anything by an Int key
+function. The ledger uses it for a new report command: sorted-by-amount
+listing with biggest, smallest, and totals. The CI session exercises it.
+
 ## 1.19 - Standard library sprint
 std.vel grows to sixteen functions, all in Velaris: sort (ensures
 is_sorted(result)), min/max (ensures membership), sum, keep_if,

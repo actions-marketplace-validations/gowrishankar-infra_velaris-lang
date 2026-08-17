@@ -5,6 +5,10 @@
 
 import "std.vel"
 
+fn negated(n: Int) -> Int {
+    return -n
+}
+
 fn is_even(n: Int) -> Bool {
     return n % 2 == 0
 }
@@ -18,5 +22,5 @@ fn main() uses io {
     print("even count: " + count_where(xs, is_even))
     print("joined: " + join(["proof", "speed", "trust"], " + "))
     print("range: " + range_list(3, 9))
-    print("reversed: " + reverse(sort(xs)))
+    print("descending: " + sort_by(xs, negated))
 }
