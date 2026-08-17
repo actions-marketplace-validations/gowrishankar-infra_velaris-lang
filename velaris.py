@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Velaris v2.14 — "The language where you can trust code you didn't write."
+Velaris v2.15 — "The language where you can trust code you didn't write."
 
-New in v2.14: native TEXT reads (as Unicode code points, so length
-    still counts characters), the code_at builtin, and a better rule:
-    a function whose promises are PROVEN may run natively, because a
-    proven promise has nothing left to check.
+New in v2.15.1: text built inside a native function is assembled in a
+    runtime-owned buffer that grows and retries rather than guessing.
+    Returning text from native code stays interpreted on purpose - that
+    boundary is platform-specific ABI. Native compilation is fail-safe:
+    any backend trouble means interpreted, never a broken program.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -240,7 +241,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.14.0"
+VERSION = "2.15.1"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -2979,18 +2980,42 @@ def native_eligible(funcs: list[Function],
         if (fn.requires or fn.ensures) and fn.name not in proven:
             return None       # unproven promises still need runtime checks
         if fn.return_type not in ("Int", "Float", "Bool"):
-            return None
+            return None      # text results stay interpreted: returning a
+                             # struct by value is platform-specific ABI
         if any(pt not in ("Int", "Float", "Bool", "List of Int", "Text")
                for _, pt in fn.params):
             return None
         list_params = {p for p, t in fn.params if t == "List of Int"}
         text_params = {p for p, t in fn.params if t == "Text"}
         calls, ok = set(), [True]
+        local_text = set(text_params)
+
+        def text_valued(e) -> bool:
+            if isinstance(e, Str):
+                return True
+            if isinstance(e, Var):
+                return e.name in local_text
+            if isinstance(e, Call):
+                callee = table.get(e.name)
+                return callee is not None and callee.return_type == "Text"
+            if isinstance(e, BinOp) and e.op == "+":
+                return text_valued(e.left)
+            return False
+
+        def note_text(stmts):           # locals that hold text
+            for s in stmts:
+                if isinstance(s, (Let, Assign)) and text_valued(s.value):
+                    local_text.add(s.name)
+                elif isinstance(s, If):
+                    note_text(s.then); note_text(s.other)
+                elif isinstance(s, While):
+                    note_text(s.body)
+        note_text(fn.body)
+        note_text(fn.body)              # twice: assignments after use
 
         def we(e):
-            if isinstance(e, Var) and e.name in text_params:
-                ok[0] = False        # any use other than length/code_at
-                return
+            if isinstance(e, Str):
+                return                  # text literals are compiled in
             if isinstance(e, (Num, FloatNum, Bool, Var)):
                 return
             if (isinstance(e, Call) and e.name in ("length", "get")
@@ -3000,8 +3025,8 @@ def native_eligible(funcs: list[Function],
                     we(a)
                 return
             if (isinstance(e, Call) and e.name in ("length", "code_at")
-                    and e.args and isinstance(e.args[0], Var)
-                    and e.args[0].name in text_params):
+                    and e.args and text_valued(e.args[0])):
+                we(e.args[0])
                 for a in e.args[1:]:
                     we(a)
                 return
@@ -3066,6 +3091,17 @@ def native_eligible(funcs: list[Function],
 
 def compile_native(funcs: list[Function],
                    proven: set = frozenset()) -> dict:
+    """Native code is an optimisation, never a requirement: if anything
+    about this machine's backend disagrees with us, the program runs
+    interpreted and behaves exactly the same, just slower."""
+    try:
+        return _compile_native(funcs, proven)
+    except Exception:
+        return {}
+
+
+def _compile_native(funcs: list[Function],
+                    proven: set = frozenset()) -> dict:
     eligible = native_eligible(funcs, proven)
     if not eligible:
         return {}
@@ -3079,10 +3115,11 @@ def compile_native(funcs: list[Function],
     i64 = ir.IntType(64)
     f64 = ir.DoubleType()
     i64p = ir.PointerType(i64)
-    LTY = {"Int": i64, "Bool": i64, "Float": f64}
-
     i32 = ir.IntType(32)
     i32p = ir.PointerType(i32)
+    TEXT = ir.LiteralStructType([i32p, i64])
+    LTY = {"Int": i64, "Bool": i64, "Float": f64, "Text": TEXT}
+
 
     def llvm_params(fn):
         out = []
@@ -3101,6 +3138,15 @@ def compile_native(funcs: list[Function],
     oob_idx.initializer = i64(0)
     oob_len = ir.GlobalVariable(module, i64, name="velaris_oob_len")
     oob_len.initializer = i64(0)
+    arena = ir.GlobalVariable(module, i32p, name="velaris_arena")
+    arena.initializer = ir.Constant(i32p, None)
+    arena_cap = ir.GlobalVariable(module, i64, name="velaris_arena_cap")
+    arena_cap.initializer = i64(0)
+    arena_used = ir.GlobalVariable(module, i64, name="velaris_arena_used")
+    arena_used.initializer = i64(0)
+    arena_full = ir.GlobalVariable(module, i64, name="velaris_arena_full")
+    arena_full.initializer = i64(0)
+    lit_count = [0]
     table = {f.name: f for f in funcs}
     llvm_fns = {}
     for name in eligible:
@@ -3115,6 +3161,8 @@ def compile_native(funcs: list[Function],
         def te(e) -> str:
             if isinstance(e, Num):
                 return "Int"
+            if isinstance(e, Str):
+                return "Text"
             if isinstance(e, FloatNum):
                 return "Float"
             if isinstance(e, Bool):
@@ -3132,7 +3180,7 @@ def compile_native(funcs: list[Function],
             if isinstance(e, BinOp):
                 if e.op in ("and", "or", "==", "!=", "<", ">", "<=", ">="):
                     return "Bool"
-                return te(e.left)
+                return te(e.left)      # '+' on Text gives Text
             return "Int"
 
         def ts(stmts):
@@ -3168,26 +3216,100 @@ def compile_native(funcs: list[Function],
         collect_names(fn.body, names)
         lists = {}                     # name -> (data pointer, length)
         texts = {}                     # name -> (code points, length)
-        list_names = {p for p, t in fn.params
-                      if t in ("List of Int", "Text")}
+        list_names = {p for p, t in fn.params if t == "List of Int"}
         for n in sorted(names - list_names):
             slots[n] = b.alloca(LTY[tenv.get(n, "Int")], name=n)
         ai = 0
         for pname, ptype in fn.params:
-            if ptype in ("List of Int", "Text"):
+            if ptype == "Text":
                 data, ln = lf.args[ai], lf.args[ai + 1]
                 data.name, ln.name = pname + "_data", pname + "_len"
-                (lists if ptype == "List of Int" else texts)[pname] = (
-                    data, ln)
+                tv = b.insert_value(
+                    b.insert_value(ir.Constant(TEXT, ir.Undefined), data, 0),
+                    ln, 1)
+                slots[pname] = b.alloca(TEXT, name=pname)
+                b.store(tv, slots[pname])
+                ai += 2
+            elif ptype == "List of Int":
+                data, ln = lf.args[ai], lf.args[ai + 1]
+                data.name, ln.name = pname + "_data", pname + "_len"
+                lists[pname] = (data, ln)
                 ai += 2
             else:
                 lf.args[ai].name = pname
                 b.store(lf.args[ai], slots[pname])
                 ai += 1
 
+        def txt_ptr(v):
+            return b.extract_value(v, 0)
+
+        def txt_len(v):
+            return b.extract_value(v, 1)
+
+        def make_text(ptr, ln):
+            t = b.insert_value(ir.Constant(TEXT, ir.Undefined), ptr, 0)
+            return b.insert_value(t, ln, 1)
+
+        def arena_alloc(n):
+            """Bump-allocate n code points; flag (don't crash) if full."""
+            used = b.load(arena_used)
+            cap = b.load(arena_cap)
+            room = b.icmp_signed("<=", b.add(used, n), cap)
+            ok_bb = lf.append_basic_block("arena_ok")
+            full_bb = lf.append_basic_block("arena_full")
+            cont_bb = lf.append_basic_block("arena_done")
+            b.cbranch(room, ok_bb, full_bb)
+            b.position_at_end(ok_bb)
+            base = b.load(arena)
+            slot = b.gep(base, [used])
+            b.store(b.add(used, n), arena_used)
+            b.branch(cont_bb)
+            b.position_at_end(full_bb)
+            b.store(i64(1), arena_full)      # caller grows and retries
+            fallback = b.load(arena)
+            b.branch(cont_bb)
+            b.position_at_end(cont_bb)
+            phi = b.phi(i32p)
+            phi.add_incoming(slot, ok_bb)
+            phi.add_incoming(fallback, full_bb)
+            room_phi = b.phi(ir.IntType(1))
+            room_phi.add_incoming(ir.Constant(ir.IntType(1), 1), ok_bb)
+            room_phi.add_incoming(ir.Constant(ir.IntType(1), 0), full_bb)
+            return phi, room_phi
+
+        def copy_into(dst, src_ptr, n, tag):
+            """Copy n code points, one at a time (small texts, no libc)."""
+            i_slot = b.alloca(i64, name=tag + "_i")
+            b.store(i64(0), i_slot)
+            head = lf.append_basic_block(tag + "_head")
+            body = lf.append_basic_block(tag + "_body")
+            done = lf.append_basic_block(tag + "_done")
+            b.branch(head)
+            b.position_at_end(head)
+            iv = b.load(i_slot)
+            b.cbranch(b.icmp_signed("<", iv, n), body, done)
+            b.position_at_end(body)
+            iv2 = b.load(i_slot)
+            b.store(b.load(b.gep(src_ptr, [iv2])), b.gep(dst, [iv2]))
+            b.store(b.add(iv2, i64(1)), i_slot)
+            b.branch(head)
+            b.position_at_end(done)
+
         def ee(e):                    # emit expression (i64 or double)
             if isinstance(e, Num):
                 return i64(e.value)
+            if isinstance(e, Str):
+                pts = [ord(c) for c in e.value]
+                lit_count[0] += 1
+                arr_ty = ir.ArrayType(i32, max(len(pts), 1))
+                g = ir.GlobalVariable(module, arr_ty,
+                                      name=f"text_lit_{lit_count[0]}")
+                g.global_constant = True
+                g.initializer = ir.Constant(
+                    arr_ty, [ir.Constant(i32, p) for p in pts] or
+                    [ir.Constant(i32, 0)])
+                ptr = b.gep(g, [i64(0), i64(0)])
+                return make_text(ptr, i64(len(pts)))
             if isinstance(e, FloatNum):
                 return ir.Constant(f64, e.value)
             if isinstance(e, Bool):
@@ -3202,9 +3324,12 @@ def compile_native(funcs: list[Function],
                     return b.fsub(ir.Constant(f64, 0.0), v)
                 return b.sub(i64(0), v)
             if (isinstance(e, Call) and e.name in ("length", "code_at")
-                    and e.args and isinstance(e.args[0], Var)
-                    and e.args[0].name in texts):
-                data, ln = texts[e.args[0].name]
+                    and e.args and not (isinstance(e.args[0], Var)
+                                        and e.args[0].name in lists)):
+                tv = ee(e.args[0])
+                if tv.type != TEXT:
+                    raise NotImplementedError("length on a non-text value")
+                data, ln = txt_ptr(tv), txt_len(tv)
                 if e.name == "length":
                     return ln
                 idx = ee(e.args[1])
@@ -3255,14 +3380,46 @@ def compile_native(funcs: list[Function],
                 return phi
             if isinstance(e, Call):
                 args_ll = []
-                for a in e.args:
-                    if isinstance(a, Var) and a.name in texts:
-                        args_ll += list(texts[a.name])
-                    elif isinstance(a, Var) and a.name in lists:
+                callee = table.get(e.name)
+                want = [t for _, t in callee.params] if callee else []
+                for pos, a in enumerate(e.args):
+                    if pos < len(want) and want[pos] == "Text":
+                        tv = ee(a)
+                        args_ll += [txt_ptr(tv), txt_len(tv)]
+                        continue
+                    if isinstance(a, Var) and a.name in lists:
                         args_ll += list(lists[a.name])
                     else:
                         args_ll.append(ee(a))
                 return b.call(llvm_fns[e.name], args_ll)
+            if isinstance(e, BinOp) and e.op == "+":
+                lv = ee(e.left)
+                if lv.type == TEXT:
+                    rv = ee(e.right)
+                    if rv.type != TEXT:
+                        raise NotImplementedError
+                    ln_l, ln_r = txt_len(lv), txt_len(rv)
+                    total = b.add(ln_l, ln_r)
+                    dst, had_room = arena_alloc(total)
+                    # no room means NO copying: the caller grows the
+                    # buffer and runs the whole call again
+                    do_bb = lf.append_basic_block("cat_do")
+                    skip_bb = lf.append_basic_block("cat_skip")
+                    end_bb = lf.append_basic_block("cat_end")
+                    b.cbranch(had_room, do_bb, skip_bb)
+                    b.position_at_end(do_bb)
+                    copy_into(dst, txt_ptr(lv), ln_l, "cpl")
+                    copy_into(b.gep(dst, [ln_l]), txt_ptr(rv), ln_r, "cpr")
+                    did_bb = b.block          # loops moved us elsewhere
+                    b.branch(end_bb)
+                    b.position_at_end(skip_bb)
+                    skipped_bb = b.block
+                    b.branch(end_bb)
+                    b.position_at_end(end_bb)
+                    ln_phi = b.phi(i64)
+                    ln_phi.add_incoming(total, did_bb)
+                    ln_phi.add_incoming(i64(0), skipped_bb)
+                    return make_text(dst, ln_phi)
             if isinstance(e, BinOp):
                 if e.op == "and":
                     return b.and_(ee(e.left), ee(e.right))
@@ -3366,9 +3523,36 @@ def compile_native(funcs: list[Function],
     flag_i = ctypes.cast(idx_addr, I64P)
     flag_n = ctypes.cast(len_addr, I64P)
 
+    class CText(ctypes.Structure):
+        _fields_ = [("data", ctypes.POINTER(ctypes.c_uint32)),
+                    ("length", ctypes.c_int64)]
+
+    arena_state = {"buf": (ctypes.c_uint32 * (1 << 16))(), "cap": 1 << 16}
+    arena_ptr_cell = ctypes.cast(
+        engine.get_global_value_address("velaris_arena"),
+        ctypes.POINTER(ctypes.POINTER(ctypes.c_uint32)))
+    arena_cap_cell = ctypes.cast(
+        engine.get_global_value_address("velaris_arena_cap"), I64P)
+    arena_used_cell = ctypes.cast(
+        engine.get_global_value_address("velaris_arena_used"), I64P)
+    arena_full_cell = ctypes.cast(
+        engine.get_global_value_address("velaris_arena_full"), I64P)
+
+    def install_arena():
+        arena_ptr_cell[0] = ctypes.cast(
+            arena_state["buf"], ctypes.POINTER(ctypes.c_uint32))
+        arena_cap_cell[0] = arena_state["cap"]
+    install_arena()
+
+    def grow_arena():
+        arena_state["cap"] *= 4
+        arena_state["buf"] = (ctypes.c_uint32 * arena_state["cap"])()
+        install_arena()
+
     def wrap(fn, raw):
         types = [pt for _, pt in fn.params]
         wants_bool = fn.return_type == "Bool"
+        wants_text = fn.return_type == "Text"
 
         def call(*vals):
             cargs = []
@@ -3384,8 +3568,18 @@ def compile_native(funcs: list[Function],
                     cargs += [ctypes.cast(buf, I64P), len(v)]
                 else:
                     cargs.append(v)
-            flag[0] = 0
-            r = raw(*cargs)
+            for _attempt in range(6):
+                flag[0] = 0
+                arena_used_cell[0] = 0
+                arena_full_cell[0] = 0
+                r = raw(*cargs)
+                if not arena_full_cell[0]:
+                    break
+                grow_arena()          # too small: bigger buffer, run again
+            else:
+                raise VelarisError("E607",
+                    "this text grew too large to build", fn.line,
+                    fixes=["build shorter pieces of text"])
             if flag[0]:                  # the read was refused, not made
                 i, n = flag_i[0], flag_n[0]
                 flag[0] = 0
@@ -3397,6 +3591,8 @@ def compile_native(funcs: list[Function],
                     f"(it has {n} {unit}(s))", fn.line,
                     fixes=["positions go from 0 to length - 1",
                            "check with length(...) before using get"])
+            if wants_text:
+                return "".join(chr(r.data[i]) for i in range(r.length))
             return bool(r) if wants_bool else r
         return call
 

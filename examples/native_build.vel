@@ -1,0 +1,46 @@
+// v2.15: text built INSIDE a native function is assembled in a scratch
+// buffer the runtime owns and reuses. If a call needs more room than
+// the buffer holds, nothing is copied: the buffer grows and the call
+// runs again, so the answer always matches the interpreter.
+//
+// A function that RETURNS text stays interpreted on purpose - handing a
+// text value back across the machine-code boundary depends on the
+// platform's calling convention, and this project does not ship
+// what it cannot verify everywhere.
+//
+// velaris examples/native_build.vel --time
+// velaris examples/native_build.vel --no-native --time
+
+fn banner(word: Text) -> Text {
+    return "[" + word + "]"
+}
+
+fn stretch(word: Text, times: Int) -> Text {
+    let out = ""
+    let i = 0
+    while i < times {
+        out = out + word
+        i = i + 1
+    }
+    return out
+}
+
+fn framed_length(word: Text, rounds: Int) -> Int
+ensures result >= 0
+{
+    let n = 0
+    let r = 0
+    while r < rounds {
+        let framed = "[" + word + "] "
+        n = n + length(framed)
+        r = r + 1
+    }
+    return n
+}
+
+fn main() uses io {
+    print(banner("velaris"))
+    print(stretch("ab", 6))
+    print(format("built and measured 20000 times: {}",
+    framed_length("hello", 20000)))
+}

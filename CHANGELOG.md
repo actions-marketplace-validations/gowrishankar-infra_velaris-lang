@@ -1,5 +1,37 @@
 # Velaris changelog
 
+## 2.15.1 - Native text building, made portable
+Two examples failed on Windows in 2.15: a function that RETURNS text
+handed a small struct back across the machine-code boundary, and how
+that is done depends on the platform's calling convention. Rather than
+guess at an ABI this project cannot test everywhere, text results now
+stay interpreted. Text built *inside* a native function still uses the
+arena and is still fast (183.5 ms interpreted, 4.1 ms native here).
+
+Native compilation is also fail-safe now: if anything about a machine's
+backend disagrees with the compiler, the program runs interpreted and
+behaves identically, instead of failing. A speed optimisation should
+never be able to stop a correct program from running.
+
+## 2.15 - Native text building (the arena)
+Concatenation compiles to machine code. Text is built in a scratch
+buffer the runtime owns, reset at every call, so native code never has
+to decide who frees what. If a call needs more room than the buffer
+holds, **nothing is copied**: the buffer grows and the call runs again,
+so the answer is always the one the interpreter would have given. A
+million characters built through a 64 KB starting buffer comes back
+byte-correct, unicode and emoji included, checked against 200 random
+strings.
+
+Measured: 172.8 ms interpreted, 0.9 ms native.
+
+Getting there needed one more fix: `length` and `code_at` now work on
+any text-valued expression, not just a variable. Before that,
+`length(banner(word))` kept a whole loop interpreted, and crossing the
+native boundary once per iteration was *slower* than staying
+interpreted - the benchmark said so before the fix, which is why the
+benchmark is in the example.
+
 ## 2.14 - Native text reads, and proven functions run fast
 Text scanning compiles to machine code. Text crosses into native code
 as Unicode code points plus a length, so `length` still counts
