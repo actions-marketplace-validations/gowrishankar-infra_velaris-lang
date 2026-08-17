@@ -1,5 +1,22 @@
 # Velaris changelog
 
+## 2.8 - A second real app, and Text ordering
+`examples/wordcount.vel` reads a file, counts word frequencies and
+prints a ranked histogram - a different shape of program from the
+ledger, exercising maps, records, lambdas, namespaced imports, format,
+args, and three separate failure paths (missing file, unreadable count
+argument, no words found).
+
+Writing it found a real hole: Text had no ordering, so `c >= "a"` did
+not compile and words could not be sorted alphabetically. `<`, `>`,
+`<=` and `>=` now work on Text, comparing alphabetically. Promises
+about Text comparisons are checked at runtime rather than proven, and
+the prover does not pretend otherwise.
+
+Also: the error de-duplication from 2.5.1 now lives in the shared
+analysis, so `check`, `explain` and the browser inspector report one
+message per problem too.
+
 ## 2.7 - Reading a codebase
 `velaris check program.vel` compiles without running - for CI, editors,
 and pre-commit hooks - and takes several files at once. `velaris

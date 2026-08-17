@@ -36,6 +36,7 @@ EXPECT = {
     "lambdas.vel": "RUNS",
     "namespaces.vel": "RUNS",
     "div_proof.vel": "RUNS",
+    "wordcount.vel": "RUNS",
     "div_bad.vel": "REJECTED",
     "ns_bad.vel": "REJECTED",
     "tools.vel": "RUNS",
@@ -64,6 +65,10 @@ EXPECT = {
 }
 
 # scripted keyboard input for interactive examples
+ARGS = {
+    "wordcount.vel": ["examples/sample.txt", "3"],
+}
+
 STDIN = {
     "ledger.vel": ("add\nchai\n2500\n1\nadd\nbook\n45000\n2\n"
                    "add\nauto\n12000\n2\n"
@@ -96,7 +101,8 @@ def main() -> int:
             failed += 1
             continue
         r = subprocess.run(
-            [sys.executable, str(here / "velaris.py"), str(path)] + extra,
+            [sys.executable, str(here / "velaris.py"), str(path)]
+            + ARGS.get(name, []) + extra,
             capture_output=True, text=True, timeout=300,
             input=STDIN.get(name))
         got = "RUNS" if r.returncode == 0 else "REJECTED"

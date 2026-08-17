@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Velaris v2.7 — "The language where you can trust code you didn't write."
+Velaris v2.8 — "The language where you can trust code you didn't write."
 
-New in v2.7: reading a codebase.
-    velaris check program.vel      compile only, do not run
-    velaris explain program.vel    your functions first, libraries summarised
-    velaris explain <folder>       a map of every file in a project
+New in v2.8: a second real app (examples/wordcount.vel) and Text
+    ordering - "a" < "b" now compares alphabetically, which the app
+    needed and the language did not have.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -240,7 +239,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.7.0"
+VERSION = "2.8.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1855,11 +1854,12 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                         f"'{op}' needs matching number types, but this is "
                         f"{l} {op} {r}", node.line, fixes=NUM_FIX)
                 if op in ("<", ">", "<=", ">="):
-                    if l == r and l in ("Int", "Float"):
-                        return "Bool"
+                    if l == r and l in ("Int", "Float", "Text"):
+                        return "Bool"   # Text compares alphabetically
                     raise VelarisError("E501",
-                        f"'{op}' compares matching number types, but this is "
-                        f"{l} {op} {r}", node.line, fixes=NUM_FIX)
+                        f"'{op}' compares two Ints, two Floats, or two "
+                        f"Texts, but this is {l} {op} {r}", node.line,
+                        fixes=NUM_FIX)
                 if l != r:                             # == and !=
                     raise VelarisError("E501",
                         f"cannot compare {l} with {r}", node.line,
@@ -3417,7 +3417,12 @@ def inspect_source(path: str, source: str | None = None) -> dict:
         check_proofs(funcs, records, errors)
         if len(errors) == before:
             proved = {f.name for f in funcs if f.ensures or f.requires}
-    for e in errors:
+    seen_e = set()
+    for e in errors:                # one problem, one message, everywhere
+        key = (e.code, e.file or path, e.line, e.message)
+        if key in seen_e:
+            continue
+        seen_e.add(key)
         report["errors"].append(json.loads(e.machine(path)))
     bad_lines = {e.line for e in errors}
     for f in funcs:

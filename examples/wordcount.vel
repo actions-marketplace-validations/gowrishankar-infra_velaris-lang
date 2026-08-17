@@ -1,0 +1,150 @@
+// A real text-analysis tool, written in Velaris.
+//
+// velaris examples/wordcount.vel <file> [how-many]
+//
+// It reads a file, counts how often each word appears, and reports the
+// most common ones. Every risky step is visible in a signature: the
+// read can fail, the counting is pure, and only main touches the disk.
+
+import "std.vel" as std
+
+record Tally {
+    word: Text
+    count: Int
+}
+
+fn clean(w: Text) -> Text {
+    let out = ""
+    let cs = chars(lower(w))
+    let i = 0
+    while i < length(cs) {
+        let c = get(cs, i)
+        if c >= "a" and c <= "z" {
+            out = out + c
+        }
+        i = i + 1
+    }
+    return out
+}
+
+fn count_words(text: Text) -> Map of Text to Int {
+    let counts: Map of Text to Int = { }
+    let words = split(text, " ")
+    let i = 0
+    while i < length(words) {
+        let w = clean(get(words, i))
+        if length(w) > 0 {
+            counts = put(counts, w, get_or(counts, w, 0) + 1)
+        }
+        i = i + 1
+    }
+    return counts
+}
+
+fn to_tallies(counts: Map of Text to Int) -> List of Tally {
+    let out: List of Tally = []
+    let names = keys(counts)
+    let i = 0
+    while i < length(names) {
+        let n = get(names, i)
+        out = push(out, Tally(word: n, count: get_or(counts, n, 0)))
+        i = i + 1
+    }
+    return out
+}
+
+fn total_words(ts: List of Tally) -> Int
+ensures result >= 0
+{
+    let total = 0
+    let i = 0
+    while i < length(ts)
+    invariant total >= 0
+    invariant i >= 0
+    {
+        let t = get(ts, i)
+        if t.count > 0 {
+            total = total + t.count
+        }
+        i = i + 1
+    }
+    return total
+}
+
+fn bar(n: Int, biggest: Int) -> Text
+requires biggest > 0
+requires n >= 0
+{
+    let width = n * 30 / biggest
+    let out = ""
+    let i = 0
+    while i < width {
+        out = out + "#"
+        i = i + 1
+    }
+    return out
+}
+
+fn report(text: Text, top: Int) -> Text or fail
+requires top > 0
+{
+    let tallies = to_tallies(count_words(text))
+    if length(tallies) == 0 {
+        fail "no words found"
+    }
+    let ranked = std.sort_by(tallies, fn(t: Tally) -> Int {
+        return -t.count
+    })
+    let shown = top
+    if length(ranked) < shown {
+        shown = length(ranked)
+    }
+    let biggest = get(ranked, 0).count
+    let out = format("{} different words, {} in total\n",
+    length(ranked), total_words(tallies))
+    let i = 0
+    while i < shown {
+        let t = get(ranked, i)
+        out = out + format("{}  {}  {}\n", t.count, bar(t.count, biggest),
+        t.word)
+        i = i + 1
+    }
+    return out
+}
+
+fn main() uses io, fs {
+    let given = args()
+    if length(given) == 0 {
+        print("usage: velaris examples/wordcount.vel <file> [how-many]")
+        return
+    }
+    let path = get(given, 0)
+    let top = 5
+    if length(given) > 1 {
+        check to_int(get(given, 1)) {
+            ok n {
+                if n > 0 {
+                    top = n
+                }
+            }
+            fail why {
+                print(format("(ignoring '{}': {})", get(given, 1), why))
+            }
+        }
+    }
+    check read_file(path) {
+        ok text {
+            check report(text, top) {
+                ok lines {
+                    print(lines)
+                }
+                fail why {
+                    print(format("nothing to report: {}", why))
+                }
+            }
+        }
+        fail why {
+            print(format("could not read it: {}", why))
+        }
+    }
+}

@@ -11,6 +11,38 @@ HERE = Path(__file__).parent
 SRC = (HERE / "velaris.py").read_text(encoding="utf-8")
 
 EXAMPLES = {
+    "word frequency": """// Counting words: maps, lambdas, and a sorted report.
+record Tally {
+    word: Text
+    count: Int
+}
+
+fn count_words(text: Text) -> Map of Text to Int {
+    let counts: Map of Text to Int = {}
+    let words = split(lower(text), " ")
+    let i = 0
+    while i < length(words) {
+        let w = get(words, i)
+        if length(w) > 0 {
+            counts = put(counts, w, get_or(counts, w, 0) + 1)
+        }
+        i = i + 1
+    }
+    return counts
+}
+
+fn main() uses io {
+    let counts = count_words("the fox and the dog and the bird")
+    let names = keys(counts)
+    let i = 0
+    while i < length(names) {
+        let n = get(names, i)
+        print(format("{}: {}", n, get_or(counts, n, 0)))
+        i = i + 1
+    }
+}
+""",
+
     "hello": """fn greet(name: Text) uses io {
     print("hello, " + name)
 }

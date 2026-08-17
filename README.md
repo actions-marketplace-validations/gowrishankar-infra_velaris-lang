@@ -93,6 +93,13 @@ Function values are lifted to real functions, so proofs and native
 compilation apply to them unchanged. They can't capture surrounding
 variables — the compiler tells you to pass them in instead.
 
+## Two real programs
+
+`examples/ledger.vel` — an expense tracker: records, integer cents,
+file persistence, sorted reports.
+`examples/wordcount.vel` — text analysis: `velaris examples/wordcount.vel
+<file> [n]` counts word frequencies and prints a ranked histogram.
+
 ## Imports
 
 ```
