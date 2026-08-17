@@ -34,3 +34,5 @@ jobs:
         run: velaris fmt examples/*.vel stdlib/*.vel --check
       - name: Playground builds
         run: python build_playground.py
+      - name: Docs site builds
+        run: python build_docs.py

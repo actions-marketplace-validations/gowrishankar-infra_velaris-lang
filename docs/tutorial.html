@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutorial - Velaris</title>
+<style>
+:root { --bg:#14161a; --panel:#1d2026; --ink:#e8e6e3; --dim:#8a8f98;
+        --accent:#7aa2f7; --ok:#9ece6a; --err:#f7768e; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink);
+       font-family:system-ui,sans-serif; line-height:1.6; }
+nav { display:flex; gap:18px; padding:14px 22px; align-items:baseline;
+      border-bottom:1px solid #2a2e37; flex-wrap:wrap; }
+nav .brand { font-weight:700; font-size:18px; color:var(--ink);
+             text-decoration:none; }
+nav a { color:var(--dim); text-decoration:none; font-size:14px; }
+nav a:hover, nav a.here { color:var(--accent); }
+main { max-width:880px; margin:0 auto; padding:28px 22px 80px; }
+h1 { font-size:30px; margin:.4em 0; }
+h2 { margin-top:1.6em; border-bottom:1px solid #2a2e37;
+     padding-bottom:6px; }
+code { background:var(--panel); padding:2px 6px; border-radius:5px;
+       font:13px ui-monospace,Consolas,monospace; }
+pre { background:var(--panel); padding:14px 16px; border-radius:9px;
+      overflow-x:auto; }
+pre code { background:none; padding:0; }
+.tag { color:var(--dim); }
+.sig { color:var(--accent); font:14px ui-monospace,Consolas,monospace; }
+.contract { color:var(--ok); font:13px ui-monospace,Consolas,monospace;
+            margin-left:22px; }
+.card { background:var(--panel); border-radius:10px; padding:16px 18px;
+        margin:14px 0; }
+.ecode { color:var(--err); font-weight:600;
+         font-family:ui-monospace,Consolas,monospace; }
+table { border-collapse:collapse; width:100%; }
+td, th { border-bottom:1px solid #2a2e37; padding:8px 10px;
+         text-align:left; font-size:14px; vertical-align:top; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,
+        minmax(240px,1fr)); gap:14px; margin:22px 0; }
+a { color:var(--accent); }
+</style></head><body>
+<nav><a class="brand" href="index.html">Velaris</a><a href="index.html" class="">Home</a><a href="tutorial.html" class="here">Tutorial</a><a href="library.html" class="">Library</a><a href="errors.html" class="">Errors</a><a href="playground.html" class="">Playground</a>
+<span class="tag">v2.1.0</span></nav>
+<main><h1>Learn Velaris in 15 minutes</h1>
+<br>
+<p>Velaris is a small language with one big idea: **a function&#x27;s signature tells</p>
+<p>you everything it can do, and the compiler makes sure it&#x27;s true.** This</p>
+<p>tutorial takes you from nothing to watching a mathematical proof reject a</p>
+<p>buggy program.</p>
+<br>
+<p>You need Python 3.10+. For the full experience (proofs + native speed):</p>
+<br>
+<pre><code>
+pip install z3-solver llvmlite
+</code></pre>
+<br>
+<p>All commands below are run from the repo folder.</p>
+<br>
+<h2>1. Hello, world</h2>
+<br>
+<p>Create a file <code>hi.vel</code>:</p>
+<br>
+<pre><code>
+fn main() uses io {
+    print(&quot;hello from velaris&quot;)
+}
+</code></pre>
+<br>
+<p>Run it:</p>
+<br>
+<pre><code>
+python velaris.py hi.vel
+</code></pre>
+<br>
+<p>Two things to notice already. Programs start at <code>main</code>. And <code>main</code> says</p>
+<p><code>uses io</code> — because printing to the screen is an *effect*, and in Velaris</p>
+<p><b>every effect must be declared in the signature</b>.</p>
+<br>
+<h2>2. Purity is the default</h2>
+<br>
+<p>Delete <code>uses io</code> from <code>hi.vel</code> and run it again. You get:</p>
+<br>
+<pre><code>
+error[E300] function &#x27;main&#x27; calls &#x27;print&#x27; which needs effect &#x27;io&#x27;,
+            but &#x27;main&#x27; declares no effects (it is pure)
+</code></pre>
+<br>
+<p>A function with no <code>uses</code> clause is <b>pure</b>: the compiler guarantees it</p>
+<p>cannot print, read or write files, touch the network, look at the clock, or</p>
+<p>use randomness. Not &quot;probably doesn&#x27;t&quot; — *cannot*. The five effects are</p>
+<p><code>io</code>, <code>fs</code>, <code>net</code>, <code>clock</code>, and <code>rand</code>, and they&#x27;re checked through the whole</p>
+<p>call chain: if anything a function calls (or anything *those* call) needs an</p>
+<p>effect, the signature must say so.</p>
+<br>
+<p>This is the feature that makes AI-written code auditable at a glance: a</p>
+<p>function claiming to be a calculator cannot secretly phone home, because</p>
+<p><code>uses net</code> would have to appear in its first line. Try it — the example</p>
+<p><code>examples/caught.vel</code> is a &quot;file saver&quot; hiding a network call; run it and</p>
+<p>watch it get rejected.</p>
+<br>
+<h2>3. Types</h2>
+<br>
+<p>Velaris has <code>Int</code>, <code>Text</code>, <code>Bool</code>, and <code>List of &lt;type&gt;</code>. Everything is</p>
+<p>checked before anything runs:</p>
+<br>
+<pre><code>
+fn add(a: Int, b: Int) -&gt; Int {
+    return a + b
+}
+
+fn main() uses io {
+    print(add(&quot;hello&quot;, 5))
+}
+</code></pre>
+<br>
+<pre><code>
+error[E501] &#x27;add&#x27; needs Int for argument 1, but this is Text
+</code></pre>
+<br>
+<p>Variables are created with <code>let</code> and updated with plain <code>=</code> — and they keep</p>
+<p>their type:</p>
+<br>
+<pre><code>
+let total = 0
+total = &quot;oops&quot;        // error: &#x27;total&#x27; holds Int, cannot put a Text in it
+</code></pre>
+<br>
+<p><code>+</code> adds numbers and joins text (<code>&quot;n = &quot; + 5</code> works). Comparisons, <code>and</code>,</p>
+<p><code>or</code>, <code>not</code>, <code>if</code>/<code>else</code>, and <code>while</code> all behave the way you&#x27;d guess. Lists:</p>
+<br>
+<pre><code>
+let xs = [3, 1, 4]              // List of Int - mixing types won&#x27;t compile
+print(length(xs))               // 3
+print(get(xs, 0))               // 3  (out-of-range is a clean error)
+let ys = push(xs, 1)            // push returns a new, longer list
+</code></pre>
+<br>
+<p>Records group named fields into one immutable value:</p>
+<br>
+<pre><code>
+record Point { x: Int  y: Int }
+
+let p = Point(x: 3, y: 4)          // build with named fields
+print(p.x)                          // read with a dot
+let q = Point(x: p.x + 1, y: p.y)  // &quot;change&quot; by building a new one
+</code></pre>
+<br>
+<p>Trying to assign to a field (<code>p.x = 5</code>) is a compile error — records don&#x27;t</p>
+<p>change, you make new ones. Missing fields, unknown fields, and wrong field</p>
+<p>types are all caught before running, and <code>to_text(x)</code> turns any value into</p>
+<p>Text when you need it inside a message.</p>
+<br>
+<p>And programs can span files: <code>import &quot;mathlib.vel&quot;</code> pulls in another</p>
+<p>file&#x27;s functions and records (paths relative to the importing file).</p>
+<p>Contracts, effects, and proofs all cross the boundary, and errors name</p>
+<p>the file the problem actually lives in.</p>
+<br>
+<h2>4. Contracts: promises the language enforces</h2>
+<br>
+<p>Here&#x27;s where Velaris leaves ordinary languages behind. Signatures can carry</p>
+<p><b>promises</b>:</p>
+<br>
+<pre><code>
+fn discount(price: Int) -&gt; Int
+    requires price &gt;= 0        // promise about the input  (caller&#x27;s duty)
+    ensures result &gt;= 0        // promise about the output (function&#x27;s duty)
+    ensures result &lt;= price
+{
+    if price &gt; 100 {
+        return price - 10
+    }
+    return price
+}
+</code></pre>
+<br>
+<p><code>requires</code> and <code>ensures</code> are not comments — they&#x27;re checked. Promises must</p>
+<p>be pure (a promise that tries to <code>fetch</code> something is rejected at compile</p>
+<p>time), and <code>result</code> refers to the returned value.</p>
+<br>
+<h2>5. Proofs: bugs found without running the program</h2>
+<br>
+<p>For straight-line integer code, Velaris doesn&#x27;t just *check* promises at</p>
+<p>runtime — it hands them to the Z3 theorem prover and tries to <b>prove</b> them</p>
+<p>before the program runs. Run the included nightmare-bug example:</p>
+<br>
+<pre><code>
+python velaris.py examples/proof_catch.vel
+</code></pre>
+<br>
+<pre><code>
+error[E700] promise cannot be kept: &#x27;pay_bonus&#x27; ensures result &gt;= salary
+            - proven without running the program:
+            salary = 0, years = 31 gives result = -1000
+</code></pre>
+<br>
+<p>That bug only triggers when <code>years &gt; 30</code> — every normal test would pass and</p>
+<p>it would ship. Z3 searched *all possible inputs* mathematically and returned</p>
+<p>the exact one that breaks the promise. Nothing was executed.</p>
+<br>
+<p>Proofs are <b>modular</b>: proving one function uses the *contracts* of the</p>
+<p>functions it calls (see <code>examples/compose.vel</code>), and every call site is</p>
+<p>proven to satisfy the callee&#x27;s <code>requires</code> — passing <code>-3</code> to a function that</p>
+<p><code>requires price &gt;= 0</code> is a compile error with the violating value named</p>
+<p>(<code>examples/callsite_bad.vel</code>).</p>
+<br>
+<p>Loops can be proven too — give the loop an <b>invariant</b>, a promise it</p>
+<p>keeps on every spin:</p>
+<br>
+<pre><code>
+fn sum_to(n: Int) -&gt; Int
+    requires n &gt;= 0
+    ensures result &gt;= 0
+{
+    let total = 0
+    let i = 1
+    while i &lt;= n
+        invariant total &gt;= 0
+        invariant i &gt;= 1
+    {
+        total = total + i
+        i = i + 1
+    }
+    return total
+}
+</code></pre>
+<br>
+<p>Velaris proves the invariant holds before the first spin, that no single</p>
+<p>step can break it, and then uses it to prove the <code>ensures</code> — so this whole</p>
+<p>loop function is verified before running (<code>examples/loop_proof.vel</code>; see</p>
+<p><code>loop_proof_bad.vel</code> get rejected when the body betrays its invariant).</p>
+<br>
+<p>And Velaris is honest about limits: lists, text, and loops *without*</p>
+<p>invariants are beyond the prover today, so those promises are checked at</p>
+<p>runtime instead — every call, every return, every loop iteration. When</p>
+<p>Velaris says &quot;proven,&quot; it is literally true.</p>
+<br>
+<h2>6. Native speed</h2>
+<br>
+<p>After all checks pass, pure integer functions are compiled to machine code</p>
+<p>via LLVM. See it yourself:</p>
+<br>
+<pre><code>
+python velaris.py examples/bench.vel --time
+python velaris.py examples/bench.vel --time --no-native
+</code></pre>
+<br>
+<p>Same program, same answers — typically thousands of times faster native.</p>
+<p>Safety isn&#x27;t traded for speed: nothing compiles until effects, types, and</p>
+<p>proofs all pass, and contract-carrying functions deliberately stay</p>
+<p>interpreted so promises are never skipped.</p>
+<br>
+<h2>7. Errors are for agents too</h2>
+<br>
+<p>Add <code>--json</code> to any run and errors come out machine-readable:</p>
+<br>
+<pre><code>
+python velaris.py examples/sneaky.vel --json
+</code></pre>
+<br>
+<pre><code>
+{
+  &quot;code&quot;: &quot;E300&quot;,
+  &quot;message&quot;: &quot;function &#x27;discount&#x27; calls &#x27;print&#x27; which needs effect &#x27;io&#x27;, ...&quot;,
+  &quot;file&quot;: &quot;examples/sneaky.vel&quot;,
+  &quot;line&quot;: 5,
+  &quot;fixes&quot;: [&quot;add &#x27;uses io&#x27; to the signature of &#x27;discount&#x27;&quot;,
+            &quot;remove the call to &#x27;print&#x27;&quot;]
+}
+</code></pre>
+<br>
+<p>This is deliberate: increasingly, the &quot;developer&quot; reading compiler errors is</p>
+<p>an AI agent in a fix loop. Velaris speaks both languages. And since v1.0,</p>
+<p>one run reports every broken function at once (as a JSON array in <code>--json</code></p>
+<p>mode), so a fixing agent — or you — sees the whole picture in one pass.</p>
+<br>
+<h2>8. The workflow Velaris is built for</h2>
+<br>
+<p>1. A <b>human</b> writes the signature: types, effects, promises.</p>
+<p>2. An <b>AI</b> writes the body. (Paste this tutorial or the README into any</p>
+<p>   AI assistant and ask it to write Velaris — it will.)</p>
+<p>3. The <b>compiler</b> is the judge neither can fool.</p>
+<br>
+<p>You state *what* must be true; the machine writes *how*; the math checks it.</p>
+<p>That&#x27;s the whole idea.</p>
+<br>
+<h2>Where to go next</h2>
+<br>
+<p>Read the 18 programs in <code>examples/</code> — half of them are *designed to be</p>
+<p>rejected*, and each rejection demonstrates a guarantee. Then write something</p>
+<p>real, break a promise on purpose, and watch the compiler catch you. That</p>
+<p>moment is Velaris.</p></main></body></html>

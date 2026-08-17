@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Library - Velaris</title>
+<style>
+:root { --bg:#14161a; --panel:#1d2026; --ink:#e8e6e3; --dim:#8a8f98;
+        --accent:#7aa2f7; --ok:#9ece6a; --err:#f7768e; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink);
+       font-family:system-ui,sans-serif; line-height:1.6; }
+nav { display:flex; gap:18px; padding:14px 22px; align-items:baseline;
+      border-bottom:1px solid #2a2e37; flex-wrap:wrap; }
+nav .brand { font-weight:700; font-size:18px; color:var(--ink);
+             text-decoration:none; }
+nav a { color:var(--dim); text-decoration:none; font-size:14px; }
+nav a:hover, nav a.here { color:var(--accent); }
+main { max-width:880px; margin:0 auto; padding:28px 22px 80px; }
+h1 { font-size:30px; margin:.4em 0; }
+h2 { margin-top:1.6em; border-bottom:1px solid #2a2e37;
+     padding-bottom:6px; }
+code { background:var(--panel); padding:2px 6px; border-radius:5px;
+       font:13px ui-monospace,Consolas,monospace; }
+pre { background:var(--panel); padding:14px 16px; border-radius:9px;
+      overflow-x:auto; }
+pre code { background:none; padding:0; }
+.tag { color:var(--dim); }
+.sig { color:var(--accent); font:14px ui-monospace,Consolas,monospace; }
+.contract { color:var(--ok); font:13px ui-monospace,Consolas,monospace;
+            margin-left:22px; }
+.card { background:var(--panel); border-radius:10px; padding:16px 18px;
+        margin:14px 0; }
+.ecode { color:var(--err); font-weight:600;
+         font-family:ui-monospace,Consolas,monospace; }
+table { border-collapse:collapse; width:100%; }
+td, th { border-bottom:1px solid #2a2e37; padding:8px 10px;
+         text-align:left; font-size:14px; vertical-align:top; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,
+        minmax(240px,1fr)); gap:14px; margin:22px 0; }
+a { color:var(--accent); }
+</style></head><body>
+<nav><a class="brand" href="index.html">Velaris</a><a href="index.html" class="">Home</a><a href="tutorial.html" class="">Tutorial</a><a href="library.html" class="here">Library</a><a href="errors.html" class="">Errors</a><a href="playground.html" class="">Playground</a>
+<span class="tag">v2.1.0</span></nav>
+<main><h1>The standard library</h1>
+<p>Every function below is written in Velaris (<code>stdlib/std.vel</code>) and parsed onto this page by the real compiler &mdash; including its machine-checked promises. A violated <code>requires</code> is a compile error at <i>your</i> call site.</p>
+<div class="card">
+<div class="sig">fn first(xs: List of T) -&gt; T for any T</div>
+<div class="contract">requires length(xs) &gt; 0</div>
+</div>
+<div class="card">
+<div class="sig">fn last(xs: List of T) -&gt; T for any T</div>
+<div class="contract">requires length(xs) &gt; 0</div>
+</div>
+<div class="card">
+<div class="sig">fn reverse(xs: List of T) -&gt; List of T for any T</div>
+</div>
+<div class="card">
+<div class="sig">fn index_of(xs: List of T, item: T) -&gt; Int for any T</div>
+</div>
+<div class="card">
+<div class="sig">fn contains_item(xs: List of T, item: T) -&gt; Bool for any T</div>
+</div>
+<div class="card">
+<div class="sig">fn apply_to_each(xs: List of T, f: fn(T) -&gt; T) -&gt; List of T for any T</div>
+</div>
+<div class="card">
+<div class="sig">fn keep_if(xs: List of T, keep: fn(T) -&gt; Bool) -&gt; List of T for any T</div>
+</div>
+<div class="card">
+<div class="sig">fn count_where(xs: List of T, keep: fn(T) -&gt; Bool) -&gt; Int for any T</div>
+</div>
+<div class="card">
+<div class="sig">fn sum_of(xs: List of Int) -&gt; Int</div>
+</div>
+<div class="card">
+<div class="sig">fn max_of(xs: List of Int) -&gt; Int</div>
+<div class="contract">requires length(xs) &gt; 0</div>
+<div class="contract">ensures contains_item(xs, result)</div>
+</div>
+<div class="card">
+<div class="sig">fn min_of(xs: List of Int) -&gt; Int</div>
+<div class="contract">requires length(xs) &gt; 0</div>
+<div class="contract">ensures contains_item(xs, result)</div>
+</div>
+<div class="card">
+<div class="sig">fn is_sorted(xs: List of Int) -&gt; Bool</div>
+</div>
+<div class="card">
+<div class="sig">fn insert_sorted(xs: List of Int, v: Int) -&gt; List of Int</div>
+</div>
+<div class="card">
+<div class="sig">fn sort(xs: List of Int) -&gt; List of Int</div>
+<div class="contract">ensures length(result) == length(xs)</div>
+<div class="contract">ensures is_sorted(result)</div>
+</div>
+<div class="card">
+<div class="sig">fn insert_by(xs: List of T, v: T, key: fn(T) -&gt; Int) -&gt; List of T for any T</div>
+</div>
+<div class="card">
+<div class="sig">fn sort_by(xs: List of T, key: fn(T) -&gt; Int) -&gt; List of T for any T</div>
+<div class="contract">ensures length(result) == length(xs)</div>
+</div>
+<div class="card">
+<div class="sig">fn join(xs: List of Text, sep: Text) -&gt; Text</div>
+</div>
+<div class="card">
+<div class="sig">fn range_list(a: Int, b: Int) -&gt; List of Int</div>
+</div>
+<h2>Built-in functions</h2><table><tr><th>name</th><th>effects</th><th>takes</th><th>gives</th></tr>
+<tr><td><code>all_of</code></td><td>pure</td><td>Any, Any</td><td>Bool</td></tr>
+<tr><td><code>any_of</code></td><td>pure</td><td>Any, Any</td><td>Bool</td></tr>
+<tr><td><code>ask</code></td><td>io</td><td>Text</td><td>Text</td></tr>
+<tr><td><code>chars</code></td><td>pure</td><td>Text</td><td>List of Text</td></tr>
+<tr><td><code>contains</code></td><td>pure</td><td>Text, Text</td><td>Bool</td></tr>
+<tr><td><code>fetch</code> <span class='ecode'>or fail</span></td><td>net</td><td>Text</td><td>Text</td></tr>
+<tr><td><code>file_exists</code></td><td>fs</td><td>Text</td><td>Bool</td></tr>
+<tr><td><code>get</code></td><td>pure</td><td>Any, Any</td><td>Any</td></tr>
+<tr><td><code>get_or</code></td><td>pure</td><td>Any, Any, Any</td><td>Any</td></tr>
+<tr><td><code>has</code></td><td>pure</td><td>Any, Any</td><td>Bool</td></tr>
+<tr><td><code>keys</code></td><td>pure</td><td>Any</td><td>Any</td></tr>
+<tr><td><code>length</code></td><td>pure</td><td>Any</td><td>Int</td></tr>
+<tr><td><code>lower</code></td><td>pure</td><td>Text</td><td>Text</td></tr>
+<tr><td><code>now</code></td><td>clock</td><td></td><td>Int</td></tr>
+<tr><td><code>print</code></td><td>io</td><td>Any</td><td>Unit</td></tr>
+<tr><td><code>push</code></td><td>pure</td><td>Any, Any</td><td>Any</td></tr>
+<tr><td><code>put</code></td><td>pure</td><td>Any, Any, Any</td><td>Any</td></tr>
+<tr><td><code>random</code></td><td>rand</td><td>Int</td><td>Int</td></tr>
+<tr><td><code>read_file</code> <span class='ecode'>or fail</span></td><td>fs</td><td>Text</td><td>Text</td></tr>
+<tr><td><code>round</code></td><td>pure</td><td>Float</td><td>Int</td></tr>
+<tr><td><code>split</code></td><td>pure</td><td>Text, Text</td><td>List of Text</td></tr>
+<tr><td><code>to_float</code></td><td>pure</td><td>Int</td><td>Float</td></tr>
+<tr><td><code>to_int</code> <span class='ecode'>or fail</span></td><td>pure</td><td>Text</td><td>Int</td></tr>
+<tr><td><code>to_text</code></td><td>pure</td><td>Any</td><td>Text</td></tr>
+<tr><td><code>upper</code></td><td>pure</td><td>Text</td><td>Text</td></tr>
+<tr><td><code>write_file</code></td><td>fs</td><td>Text, Any</td><td>Unit</td></tr>
+</table><p class='tag'>get on a map can also fail (missing key); get_or never fails.</p></main></body></html>

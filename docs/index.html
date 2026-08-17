@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Velaris - Velaris</title>
+<style>
+:root { --bg:#14161a; --panel:#1d2026; --ink:#e8e6e3; --dim:#8a8f98;
+        --accent:#7aa2f7; --ok:#9ece6a; --err:#f7768e; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink);
+       font-family:system-ui,sans-serif; line-height:1.6; }
+nav { display:flex; gap:18px; padding:14px 22px; align-items:baseline;
+      border-bottom:1px solid #2a2e37; flex-wrap:wrap; }
+nav .brand { font-weight:700; font-size:18px; color:var(--ink);
+             text-decoration:none; }
+nav a { color:var(--dim); text-decoration:none; font-size:14px; }
+nav a:hover, nav a.here { color:var(--accent); }
+main { max-width:880px; margin:0 auto; padding:28px 22px 80px; }
+h1 { font-size:30px; margin:.4em 0; }
+h2 { margin-top:1.6em; border-bottom:1px solid #2a2e37;
+     padding-bottom:6px; }
+code { background:var(--panel); padding:2px 6px; border-radius:5px;
+       font:13px ui-monospace,Consolas,monospace; }
+pre { background:var(--panel); padding:14px 16px; border-radius:9px;
+      overflow-x:auto; }
+pre code { background:none; padding:0; }
+.tag { color:var(--dim); }
+.sig { color:var(--accent); font:14px ui-monospace,Consolas,monospace; }
+.contract { color:var(--ok); font:13px ui-monospace,Consolas,monospace;
+            margin-left:22px; }
+.card { background:var(--panel); border-radius:10px; padding:16px 18px;
+        margin:14px 0; }
+.ecode { color:var(--err); font-weight:600;
+         font-family:ui-monospace,Consolas,monospace; }
+table { border-collapse:collapse; width:100%; }
+td, th { border-bottom:1px solid #2a2e37; padding:8px 10px;
+         text-align:left; font-size:14px; vertical-align:top; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,
+        minmax(240px,1fr)); gap:14px; margin:22px 0; }
+a { color:var(--accent); }
+</style></head><body>
+<nav><a class="brand" href="index.html">Velaris</a><a href="index.html" class="here">Home</a><a href="tutorial.html" class="">Tutorial</a><a href="library.html" class="">Library</a><a href="errors.html" class="">Errors</a><a href="playground.html" class="">Playground</a>
+<span class="tag">v2.1.0</span></nav>
+<main>
+<h1>The language where you can trust code you didn't write.</h1>
+<p>A Velaris signature tells you <b>everything</b>: the types, the
+effects it may perform, whether it can fail, and promises that are
+<b>proven by the Z3 theorem prover before the program runs</b> &mdash;
+in genuine IEEE-754 for floats. Pure numeric functions compile to
+native code via LLVM.</p>
+<div class="grid">
+<div class="card"><b>Effects are visible</b><br><span class="tag">A
+function without <code>uses net</code> can never touch the network.
+Hidden behavior does not compile.</span></div>
+<div class="card"><b>Promises are proven</b><br><span class="tag">
+<code>ensures result &gt;= 0</code> is checked by Z3 for every possible
+input, with exact counterexamples when broken.</span></div>
+<div class="card"><b>Failure is unignorable</b><br><span class="tag">
+<code>or fail</code> in the signature; forgetting the error path is a
+compile error &mdash; builtins included.</span></div>
+<div class="card"><b>Fast where it's safe</b><br><span class="tag">
+Pure Int/Float/Bool functions run as machine code, verified identical
+to the interpreter.</span></div>
+</div>
+<h2>Sixty seconds of Velaris</h2>
+<pre><code>fn discount(price: Int) -&gt; Int
+    requires price &gt;= 0
+    ensures result &gt;= 0        // PROVEN before running
+{
+    return price - 10           // error[E700]: price = 5 gives -5
+}</code></pre>
+<h2>Quick start</h2>
+<pre><code>pip install ".[full]"
+velaris examples/hello.vel
+velaris repl</code></pre>
+<p>Or skip installing: open the <a href="playground.html">playground
+</a> and run Velaris in your browser.</p></main></body></html>

@@ -109,6 +109,11 @@ velaris examples/bench.vel --time
 velaris examples/proof_catch.vel        # watch a proof reject a bug
 ```
 
+**Docs:** a full documentation site lives in `docs/` — open
+`docs/index.html` in a browser (library reference is generated from the
+real compiler, contracts included; the error index is scraped from the
+source). Ready for GitHub Pages the moment the repo is public.
+
 **Zero-install:** open `playground/index.html` in any browser to run
 Velaris without installing anything (promises check at runtime there; the
 installed version also proves them with Z3 and compiles with LLVM).

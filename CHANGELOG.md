@@ -1,5 +1,11 @@
 # Velaris changelog
 
+## 2.1 - Documentation site
+build_docs.py generates docs/: landing page, tutorial, a library
+reference parsed from stdlib/std.vel by the real compiler (contracts
+shown), an error index scraped from velaris.py (cannot go stale), and
+the playground. Built in CI; one click from GitHub Pages.
+
 ## 2.0 - The builtins keep the language's promise (BREAKING)
 to_int, get-on-a-map, read_file, and fetch are now fallible: they must
 be called through check or try, and their failures can finally be

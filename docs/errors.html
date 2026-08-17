@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Errors - Velaris</title>
+<style>
+:root { --bg:#14161a; --panel:#1d2026; --ink:#e8e6e3; --dim:#8a8f98;
+        --accent:#7aa2f7; --ok:#9ece6a; --err:#f7768e; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink);
+       font-family:system-ui,sans-serif; line-height:1.6; }
+nav { display:flex; gap:18px; padding:14px 22px; align-items:baseline;
+      border-bottom:1px solid #2a2e37; flex-wrap:wrap; }
+nav .brand { font-weight:700; font-size:18px; color:var(--ink);
+             text-decoration:none; }
+nav a { color:var(--dim); text-decoration:none; font-size:14px; }
+nav a:hover, nav a.here { color:var(--accent); }
+main { max-width:880px; margin:0 auto; padding:28px 22px 80px; }
+h1 { font-size:30px; margin:.4em 0; }
+h2 { margin-top:1.6em; border-bottom:1px solid #2a2e37;
+     padding-bottom:6px; }
+code { background:var(--panel); padding:2px 6px; border-radius:5px;
+       font:13px ui-monospace,Consolas,monospace; }
+pre { background:var(--panel); padding:14px 16px; border-radius:9px;
+      overflow-x:auto; }
+pre code { background:none; padding:0; }
+.tag { color:var(--dim); }
+.sig { color:var(--accent); font:14px ui-monospace,Consolas,monospace; }
+.contract { color:var(--ok); font:13px ui-monospace,Consolas,monospace;
+            margin-left:22px; }
+.card { background:var(--panel); border-radius:10px; padding:16px 18px;
+        margin:14px 0; }
+.ecode { color:var(--err); font-weight:600;
+         font-family:ui-monospace,Consolas,monospace; }
+table { border-collapse:collapse; width:100%; }
+td, th { border-bottom:1px solid #2a2e37; padding:8px 10px;
+         text-align:left; font-size:14px; vertical-align:top; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,
+        minmax(240px,1fr)); gap:14px; margin:22px 0; }
+a { color:var(--accent); }
+</style></head><body>
+<nav><a class="brand" href="index.html">Velaris</a><a href="index.html" class="">Home</a><a href="tutorial.html" class="">Tutorial</a><a href="library.html" class="">Library</a><a href="errors.html" class="here">Errors</a><a href="playground.html" class="">Playground</a>
+<span class="tag">v2.1.0</span></nav>
+<main><h1>Every error Velaris can give</h1>
+<p>Scraped from the compiler source itself, so this list cannot go stale. Placeholders in braces are filled with your program's names and values; every error also comes with numbered fixes.</p><table><tr><th>code</th><th>message template</th></tr>
+<tr><td class="ecode">E000</td><td>unexpected character {source[pos]!r}</td></tr>
+<tr><td class="ecode">E001</td><td>cannot find file &#x27;{path}&#x27;</td></tr>
+<tr><td class="ecode">E002</td><td>unknown escape &#x27;\\{e}&#x27; in text</td></tr>
+<tr><td class="ecode">E100</td><td>expected &#x27;{want}&#x27; but found &#x27;{t.text or &#x27;end of file&#x27;}&#x27;</td></tr>
+<tr><td class="ecode">E101</td><td>unexpected &#x27;{t.text}&#x27;</td></tr>
+<tr><td class="ecode">E200</td><td>unknown function &#x27;{name}&#x27;</td></tr>
+<tr><td class="ecode">E300</td><td>function &#x27;{fn.name}&#x27; calls &#x27;{node.name}&#x27; which needs effect &#x27;{eff}&#x27;, but &#x27;{fn.name}&#x27; {declared}</td></tr>
+<tr><td class="ecode">E310</td><td>the &#x27;{where}&#x27; promise of &#x27;{fn.name}&#x27; calls &#x27;{node.name}&#x27; which has effects ({&#x27;, &#x27;.join(sorted(eff))}); promises must be pure</td></tr>
+<tr><td class="ecode">E400</td><td>no &#x27;main&#x27; function found</td></tr>
+<tr><td class="ecode">E401</td><td>&#x27;{node.name}&#x27; expects {len(ptypes)} argument(s) but got {len(node.args)}</td></tr>
+<tr><td class="ecode">E402</td><td>unknown variable &#x27;{node.name}&#x27;</td></tr>
+<tr><td class="ecode">E403</td><td>remainder by zero</td></tr>
+<tr><td class="ecode">E405</td><td>random(n) needs n greater than 0</td></tr>
+<tr><td class="ecode">E500</td><td>unknown type &#x27;{ftype}&#x27; for field &#x27;{fname}&#x27; of record &#x27;{r.name}&#x27;</td></tr>
+<tr><td class="ecode">E501</td><td>&#x27;{node.name}&#x27; is declared {node.ann}, but this is an empty {&#x27;list&#x27; if empty_list else &#x27;map&#x27;}</td></tr>
+<tr><td class="ecode">E502</td><td>argument {i} of &#x27;{node.name}&#x27; is a call to a function that returns nothing</td></tr>
+<tr><td class="ecode">E503</td><td>&#x27;{fn.name}&#x27; promises to return {declared_ret} but this return gives nothing</td></tr>
+<tr><td class="ecode">E504</td><td>&#x27;while&#x27; needs a yes/no condition (Bool), but this is {c}</td></tr>
+<tr><td class="ecode">E505</td><td>&#x27;invariant&#x27; must be a yes/no promise (Bool)</td></tr>
+<tr><td class="ecode">E506</td><td>cannot tell what an empty list holds</td></tr>
+<tr><td class="ecode">E507</td><td>&#x27;{r.name}&#x27; is used for both a record and a function</td></tr>
+<tr><td class="ecode">E508</td><td>unknown record &#x27;{node.name}&#x27;</td></tr>
+<tr><td class="ecode">E509</td><td>record &#x27;{node.name}&#x27; is missing field(s): {&#x27;, &#x27;.join(missing)}</td></tr>
+<tr><td class="ecode">E510</td><td>record &#x27;{t}&#x27; has no field &#x27;{node.field}&#x27;</td></tr>
+<tr><td class="ecode">E511</td><td>records cannot be changed in place</td></tr>
+<tr><td class="ecode">E512</td><td>cannot find imported file &#x27;{path}&#x27;</td></tr>
+<tr><td class="ecode">E513</td><td>function &#x27;{f.name}&#x27; is defined in both &#x27;{fn_src[f.name]}&#x27; and &#x27;{path}&#x27;</td></tr>
+<tr><td class="ecode">E520</td><td>&#x27;get&#x27; on a map can fail - the key may be missing, and that cannot be ignored</td></tr>
+<tr><td class="ecode">E521</td><td>&#x27;try&#x27; passes failure up, but &#x27;{fn.name}&#x27; cannot fail</td></tr>
+<tr><td class="ecode">E522</td><td>&#x27;{node.subject.name}&#x27; cannot fail - call it directly, no check needed</td></tr>
+<tr><td class="ecode">E523</td><td>&#x27;fail&#x27; is used, but &#x27;{fn.name}&#x27; does not declare it can fail</td></tr>
+<tr><td class="ecode">E524</td><td>&#x27;main&#x27; cannot be &#x27;or fail&#x27; - there is no one above it to handle the failure</td></tr>
+<tr><td class="ecode">E525</td><td>&#x27;{node.subject.name}&#x27; returns nothing - write &#x27;ok {{ ... }}&#x27; with no name</td></tr>
+<tr><td class="ecode">E530</td><td>&#x27;{f2.name}&#x27; uses effects ({&#x27;, &#x27;.join(sorted(f2.effects))}) - only pure functions can be passed as values</td></tr>
+<tr><td class="ecode">E540</td><td>type variable &#x27;{tv}&#x27; must appear in at least one parameter (a {tv} only in the return type cannot be inferred)</td></tr>
+<tr><td class="ecode">E541</td><td>type variable &#x27;{tv}&#x27; shadows a real type</td></tr>
+<tr><td class="ecode">E542</td><td>&#x27;{node.name}&#x27; argument {i} should look like {want}, but this is {got}</td></tr>
+<tr><td class="ecode">E543</td><td>&#x27;{f2.name}&#x27; is generic - generic functions cannot be passed as values yet</td></tr>
+<tr><td class="ecode">E600</td><td>broken promise: &#x27;{name}&#x27; requires {expr_str(expr)} ({vals(expr)})</td></tr>
+<tr><td class="ecode">E601</td><td>broken promise: &#x27;{name}&#x27; ensures {expr_str(expr)} ({vals(expr, (retval,))})</td></tr>
+<tr><td class="ecode">E602</td><td>position {i} is outside the list (it has {len(xs)} item(s))</td></tr>
+<tr><td class="ecode">E607</td><td>no input available to read</td></tr>
+<tr><td class="ecode">E609</td><td>cannot split by empty text</td></tr>
+<tr><td class="ecode">E700</td><td>promise cannot be kept: &#x27;{fn.name}&#x27; ensures {expr_str(ens_expr)} - proven without running the program: {vals} gives result = {rv}</td></tr>
+<tr><td class="ecode">E701</td><td>this call can break a promise: &#x27;{fnB.name}&#x27; requires {expr_str(r_expr)}, but &#x27;{ctx.caller}&#x27; can call it with {vals} - proven without running the program</td></tr>
+<tr><td class="ecode">E703</td><td>cannot prove the loop keeps &#x27;invariant {expr_str(inv_expr)}&#x27; {where} in &#x27;{ctx.caller}&#x27; - the promises allow: {vals}</td></tr>
+<tr><td class="ecode">E704</td><td>loop broke its promise: invariant {expr_str(inv_expr)} ({vals})</td></tr>
+<tr><td class="ecode">E705</td><td>this &#x27;get&#x27; can reach position {m.eval(idx, model_completion=True)}, but the list has {m.eval(length, model_completion=True)} item(s) - proven without running the program</td></tr>
+</table></main></body></html>

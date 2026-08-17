@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v2.0 — "The language where you can trust code you didn't write."
+Velaris v2.1 — "The language where you can trust code you didn't write."
+
+New in v2.1: a documentation site in docs/ (python build_docs.py).
+    The library page is parsed from std.vel by this very compiler -
+    contracts included - and the error index is scraped from this
+    file, so the docs cannot go stale.
 
 v2.0 - THE BUILTINS KEEP THE LANGUAGE'S PROMISE (breaking change):
     to_int, get-on-a-map, read_file, and fetch can now FAIL instead of
@@ -219,7 +224,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 import re
 import sys
 from dataclasses import dataclass, field
