@@ -1,248 +1,259 @@
-# Learn Velaris in 15 minutes
+# Velaris in an hour
 
-Velaris is a small language with one big idea: **a function's signature tells
-you everything it can do, and the compiler makes sure it's true.** This
-tutorial takes you from nothing to watching a mathematical proof reject a
-buggy program.
+Velaris is a language where a function's first line tells you
+everything: what it takes, what it gives back, what it is allowed to
+touch, whether it can fail, and what it promises about its answer.
+Those promises are checked by a theorem prover before your program
+runs.
 
-You need Python 3.10+. For the full experience (proofs + native speed):
+You can follow along in the browser — the
+[playground](https://gowrishankar-infra.github.io/velaris-lang/playground.html)
+runs the real compiler — or install it:
 
 ```
-pip install z3-solver llvmlite
+pip install "git+https://github.com/gowrishankar-infra/velaris-lang"
+velaris doctor
+velaris new hello && cd hello && velaris main.vel
 ```
 
-All commands below are run from the repo folder.
-
-## 1. Hello, world
-
-Create a file `hi.vel`:
+## 1. Hello
 
 ```
 fn main() uses io {
-    print("hello from velaris")
+    print("hello!")
 }
 ```
 
-Run it:
+`main` is where a program starts. `uses io` is a declaration: this
+function is allowed to talk to the outside world. Remove it and the
+program will not compile, because `print` needs it.
+
+That is the whole idea of Velaris in one line — **abilities are
+declared, not assumed**.
+
+## 2. Values and types
 
 ```
-python velaris.py hi.vel
-```
-
-Two things to notice already. Programs start at `main`. And `main` says
-`uses io` — because printing to the screen is an *effect*, and in Velaris
-**every effect must be declared in the signature**.
-
-## 2. Purity is the default
-
-Delete `uses io` from `hi.vel` and run it again. You get:
-
-```
-error[E300] function 'main' calls 'print' which needs effect 'io',
-            but 'main' declares no effects (it is pure)
-```
-
-A function with no `uses` clause is **pure**: the compiler guarantees it
-cannot print, read or write files, touch the network, look at the clock, or
-use randomness. Not "probably doesn't" — *cannot*. The five effects are
-`io`, `fs`, `net`, `clock`, and `rand`, and they're checked through the whole
-call chain: if anything a function calls (or anything *those* call) needs an
-effect, the signature must say so.
-
-This is the feature that makes AI-written code auditable at a glance: a
-function claiming to be a calculator cannot secretly phone home, because
-`uses net` would have to appear in its first line. Try it — the example
-`examples/caught.vel` is a "file saver" hiding a network call; run it and
-watch it get rejected.
-
-## 3. Types
-
-Velaris has `Int`, `Text`, `Bool`, and `List of <type>`. Everything is
-checked before anything runs:
-
-```
-fn add(a: Int, b: Int) -> Int {
-    return a + b
-}
-
 fn main() uses io {
-    print(add("hello", 5))
+    let name = "Gowri"           // Text
+    let age = 30                 // Int
+    let ratio = 1.5              // Float
+    let happy = true             // Bool
+    let scores = [10, 8, 9]      // List of Int
+    let ages = {"a": 1, "b": 2}  // Map of Text to Int
+    print(format("{} is {}", name, age))
 }
 ```
 
-```
-error[E501] 'add' needs Int for argument 1, but this is Text
-```
+Types are inferred for locals and written down for parameters. Numbers
+do not mix silently: `1 + 1.5` is an error, because rounding surprises
+are how money goes missing. Convert on purpose with `to_float(x)` or
+`round(x)`.
 
-Variables are created with `let` and updated with plain `=` — and they keep
-their type:
+`format` fills each `{}` with a value, and the compiler counts the
+holes for you — the wrong number of values is a compile error, not a
+mess at runtime.
 
-```
-let total = 0
-total = "oops"        // error: 'total' holds Int, cannot put a Text in it
-```
-
-`+` adds numbers and joins text (`"n = " + 5` works). Comparisons, `and`,
-`or`, `not`, `if`/`else`, and `while` all behave the way you'd guess. Lists:
+## 3. Functions and effects
 
 ```
-let xs = [3, 1, 4]              // List of Int - mixing types won't compile
-print(length(xs))               // 3
-print(get(xs, 0))               // 3  (out-of-range is a clean error)
-let ys = push(xs, 1)            // push returns a new, longer list
+fn double(n: Int) -> Int {
+    return n * 2
+}
+
+fn greet(name: Text) uses io {
+    print("hello, " + name)
+}
 ```
 
-Records group named fields into one immutable value:
+`double` is **pure**: no `uses`, so it cannot print, read files, or
+reach the network — and neither can anything it calls. The checker
+follows the whole call chain, so a pure function cannot sneak an effect
+in through a helper.
 
-```
-record Point { x: Int  y: Int }
+The effects are `io`, `fs` (files), `net` (network), `clock` (the
+time), and `rand` (randomness).
 
-let p = Point(x: 3, y: 4)          // build with named fields
-print(p.x)                          // read with a dot
-let q = Point(x: p.x + 1, y: p.y)  // "change" by building a new one
-```
-
-Trying to assign to a field (`p.x = 5`) is a compile error — records don't
-change, you make new ones. Missing fields, unknown fields, and wrong field
-types are all caught before running, and `to_text(x)` turns any value into
-Text when you need it inside a message.
-
-And programs can span files: `import "mathlib.vel"` pulls in another
-file's functions and records (paths relative to the importing file).
-Contracts, effects, and proofs all cross the boundary, and errors name
-the file the problem actually lives in.
-
-## 4. Contracts: promises the language enforces
-
-Here's where Velaris leaves ordinary languages behind. Signatures can carry
-**promises**:
+## 4. Promises, proven
 
 ```
 fn discount(price: Int) -> Int
-    requires price >= 0        // promise about the input  (caller's duty)
-    ensures result >= 0        // promise about the output (function's duty)
-    ensures result <= price
+    requires price >= 0
+    ensures result >= 0
 {
-    if price > 100 {
-        return price - 10
-    }
-    return price
+    return price - 10
 }
 ```
 
-`requires` and `ensures` are not comments — they're checked. Promises must
-be pure (a promise that tries to `fetch` something is rejected at compile
-time), and `result` refers to the returned value.
-
-## 5. Proofs: bugs found without running the program
-
-For straight-line integer code, Velaris doesn't just *check* promises at
-runtime — it hands them to the Z3 theorem prover and tries to **prove** them
-before the program runs. Run the included nightmare-bug example:
+`requires` is what the function needs from you. `ensures` is what it
+promises in return. Run this and the compiler answers:
 
 ```
-python velaris.py examples/proof_catch.vel
+error[E700] promise cannot be kept: 'discount' ensures result >= 0
+  proven without running the program: price = 5 gives result = -5
 ```
 
-```
-error[E700] promise cannot be kept: 'pay_bonus' ensures result >= salary
-            - proven without running the program:
-            salary = 0, years = 31 gives result = -1000
-```
-
-That bug only triggers when `years > 30` — every normal test would pass and
-it would ship. Z3 searched *all possible inputs* mathematically and returned
-the exact one that breaks the promise. Nothing was executed.
-
-Proofs are **modular**: proving one function uses the *contracts* of the
-functions it calls (see `examples/compose.vel`), and every call site is
-proven to satisfy the callee's `requires` — passing `-3` to a function that
-`requires price >= 0` is a compile error with the violating value named
-(`examples/callsite_bad.vel`).
-
-Loops can be proven too — give the loop an **invariant**, a promise it
-keeps on every spin:
+It did not test the function. It proved the promise false and handed
+back the input that breaks it. Fix the code, or fix the promise:
 
 ```
-fn sum_to(n: Int) -> Int
+fn discount(price: Int) -> Int
+    requires price >= 0
+    ensures result >= 0
+{
+    if price < 10 {
+        return 0
+    }
+    return price - 10
+}
+```
+
+Now it compiles, and `velaris explain` will say `[proven]`.
+
+Promises can talk about lists, maps, records and floats too:
+
+```
+fn bump(counts: Map of Text to Int, word: Text) -> Map of Text to Int
+    ensures get_or(result, word, 0) == get_or(counts, word, 0) + 1
+{
+    return put(counts, word, get_or(counts, word, 0) + 1)
+}
+```
+
+Floats are proven in real IEEE-754, which means Velaris will *refuse*
+to prove `x + 0.1 + 0.1 == x + 0.2` — because on a real machine it is
+false. See [docs/floats.md](docs/floats.md) for why that matters.
+
+## 5. Loops
+
+```
+fn count_up(n: Int) -> Int
     requires n >= 0
     ensures result >= 0
 {
     let total = 0
-    let i = 1
-    while i <= n
-        invariant total >= 0
-        invariant i >= 1
-    {
-        total = total + i
+    let i = 0
+    while i < n {
+        total = total + 1
         i = i + 1
     }
     return total
 }
 ```
 
-Velaris proves the invariant holds before the first spin, that no single
-step can break it, and then uses it to prove the `ensures` — so this whole
-loop function is verified before running (`examples/loop_proof.vel`; see
-`loop_proof_bad.vel` get rejected when the body betrays its invariant).
-
-And Velaris is honest about limits: lists, text, and loops *without*
-invariants are beyond the prover today, so those promises are checked at
-runtime instead — every call, every return, every loop iteration. When
-Velaris says "proven," it is literally true.
-
-## 6. Native speed
-
-After all checks pass, pure integer functions are compiled to machine code
-via LLVM. See it yourself:
+No `invariant` line needed: the compiler works out the boring ones
+itself (each counter never goes below where it started). When you need
+something richer — "this total stays positive" — write it:
 
 ```
-python velaris.py examples/bench.vel --time
-python velaris.py examples/bench.vel --time --no-native
+    while i < length(xs)
+    invariant total >= 0
+    {
+        ...
+    }
 ```
 
-Same program, same answers — typically thousands of times faster native.
-Safety isn't traded for speed: nothing compiles until effects, types, and
-proofs all pass, and contract-carrying functions deliberately stay
-interpreted so promises are never skipped.
+## 6. Failure
 
-## 7. Errors are for agents too
-
-Add `--json` to any run and errors come out machine-readable:
+Some things genuinely fail. In Velaris that is part of the signature,
+and ignoring it does not compile:
 
 ```
-python velaris.py examples/sneaky.vel --json
-```
+fn parse_age(t: Text) -> Int or fail {
+    return try to_int(t)
+}
 
-```json
-{
-  "code": "E300",
-  "message": "function 'discount' calls 'print' which needs effect 'io', ...",
-  "file": "examples/sneaky.vel",
-  "line": 5,
-  "fixes": ["add 'uses io' to the signature of 'discount'",
-            "remove the call to 'print'"]
+fn main() uses io {
+    check parse_age(ask("your age?")) {
+        ok n {
+            print(format("you are {}", n))
+        }
+        fail why {
+            print(format("that was not a number: {}", why))
+        }
+    }
 }
 ```
 
-This is deliberate: increasingly, the "developer" reading compiler errors is
-an AI agent in a fix loop. Velaris speaks both languages. And since v1.0,
-one run reports every broken function at once (as a JSON array in `--json`
-mode), so a fixing agent — or you — sees the whole picture in one pass.
+`check` handles it here. `try` passes it up to your caller (only inside
+a function that says `or fail`). The built-ins that fail in ordinary
+life — `to_int`, `read_file`, `fetch`, and `get` on a map — all say so,
+and `get_or(m, key, default)` is there when you would rather have a
+fallback than a failure.
 
-## 8. The workflow Velaris is built for
+## 7. Records and lists
 
-1. A **human** writes the signature: types, effects, promises.
-2. An **AI** writes the body. (Paste this tutorial or the README into any
-   AI assistant and ask it to write Velaris — it will.)
-3. The **compiler** is the judge neither can fool.
+```
+record Expense {
+    what: Text
+    amount: Int
+}
 
-You state *what* must be true; the machine writes *how*; the math checks it.
-That's the whole idea.
+fn describe(e: Expense) -> Text {
+    return format("{}: {}", e.what, e.amount)
+}
+```
+
+Records are immutable: `Expense(what: "chai", amount: 25)` makes one,
+`e.what` reads a field, and nothing can change it underneath someone.
+Lists work the same way — `push` gives you a new list.
+
+Reading past the end of a list is caught before the program runs when
+the compiler can prove it, and reported cleanly when it cannot.
+
+## 8. Function values
+
+```
+import "std.vel"
+
+fn main() uses io {
+    let xs = [5, 3, 8, 1]
+    print(keep_if(xs, fn(n: Int) -> Bool { return n > 4 }))
+    print(sort_by(xs, fn(n: Int) -> Int { return -n }))
+}
+```
+
+Inline functions are pure and cannot use variables from around them —
+pass what they need as parameters. They can carry their own promises,
+proven like any other function's.
+
+## 9. Using libraries
+
+```
+import "std.vel"                    // sort(xs), first(xs), join(...)
+import "lib/geo.vel" as geo         // geo.distance(a, b)
+```
+
+A named import keeps a library's functions behind its own name, so two
+libraries that both define `distance` can be used in one file. The
+standard library is written in Velaris and keeps its own promises:
+`sort` carries `ensures is_sorted(result)`.
+
+## 10. The tools
+
+```
+velaris program.vel          run it
+velaris check program.vel    compile it without running
+velaris explain program.vel  what each function does, needs and promises
+velaris explain .            the same for a whole project
+velaris repl                 try things, proofs and all
+velaris fmt program.vel      canonical formatting
+velaris doctor               check your setup
+velaris new myproject        start something
+```
+
+`velaris explain` is the one to reach for when you meet unfamiliar
+code: it lists every function with its effects, its promises, and
+whether those promises were **proven** or are being checked while
+running.
 
 ## Where to go next
 
-Read the 18 programs in `examples/` — half of them are *designed to be
-rejected*, and each rejection demonstrates a guarantee. Then write something
-real, break a promise on purpose, and watch the compiler catch you. That
-moment is Velaris.
+- `examples/ledger.vel` — an expense tracker: records, files, reports.
+- `examples/wordcount.vel` — text analysis: maps, lambdas, failure.
+- `examples/fetcher.vel` — an HTTP tool: the network, honestly declared.
+- [The error index](https://gowrishankar-infra.github.io/velaris-lang/errors.html)
+  — every message Velaris can give, scraped from the compiler itself.
+
+If you can make the prover claim something is proven when it is false,
+that is a security bug and the project wants to hear about it.

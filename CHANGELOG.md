@@ -1,5 +1,25 @@
 # Velaris changelog
 
+## 2.16 - Catching the next one, a third app, and a current tutorial
+`fuzz_native.py` generates random Velaris programs - integer maths,
+loops, list scans, text scans, floats, branches - runs each one
+interpreted and natively, and fails if the two ever disagree. CI runs
+it on every push, now across Linux, Windows **and macOS**: the exact
+combination that would have caught the 2.15 problem before it reached
+anyone.
+
+`examples/fetcher.vel` is a third real program, and the first to use
+the network: it reads a URL from the command line, checks the status
+before downloading a body, and summarises what it got. Every network
+call is behind `uses net` and can fail, so all three failure paths
+(bad status, unreachable host, no arguments) are visible in the code
+rather than assumed away.
+
+TUTORIAL.md is rewritten for the language as it actually is. The old
+one predated lambdas, namespaces, format, args, map proofs, invariant
+inference and the whole toolset - someone arriving today was reading a
+description of a language from fifteen releases ago.
+
 ## 2.15.1 - Native text building, made portable
 Two examples failed on Windows in 2.15: a function that RETURNS text
 handed a small struct back across the machine-code boundary, and how

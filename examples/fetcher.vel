@@ -1,0 +1,79 @@
+// A small HTTP tool, written in Velaris.
+//
+// velaris examples/fetcher.vel <url> [words]
+//
+// Note the signature of every function below: only the ones that say
+// 'uses net' can reach the internet, and every network call can fail,
+// so the failure paths are visible rather than assumed. This program
+// needs a connection, so it is not part of the test suite.
+
+import "std.vel" as std
+
+fn summarise(body: Text, top: Int) -> Text
+requires top > 0
+{
+    let words = split(body, " ")
+    let shown = top
+    if length(words) < shown {
+        shown = length(words)
+    }
+    let out = format("{} characters, {} space-separated pieces\n",
+    length(body), length(words))
+    let i = 0
+    while i < shown {
+        out = out + format("  {}: {}\n", i + 1, get(words, i))
+        i = i + 1
+    }
+    return out
+}
+
+fn head_of(url: Text) -> Int uses net or fail {
+    return try fetch_status(url)
+}
+
+fn body_of(url: Text) -> Text uses net or fail {
+    return try fetch(url)
+}
+
+fn main() uses io, net {
+    let given = args()
+    if length(given) == 0 {
+        print("usage: velaris examples/fetcher.vel <url> [words]")
+        return
+    }
+    let url = get(given, 0)
+    let top = 5
+    if length(given) > 1 {
+        check to_int(get(given, 1)) {
+            ok n {
+                if n > 0 {
+                    top = n
+                }
+            }
+            fail why {
+                print(format("(ignoring '{}': {})", get(given, 1), why))
+            }
+        }
+    }
+    check head_of(url) {
+        ok status {
+            print(format("status: {}", status))
+            if status >= 400 {
+                print("that is an error status - not fetching the body")
+                return
+            }
+        }
+        fail why {
+            print(format("could not reach it: {}", why))
+            return
+        }
+    }
+    check body_of(url) {
+        ok body {
+            print(summarise(body, top))
+        }
+        fail why {
+            print(format("status was fine but the body failed: {}", why))
+        }
+    }
+}

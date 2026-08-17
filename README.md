@@ -106,6 +106,8 @@ variables — the compiler tells you to pass them in instead.
 file persistence, sorted reports.
 `examples/wordcount.vel` — text analysis: `velaris examples/wordcount.vel
 <file> [n]` counts word frequencies and prints a ranked histogram.
+`examples/fetcher.vel` — an HTTP tool: checks a status, then summarises
+a page, with every network call declared and every failure handled.
 
 ## Imports
 

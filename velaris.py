@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v2.15 — "The language where you can trust code you didn't write."
+Velaris v2.16 — "The language where you can trust code you didn't write."
 
-New in v2.15.1: text built inside a native function is assembled in a
-    runtime-owned buffer that grows and retries rather than guessing.
-    Returning text from native code stays interpreted on purpose - that
-    boundary is platform-specific ABI. Native compilation is fail-safe:
-    any backend trouble means interpreted, never a broken program.
+New in v2.16: fuzz_native.py checks that random programs mean the same
+    thing interpreted and natively - run in CI on Linux, Windows and
+    macOS. Plus examples/fetcher.vel (a real HTTP tool) and a tutorial
+    rewritten for the language as it stands.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -241,7 +240,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.15.1"
+VERSION = "2.16.0"
 import re
 import sys
 from dataclasses import dataclass, field
