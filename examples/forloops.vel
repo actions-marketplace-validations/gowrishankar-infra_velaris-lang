@@ -1,0 +1,36 @@
+// v2.17: for loops. They turn into the same while loops the prover
+// already understands, so invariants are still inferred and promises
+// still proven - the shorter form costs nothing.
+
+import "std.vel"
+
+fn sum_to(n: Int) -> Int
+requires n >= 0
+ensures result >= 0
+{
+    let total = 0
+    for i in 0 to n {
+        total = total + i
+    }
+    return total
+}
+
+fn longest(words: List of Text) -> Int
+ensures result >= 0
+{
+    let best = 0
+    for w in words {
+        if length(w) > best {
+            best = length(w)
+        }
+    }
+    return best
+}
+
+fn main() uses io {
+    print(format("sum to 10: {}", sum_to(10)))
+    print(format("longest word: {}", longest(["proof", "verified", "ok"])))
+    for w in ["one", "two", "three"] {
+        print(format("  {}", w))
+    }
+}

@@ -1,5 +1,21 @@
 # Velaris changelog
 
+## 2.17 - for loops, tests in Velaris, and text containment proofs
+`for i in 0 to n` and `for item in xs` are here. They are turned into
+the while loops the rest of the compiler already understands, so
+invariant inference and proofs work through them unchanged - the
+shorter form costs nothing.
+
+`velaris test program.vel` runs every function named `test_*` that
+takes no arguments and reports which returned true.
+`examples/std_test.vel` is the first suite: seven tests for the
+standard library, written in Velaris, and CI runs them on every push.
+The language can now test itself.
+
+The prover models `contains` on text through Z3's string theory, so
+`ensures contains(result, word)` is proven rather than checked at
+runtime.
+
 ## 2.16 - Catching the next one, a third app, and a current tutorial
 `fuzz_native.py` generates random Velaris programs - integer maths,
 loops, list scans, text scans, floats, branches - runs each one

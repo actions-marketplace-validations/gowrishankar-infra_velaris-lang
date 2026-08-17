@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Velaris v2.16 — "The language where you can trust code you didn't write."
+Velaris v2.17 — "The language where you can trust code you didn't write."
 
-New in v2.16: fuzz_native.py checks that random programs mean the same
-    thing interpreted and natively - run in CI on Linux, Windows and
-    macOS. Plus examples/fetcher.vel (a real HTTP tool) and a tutorial
-    rewritten for the language as it stands.
+New in v2.17: for loops (for i in 0 to n, for item in xs), tests
+    written in Velaris itself (velaris test), and text containment
+    proofs - ensures contains(result, word) is now proven.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -143,6 +142,7 @@ Usage:
   velaris repl                             interactive session
   velaris fmt program.vel                  format to the canonical style
   velaris check program.vel                compile only, do not run
+  velaris test program.vel                 run every test_ function
   velaris explain program.vel              walk through what it does
   velaris explain <folder>                 a map of every file
   velaris doctor                           check the installation
@@ -240,7 +240,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.16.0"
+VERSION = "2.17.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -418,6 +418,8 @@ class RecordDef:
 class ListLit:  items: list; line: int
 @dataclass
 class MapLit:   entries: list; line: int         # [(key_expr, val_expr)]
+@dataclass
+class Block:    stmts: list; line: int      # a 'for' unrolled into while
 @dataclass
 class ExprStmt: expr: object; line: int
 @dataclass
@@ -627,13 +629,23 @@ class Parser:
         self.lifted.append(f)
         return Var(name, start.line)
 
+    @staticmethod
+    def flatten(stmts: list) -> list:
+        out = []
+        for s in stmts:
+            if isinstance(s, Block):
+                out.extend(Parser.flatten(s.stmts))
+            else:
+                out.append(s)
+        return out
+
     def parse_block(self) -> list:
         self.expect("OP", "{")
         stmts = []
         while self.peek().text != "}":
             stmts.append(self.parse_statement())
         self.expect("OP", "}")
-        return stmts
+        return Parser.flatten(stmts)
 
     def parse_statement(self):
         t = self.peek()
@@ -677,6 +689,49 @@ class Parser:
             self.expect("OP", "}")
             return Check(subject, t.line, ok_name, ok_body,
                          fail_name, fail_body)
+        if t.kind == "KEYWORD" and t.text == "for":
+            self.next()
+            name = self.expect("IDENT").text
+            inw = self.expect("IDENT")
+            if inw.text != "in":
+                raise VelarisError("E100", "expected 'in' after the name",
+                    inw.line, fixes=["write: for i in 0 to n { ... }",
+                                     "or:    for item in xs { ... }"])
+            start = self.parse_expr()
+            if (self.peek().kind == "IDENT" and self.peek().text == "to"):
+                self.next()                       # for i in a to b
+                stop = self.parse_expr()
+                invs = []
+                while (self.peek().kind == "KEYWORD"
+                       and self.peek().text == "invariant"):
+                    kw = self.next()
+                    invs.append((self.parse_expr(), kw.line))
+                body = self.parse_block()
+                step = Assign(name, BinOp("+", Var(name, t.line),
+                                          Num(1), t.line), t.line)
+                return Block([
+                    Let(name, start, t.line, None),
+                    While(BinOp("<", Var(name, t.line), stop, t.line),
+                          list(body) + [step], t.line, invs),
+                ], t.line)
+            Parser.lambda_n += 1                  # for item in xs
+            idx = f"for#{Parser.lambda_n}"
+            invs = []
+            while (self.peek().kind == "KEYWORD"
+                   and self.peek().text == "invariant"):
+                kw = self.next()
+                invs.append((self.parse_expr(), kw.line))
+            body = self.parse_block()
+            step = Assign(idx, BinOp("+", Var(idx, t.line), Num(1),
+                                     t.line), t.line)
+            inner = [Let(name, Call("get", [start, Var(idx, t.line)],
+                                    t.line), t.line, None)]
+            return Block([
+                Let(idx, Num(0), t.line, None),
+                While(BinOp("<", Var(idx, t.line),
+                            Call("length", [start], t.line), t.line),
+                      inner + list(body) + [step], t.line, invs),
+            ], t.line)
         if t.kind == "KEYWORD" and t.text == "while":
             self.next()
             cond = self.parse_expr()
@@ -2370,6 +2425,12 @@ def check_proofs(funcs: list[Function], records: list,
             if node.name == "all_of":
                 return z3.ForAll([k], z3.Implies(inside, body))
             return z3.Exists([k], z3.And(inside, body))
+        if isinstance(node, Call) and node.name == "contains":
+            hay = to_z3(node.args[0], env, ctx)
+            needle = to_z3(node.args[1], env, ctx)
+            if z3.is_string(hay) and z3.is_string(needle):
+                return z3.Contains(hay, needle)
+            raise Unprovable()
         if isinstance(node, Call) and node.name == "code_at":
             t = to_z3(node.args[0], env, ctx)
             i = to_z3(node.args[1], env, ctx)
@@ -4497,6 +4558,50 @@ def main() -> int:
         return fmt_main(argv[1:])
     if argv[:1] == ["lsp"]:
         return lsp_serve()
+    if argv[:1] == ["test"]:
+        if len(argv) < 2:
+            print("usage: velaris test program.vel", file=sys.stderr)
+            return 1
+        target = argv[1]
+        try:
+            funcs, records = load_program(target)
+            errs: list = []
+            check_effects(funcs, errs)
+            check_types(funcs, records, errs)
+            if not errs:
+                check_proofs(funcs, records, errs)
+            if errs:
+                for e in errs:
+                    print(e.human(target), file=sys.stderr)
+                return 1
+        except VelarisError as e:
+            print(e.human(target), file=sys.stderr)
+            return 1
+        tests = [f for f in funcs
+                 if f.name.startswith("test_") and not f.params
+                 and f.src_file == target]
+        if not tests:
+            print(f"no tests in {target} - name a function test_something "
+                  f"and return true when it passes")
+            return 1
+        native = {} if "--no-native" in argv else compile_native(funcs)
+        rt = build_runtime(funcs, native)
+        passed = 0
+        for t in tests:
+            label = t.name[len("test_"):].replace("_", " ")
+            try:
+                got = rt["call"](t.name, [], t.line)
+                if got is True:
+                    print(f"  PASS  {label}")
+                    passed += 1
+                else:
+                    print(f"  FAIL  {label}   (returned {to_text(got)})")
+            except VelarisError as e:
+                print(f"  FAIL  {label}   [{e.code}] {e.message}")
+            except FailSignal as e:
+                print(f"  FAIL  {label}   failed: {e.reason}")
+        print(f"\n{passed}/{len(tests)} passed")
+        return 0 if passed == len(tests) else 1
     if argv[:1] == ["check"]:
         if len(argv) < 2:
             print("usage: velaris check program.vel", file=sys.stderr)

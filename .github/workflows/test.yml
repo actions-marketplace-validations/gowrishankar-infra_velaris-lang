@@ -31,6 +31,8 @@ jobs:
         run: python run_tests.py
       - name: Native and interpreted agree (random programs)
         run: python fuzz_native.py 60
+      - name: Velaris tests written in Velaris
+        run: velaris test examples/std_test.vel
       - name: Compile check (every example compiles)
         run: velaris check examples/*.vel examples/lib/*.vel stdlib/*.vel || true
       - name: Formatter check (repo is canonically formatted)

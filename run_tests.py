@@ -44,6 +44,7 @@ EXPECT = {
     "native_list.vel": "RUNS",
     "native_text.vel": "RUNS",
     "native_build.vel": "RUNS",
+    "forloops.vel": "RUNS",
     "grid_bad.vel": "REJECTED",
     "lambda_contract_bad.vel": "REJECTED",
     "map_bad.vel": "REJECTED",

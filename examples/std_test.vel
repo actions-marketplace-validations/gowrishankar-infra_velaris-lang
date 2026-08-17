@@ -1,0 +1,41 @@
+// v2.17: tests written in Velaris itself. Every function whose name
+// starts with test_ and takes no arguments is a test; returning true
+// means it passed.
+//
+// velaris test examples/std_test.vel
+
+import "std.vel"
+
+fn test_sorting_orders_numbers() -> Bool {
+    return sort([5, 3, 9, 1]) == [1, 3, 5, 9]
+}
+
+fn test_sorting_keeps_every_item() -> Bool {
+    return length(sort([4, 4, 2])) == 3
+}
+
+fn test_max_finds_the_biggest() -> Bool {
+    return max_of([3, 17, 8]) == 17
+}
+
+fn test_keep_if_filters() -> Bool {
+    return keep_if([1, 2, 3, 4], fn(n: Int) -> Bool {
+        return n % 2 == 0
+    }) == [2, 4]
+}
+
+fn test_join_uses_the_separator() -> Bool {
+    return join(["a", "b", "c"], "-") == "a-b-c"
+}
+
+fn test_reverse_turns_it_around() -> Bool {
+    return reverse([1, 2, 3]) == [3, 2, 1]
+}
+
+fn test_range_counts_up() -> Bool {
+    let total = 0
+    for n in range_list(1, 5) {
+        total = total + n
+    }
+    return total == 10
+}
