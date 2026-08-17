@@ -1,5 +1,23 @@
 # Velaris changelog
 
+## 2.18 - Records holding lists, and publishing
+A record's fields may now be lists, floats or text and still take part
+in proofs, so `ensures length(result.items) == length(b.items) + 1` is
+proven rather than checked at runtime.
+
+Turning that on immediately found a real bug in the ledger app: with
+records fully modelled, the prover could see that `describe` calls
+`money(e.amount)` on an amount nothing had constrained to be positive.
+`money` is now total - a negative amount formats as a refund - and the
+app compiles honestly instead of relying on an assumption nobody
+checked.
+
+Releases now publish to PyPI on every tag (trusted publishing, no
+stored token), so installing becomes `pip install velaris-lang`.
+
+Also: the version in pyproject.toml had drifted to 1.9.0 while the
+compiler said 2.17. The test suite now fails if the two ever disagree.
+
 ## 2.17 - for loops, tests in Velaris, and text containment proofs
 `for i in 0 to n` and `for item in xs` are here. They are turned into
 the while loops the rest of the compiler already understands, so

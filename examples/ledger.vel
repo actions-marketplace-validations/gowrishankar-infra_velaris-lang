@@ -37,9 +37,12 @@ fn parse_int(t: Text) -> Int or fail {
     return n
 }
 
-fn money(cents: Int) -> Text
-requires cents >= 0
-{
+fn money(cents: Int) -> Text {
+    // total on purpose: a refund is a negative amount, and the prover
+    // now checks that every caller is covered
+    if cents < 0 {
+        return "-" + money(0 - cents)
+    }
     let whole = cents / 100
     let part = cents % 100
     if part < 10 {

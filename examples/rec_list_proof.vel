@@ -1,0 +1,28 @@
+// v2.18: a record can hold a list and still be proof territory - so
+// promises about how a record's list changes are checked before the
+// program runs.
+
+record Basket {
+    owner: Text
+    items: List of Int
+}
+
+fn add_item(b: Basket, price: Int) -> Basket
+ensures length(result.items) == length(b.items) + 1
+ensures result.owner == b.owner
+{
+    return Basket(owner: b.owner, items: push(b.items, price))
+}
+
+fn item_count(b: Basket) -> Int
+ensures result == length(b.items)
+{
+    return length(b.items)
+}
+
+fn main() uses io {
+    let b = Basket(owner: "gowri", items: [250, 400])
+    print(format("before: {}", item_count(b)))
+    print(format("after:  {}", item_count(add_item(b, 125))))
+    print(add_item(b, 125))
+}

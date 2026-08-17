@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Velaris v2.17 — "The language where you can trust code you didn't write."
+Velaris v2.18 — "The language where you can trust code you didn't write."
 
-New in v2.17: for loops (for i in 0 to n, for item in xs), tests
-    written in Velaris itself (velaris test), and text containment
-    proofs - ensures contains(result, word) is now proven.
+New in v2.18: records holding lists, floats or text are proof
+    territory - and switching that on found a real bug in the ledger
+    example, which is the point of proving things.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -240,7 +240,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.17.0"
+VERSION = "2.18.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -2135,7 +2135,8 @@ def check_proofs(funcs: list[Function], records: list,
         fs = rec_fields.get(name)
         if fs is None:
             return False
-        return all(ft in ("Int", "Bool", "Float")
+        return all(ft in ("Int", "Bool", "Float", "Text",
+                          "List of Int")
                    or provable_rec(ft, seen | {name})
                    for _, ft in fs)
 
@@ -2208,8 +2209,11 @@ def check_proofs(funcs: list[Function], records: list,
     def mk_rec(prefix: str, rname: str) -> "RecVal":
         out = {}
         for f, ft in rec_fields[rname]:
-            if ft in ("Int", "Bool"):
+            if ft in ("Int", "Bool", "Float", "Text"):
                 out[f] = mk(f"{prefix}.{f}", ft)
+            elif ft == "List of Int":
+                arr = z3.Array(f"{prefix}.{f}", z3.IntSort(), z3.IntSort())
+                out[f] = ListVal(arr, z3.Int(f"{prefix}.{f}__n"))
             else:
                 out[f] = mk_rec(f"{prefix}.{f}", ft)
         return RecVal(rname, out)
@@ -2258,11 +2262,16 @@ def check_proofs(funcs: list[Function], records: list,
 
     def show_val(name, v, model):
         if isinstance(v, RecVal):
-            inner = ", ".join(
-                show_val(f, x, model).split(" = ", 1)[-1]
-                if isinstance(x, RecVal)
-                else f"{f}: {model.eval(x, model_completion=True)}"
-                for f, x in v.fields.items())
+            def field_text(f, x):
+                if isinstance(x, RecVal):
+                    return show_val(f, x, model).split(" = ", 1)[-1]
+                if isinstance(x, ListVal):
+                    n = model.eval(x.length, model_completion=True)
+                    return f"{f}: a list of {n}"
+                if isinstance(x, MapVal):
+                    return f"{f}: a map"
+                return f"{f}: {model.eval(x, model_completion=True)}"
+            inner = ", ".join(field_text(f, x) for f, x in v.fields.items())
             return f"{name} = {v.rname}({inner})"
         if isinstance(v, ListVal):
             return f"length({name}) = {model.eval(v.length, model_completion=True)}"

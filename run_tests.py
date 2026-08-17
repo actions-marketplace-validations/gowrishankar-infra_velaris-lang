@@ -45,6 +45,7 @@ EXPECT = {
     "native_text.vel": "RUNS",
     "native_build.vel": "RUNS",
     "forloops.vel": "RUNS",
+    "rec_list_proof.vel": "RUNS",
     "grid_bad.vel": "REJECTED",
     "lambda_contract_bad.vel": "REJECTED",
     "map_bad.vel": "REJECTED",
@@ -88,7 +89,22 @@ STDIN = {
 }
 
 
+def check_versions() -> None:
+    """The packaged version and the compiler's version must agree."""
+    import re as _re
+    root = Path(__file__).parent
+    src = (root / "velaris.py").read_text(encoding="utf-8")
+    tom = (root / "pyproject.toml").read_text(encoding="utf-8")
+    a = _re.search(r'VERSION = "([\d.]+)"', src).group(1)
+    b = _re.search(r'version = "([\d.]+)"', tom).group(1)
+    if a != b:
+        print(f"VERSION MISMATCH: velaris.py says {a}, "
+              f"pyproject.toml says {b}")
+        raise SystemExit(1)
+
+
 def main() -> int:
+    check_versions()
     here = Path(__file__).parent
     examples = here / "examples"
     extra = [a for a in sys.argv[1:] if a.startswith("--")]
