@@ -37,6 +37,8 @@ EXPECT = {
     "namespaces.vel": "RUNS",
     "div_proof.vel": "RUNS",
     "wordcount.vel": "RUNS",
+    "map_proof.vel": "RUNS",
+    "map_bad.vel": "REJECTED",
     "div_bad.vel": "REJECTED",
     "ns_bad.vel": "REJECTED",
     "tools.vel": "RUNS",

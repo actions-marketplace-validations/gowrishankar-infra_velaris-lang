@@ -1,0 +1,26 @@
+// v2.9: maps are proof territory. A map is modelled as its values plus
+// which keys are actually present, so promises about counting, storing
+// and defaulting are proven before the program runs.
+
+fn bump(counts: Map of Text to Int, word: Text) -> Map of Text to Int
+ensures get_or(result, word, 0) == get_or(counts, word, 0) + 1
+ensures has(result, word)
+{
+    return put(counts, word, get_or(counts, word, 0) + 1)
+}
+
+fn remember(m: Map of Int to Int, k: Int, v: Int) -> Map of Int to Int
+ensures get_or(result, k, 0) == v
+ensures has(result, k)
+{
+    return put(m, k, v)
+}
+
+fn main() uses io {
+    let counts = { "fox": 2, "dog": 1 }
+    let after = bump(counts, "fox")
+    print(format("fox seen {} time(s)", get_or(after, "fox", 0)))
+    print(format("cat seen {} time(s)", get_or(after, "cat", 0)))
+    let blank: Map of Int to Int = { }
+    print(format("remembered: {}", get_or(remember(blank, 7, 42), 7, 0)))
+}

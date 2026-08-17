@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Velaris v2.8 — "The language where you can trust code you didn't write."
+Velaris v2.9 — "The language where you can trust code you didn't write."
 
-New in v2.8: a second real app (examples/wordcount.vel) and Text
-    ordering - "a" < "b" now compares alphabetically, which the app
-    needed and the language did not have.
+New in v2.9: MAP PROOFS. A map is modelled as its values plus which
+    keys are present, so promises about put / get_or / has are proven
+    before the program runs - the last major type to get a proof story.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -239,7 +239,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.8.0"
+VERSION = "2.9.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -2090,12 +2090,42 @@ def check_proofs(funcs: list[Function], records: list,
         def __init__(self, arr, length):
             self.arr, self.length = arr, length
 
+    class MapVal:
+        """A symbolic map: values, plus which keys are actually there."""
+        def __init__(self, vals, present, key_t, val_t):
+            self.vals, self.present = vals, present
+            self.key_t, self.val_t = key_t, val_t
+
+    MAP_SORTS = {"Int": lambda: z3.IntSort(), "Bool": lambda: z3.BoolSort(),
+                 "Text": lambda: z3.StringSort()}
+
+    def map_parts(t: str):
+        """('Map of Text to Int') -> ('Text', 'Int') if both are modelable."""
+        if not t.startswith("Map of "):
+            return None
+        key, sep, val = t[len("Map of "):].partition(" to ")
+        if not sep or key not in MAP_SORTS or val not in MAP_SORTS:
+            return None
+        return key, val
+
+    def mk_map(name: str, t: str):
+        parts = map_parts(t)
+        if parts is None:
+            return None
+        key_t, val_t = parts
+        ks, vs = MAP_SORTS[key_t](), MAP_SORTS[val_t]()
+        return MapVal(z3.Array(name, ks, vs),
+                      z3.Array(name + "__has", ks, z3.BoolSort()),
+                      key_t, val_t)
+
     def mk(name: str, t: str):
         if t == "Int":
             return z3.Int(name)
         if t == "Float":
             saw_fp[0] = True
             return z3.FP(name, z3.Float64())
+        if t == "Text":
+            return z3.String(name)
         return z3.Bool(name)
 
     def mk_rec(prefix: str, rname: str) -> "RecVal":
@@ -2140,6 +2170,8 @@ def check_proofs(funcs: list[Function], records: list,
             return any(has_fresh(v) for v in e.fields.values())
         if isinstance(e, ListVal):
             return has_fresh(e.arr) or has_fresh(e.length)
+        if isinstance(e, MapVal):
+            return has_fresh(e.vals) or has_fresh(e.present)
         if z3.is_const(e) and e.decl().name().startswith("__"):
             return True
         return any(has_fresh(c) for c in e.children())
@@ -2154,6 +2186,8 @@ def check_proofs(funcs: list[Function], records: list,
             return f"{name} = {v.rname}({inner})"
         if isinstance(v, ListVal):
             return f"length({name}) = {model.eval(v.length, model_completion=True)}"
+        if isinstance(v, MapVal):
+            return f"{name} = a map"        # keys are symbolic here
         return f"{name} = {model.eval(v, model_completion=True)}"
 
     def bind_params(fnB: Function, args_z3: list) -> dict:
@@ -2226,7 +2260,8 @@ def check_proofs(funcs: list[Function], records: list,
         fnB = table.get(node.name)
 
         def summarizable(t):
-            return t in ("Int", "Bool", "Float") or (
+            return t in ("Int", "Bool", "Float", "Text") or (
+                map_parts(t) is not None) or (
                 t in rec_fields and provable_rec(t))
 
         if (fnB is None or fnB.effects or fnB.type_vars
@@ -2256,6 +2291,8 @@ def check_proofs(funcs: list[Function], records: list,
         if isinstance(node, FloatNum):
             saw_fp[0] = True
             return z3.FPVal(node.value, z3.Float64())
+        if isinstance(node, Str):
+            return z3.StringVal(node.value)
         if isinstance(node, Bool): return z3.BoolVal(node.value)
         if isinstance(node, Var):
             if node.name not in env:
@@ -2284,8 +2321,8 @@ def check_proofs(funcs: list[Function], records: list,
             arr = z3.K(z3.IntSort(), z3.IntVal(0))
             vals = [to_z3(it, env, ctx) for it in node.items]
             for idx, v in enumerate(vals):
-                if isinstance(v, ListVal):
-                    raise Unprovable()          # lists of lists: not yet
+                if not z3.is_int(v):            # only Int lists are modelled
+                    raise Unprovable()          # (lists of lists, Text, ...)
                 arr = z3.Store(arr, z3.IntVal(idx), v)
             return ListVal(arr, z3.IntVal(len(node.items)))
         if isinstance(node, Call) and node.name in ("all_of", "any_of"):
@@ -2305,6 +2342,24 @@ def check_proofs(funcs: list[Function], records: list,
             if node.name == "all_of":
                 return z3.ForAll([k], z3.Implies(inside, body))
             return z3.Exists([k], z3.And(inside, body))
+        if isinstance(node, Call) and node.name in ("put", "get_or", "has"):
+            base = to_z3(node.args[0], env, ctx)
+            if isinstance(base, MapVal):
+                k = to_z3(node.args[1], env, ctx)
+                if node.name == "has":
+                    return z3.Select(base.present, k)
+                if node.name == "get_or":
+                    d = to_z3(node.args[2], env, ctx)
+                    return z3.If(z3.Select(base.present, k),
+                                 z3.Select(base.vals, k), d)
+                v = to_z3(node.args[2], env, ctx)        # put
+                return MapVal(z3.Store(base.vals, k, v),
+                              z3.Store(base.present, k, z3.BoolVal(True)),
+                              base.key_t, base.val_t)
+            if node.name != "put":
+                raise Unprovable()
+        if isinstance(node, MapLit):
+            raise Unprovable()          # literal maps: runtime for now
         if isinstance(node, Call) and node.name in ("length", "get", "push"):
             a0 = to_z3(node.args[0], env, ctx)
             if not isinstance(a0, ListVal):
@@ -2312,9 +2367,16 @@ def check_proofs(funcs: list[Function], records: list,
             if node.name == "length":
                 return a0.length
             a1 = to_z3(node.args[1], env, ctx)
+            # lists are modelled as arrays of Ints; anything else (Text,
+            # records, nested lists) stays runtime-checked rather than
+            # being forced into a sort it does not fit
             if node.name == "push":
+                if not z3.is_int(a1):
+                    raise Unprovable()
                 return ListVal(z3.Store(a0.arr, a0.length, a1),
                                a0.length + 1)
+            if not z3.is_int(a1):
+                raise Unprovable()
             # get: prove the read stays inside the list (E705)
             if ctx is not None:
                 prove_bounds(a1, a0.length, ctx, node.line)
@@ -2537,6 +2599,12 @@ def check_proofs(funcs: list[Function], records: list,
                 facts.append(ln >= 0)
             elif old is not None and z3.is_bool(old):
                 out[n] = fresh("Bool", n)
+            elif old is not None and isinstance(old, MapVal):
+                counter[0] += 1
+                out[n] = mk_map(f"__{n}_havoc_{counter[0]}",
+                                f"Map of {old.key_t} to {old.val_t}")
+            elif old is not None and z3.is_string(old):
+                out[n] = fresh("Text", n)
             elif old is not None and z3.is_fp(old):
                 out[n] = fresh("Float", n)
             else:
@@ -2650,7 +2718,7 @@ def check_proofs(funcs: list[Function], records: list,
         env = {}
         list_facts = []
         for pname, ptype in fn.params:
-            if ptype in ("Int", "Bool", "Float"):
+            if ptype in ("Int", "Bool", "Float", "Text"):
                 env[pname] = mk(pname, ptype)
             elif ptype == "List of Int":
                 arr = z3.Array(pname, z3.IntSort(), z3.IntSort())
@@ -2659,6 +2727,10 @@ def check_proofs(funcs: list[Function], records: list,
                 list_facts.append(ln >= 0)
             elif ptype in rec_fields and provable_rec(ptype):
                 env[pname] = mk_rec(pname, ptype)
+            elif ptype.startswith("Map of "):
+                mv = mk_map(pname, ptype)
+                if mv is not None:
+                    env[pname] = mv
         ctx = Ctx([], list(list_facts), list(list_facts), fn.name)
         try:
             for r_expr, _ in fn.requires:
@@ -2701,6 +2773,8 @@ def check_proofs(funcs: list[Function], records: list,
                             rv = show_val("r", ret, m).split(" = ", 1)[-1]
                         elif isinstance(ret, ListVal):
                             rv = "a list"
+                        elif isinstance(ret, MapVal):
+                            rv = "a map"
                         else:
                             rv = m.eval(ret, model_completion=True)
                         raise VelarisError("E700",

@@ -1,0 +1,12 @@
+// The promise says the count goes up by two, but the code adds one.
+// The prover finds it without running anything.
+
+fn bump(counts: Map of Text to Int, word: Text) -> Map of Text to Int
+ensures get_or(result, word, 0) == get_or(counts, word, 0) + 2
+{
+    return put(counts, word, get_or(counts, word, 0) + 1)
+}
+
+fn main() uses io {
+    print(get_or(bump({ "a": 1 }, "a"), "a", 0))
+}

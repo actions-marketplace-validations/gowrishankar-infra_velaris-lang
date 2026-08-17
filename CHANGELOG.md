@@ -1,5 +1,17 @@
 # Velaris changelog
 
+## 2.9 - Map proofs
+Maps are now modelled symbolically - the values, plus which keys are
+actually present - so `put`, `get_or` and `has` take part in proofs.
+Promises like "this key now holds one more than before" are proven
+before the program runs, and wrong ones are refuted with the offending
+key. Text values became symbolic strings to make map keys work, which
+also lets Text cross call summaries.
+
+Lists remain arrays of Ints: anything else (Text lists, lists of
+lists) is explicitly guarded now and falls back to runtime checks
+rather than being forced into a sort it does not fit.
+
 ## 2.8 - A second real app, and Text ordering
 `examples/wordcount.vel` reads a file, counts word frequencies and
 prints a ranked histogram - a different shape of program from the

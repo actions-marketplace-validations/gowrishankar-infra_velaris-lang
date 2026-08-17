@@ -41,7 +41,7 @@ refutes it with an exact counterexample when it lies.
 | Guarantee | What it means |
 |---|---|
 | **Effects are visible** | `uses io, net, fs` — a function without `uses net` can never touch the network, transitively. Hidden behavior does not compile. |
-| **Promises are proven** | `requires` / `ensures` / loop `invariant`, verified by Z3 with modular call summaries — including records, quantified list properties, failure paths, and floats in **genuine IEEE-754** (the prover refutes `x + 0.1 + 0.1 == x + 0.2` with the exact double that breaks it). |
+| **Promises are proven** | `requires` / `ensures` / loop `invariant`, verified by Z3 with modular call summaries — including records, maps, quantified list properties, failure paths, and floats in **genuine IEEE-754** (the prover refutes `x + 0.1 + 0.1 == x + 0.2` with the exact double that breaks it). |
 | **Failure is unignorable** | `-> Int or fail` in the signature; callers must `check` or `try`. Forgetting the error path is a compile error — builtins included. |
 | **Fast where it's safe** | Pure `Int` / `Float` / `Bool` functions JIT to native code via LLVM (~10,000× on hot loops), differential-tested against the interpreter. |
 
