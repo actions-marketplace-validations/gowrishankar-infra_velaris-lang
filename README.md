@@ -48,6 +48,12 @@ refutes it with an exact counterexample when it lies.
 Why floats are proven in IEEE-754 rather than as real numbers, and what
 that costs: [docs/floats.md](docs/floats.md).
 
+Loops without written invariants are handled where the boring
+invariants suffice: the compiler proposes bounds on each counter and
+keeps the ones a loop step cannot break (see `examples/inferred.vel`).
+Anything richer — membership, sortedness — still needs an `invariant`
+line.
+
 The prover **never** claims "proven without running" unless the
 counterexample is premise-complete — untranslatable assumptions abandon
 the proof to runtime checks rather than risk a false alarm. Soundness

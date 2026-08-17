@@ -1,5 +1,23 @@
 # Velaris changelog
 
+## 2.11 - Invariant inference (the boring ones, for free)
+Loops without a written `invariant` can now be crossed by the prover.
+Candidate invariants are proposed for every counter a loop moves - it
+never goes below, or never above, the value it started at - assumed
+together, and whatever one loop step can break is dropped, repeating
+until the set is stable. (Houdini, kept small.) `examples/inferred.vel`
+proves three promises with no invariant lines at all.
+
+Honest about the limits: this infers simple bounds on counters, not
+membership or sortedness, so the standard library's loops still need
+their hand-written invariants.
+
+Also fixed something that had been quietly lying since 2.6: `explain`
+and the inspector reported a function as "proven" whenever the file had
+no errors, even when the prover had actually given up and left the
+promise to a runtime check. The status now comes from the prover
+itself, so "proven" means proven.
+
 ## 2.10 - Contracts on function values
 An inline function can carry `requires` and `ensures` of its own, and
 they are proven like any other function's - so a function value is a

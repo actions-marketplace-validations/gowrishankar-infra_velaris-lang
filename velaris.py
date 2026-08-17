@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v2.10 — "The language where you can trust code you didn't write."
+Velaris v2.11 — "The language where you can trust code you didn't write."
 
-New in v2.10: function values can carry promises.
-    keep_if(xs, fn(n: Int) -> Bool ensures result == (n > 5) { ... })
-    Proven like any other function, because lambdas become real ones.
+New in v2.11: INVARIANT INFERENCE. Loops without a written invariant
+    can still be proven: the compiler proposes bounds on each counter,
+    assumes them together, and drops whatever a loop step breaks.
+    'velaris explain' now reports proven vs runtime-checked honestly.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -239,7 +240,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.10.0"
+VERSION = "2.11.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -2061,7 +2062,7 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
 # ---------------------------------------------------------------------------
 
 def check_proofs(funcs: list[Function], records: list,
-                 errors: list) -> None:
+                 errors: list, proven_out: set | None = None) -> None:
     try:
         import z3
     except ImportError:
@@ -2594,6 +2595,72 @@ def check_proofs(funcs: list[Function], records: list,
         if verdict != z3.unsat:
             raise Unprovable()
 
+    def infer_invariants(env, changed, s, ctx):
+        """Guess the boring invariants so people stop writing them.
+
+        Candidates are simple bounds on the counters a loop moves: each
+        changed Int either never goes below or never goes above the
+        value it had on entry, and lists keep their length. Everything
+        is assumed together, one loop step is explored, and whatever a
+        step can break is dropped - repeating until the set is stable.
+        (This is the Houdini algorithm, kept deliberately small.)
+        """
+        snap = {}
+        for n in sorted(changed):
+            v = env.get(n)
+            if v is not None and z3.is_int(v) and not has_fresh(v):
+                snap[n] = v
+        if not snap:
+            return []
+        cands = []
+        for n, start in snap.items():
+            cands.append((f"{n} never goes below its starting value",
+                          lambda e, n=n, s0=start: e[n] >= s0))
+            cands.append((f"{n} never goes above its starting value",
+                          lambda e, n=n, s0=start: e[n] <= s0))
+
+        for _round in range(3):
+            env_h, hfacts = havoc_like(env, changed)
+            try:
+                facts = list(hfacts) + [c(env_h) for _, c in cands]
+                cond_h = to_z3(s.cond, env_h, ctx)
+            except (Unprovable, KeyError):
+                return []
+            ctx_body = Ctx(ctx.conds + facts + [cond_h],
+                           list(ctx.assum) + facts + [cond_h],
+                           list(ctx.param_assum), ctx.caller)
+            try:
+                paths = explore(list(s.body), dict(env_h), ctx_body)
+            except (Unprovable, VelarisError):
+                return []
+            keep = []
+            for label, c in cands:
+                ok = True
+                for pctx, ret, penv in paths:
+                    if ret is not FELL_OFF:
+                        continue
+                    try:
+                        goal = c(penv)
+                    except KeyError:
+                        ok = False
+                        break
+                    solver = z3.Solver()
+                    solver.set("timeout", solver_budget())
+                    solver.add(*pctx.assum)
+                    solver.add(*pctx.conds)
+                    solver.add(z3.Not(goal))
+                    if solver.check() != z3.unsat:
+                        ok = False
+                        break
+                if ok:
+                    keep.append((label, c))
+            if len(keep) == len(cands):
+                return cands
+            cands = keep
+            if not cands:
+                return []
+        return cands
+
     def havoc_like(env, names):
         """Fresh unknowns for every variable the loop can change.
         Returns (new_env, facts) - facts like 'list lengths stay >= 0'."""
@@ -2675,17 +2742,24 @@ def check_proofs(funcs: list[Function], records: list,
                              ctx.fork(z3.Not(c)))
                 return yes + no
             elif isinstance(s, While):
-                if not s.invariants:
+                changed = assigned_names(s.body, set())
+                inferred = infer_invariants(env, changed, s, ctx)
+                if not s.invariants and not inferred:
                     raise Unprovable()   # no bridge across this loop
-                # 1. ENTRY: every invariant must hold before the first spin
+                # 1. ENTRY: every written invariant must hold before the
+                #    first spin (inferred ones hold by construction)
                 for inv_expr, iline in s.invariants:
                     prove_invariant(inv_expr, iline, env, ctx,
                                     "when the loop starts")
-                changed = assigned_names(s.body, set())
                 # 2. PRESERVATION: from ANY state the invariants allow,
                 #    one loop step must land back inside the invariants
                 env_h, hfacts = havoc_like(env, changed)
                 facts = list(hfacts)
+                for _, c in inferred:
+                    try:
+                        facts.append(c(env_h))
+                    except KeyError:
+                        pass
                 for inv_expr, _ in s.invariants:
                     try:
                         facts.append(to_z3(inv_expr, env_h, None))
@@ -2707,6 +2781,11 @@ def check_proofs(funcs: list[Function], records: list,
                 # 3. AFTERWARD: all we know is invariants hold, cond is false
                 env_a, hfacts_a = havoc_like(env, changed)
                 facts_a = list(hfacts_a)
+                for _, c in inferred:
+                    try:
+                        facts_a.append(c(env_a))
+                    except KeyError:
+                        pass
                 for inv_expr, _ in s.invariants:
                     try:
                         facts_a.append(to_z3(inv_expr, env_a, None))
@@ -2802,6 +2881,8 @@ def check_proofs(funcs: list[Function], records: list,
                                    "such inputs"])
                     if verdict != z3.unsat:
                         raise Unprovable()
+            if proven_out is not None and (fn.ensures or fn.requires):
+                proven_out.add(fn.name)   # every obligation discharged
         except Unprovable:
             continue                    # runtime promise checks still guard
         except z3.Z3Exception:
@@ -3499,12 +3580,9 @@ def inspect_source(path: str, source: str | None = None) -> dict:
     errors: list = []
     check_effects(funcs, errors)
     check_types(funcs, records, errors)
-    proved = set()
+    proved: set = set()
     if not errors:
-        before = len(errors)
-        check_proofs(funcs, records, errors)
-        if len(errors) == before:
-            proved = {f.name for f in funcs if f.ensures or f.requires}
+        check_proofs(funcs, records, errors, proved)
     seen_e = set()
     for e in errors:                # one problem, one message, everywhere
         key = (e.code, e.file or path, e.line, e.message)

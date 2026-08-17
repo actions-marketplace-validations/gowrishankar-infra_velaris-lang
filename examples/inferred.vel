@@ -1,0 +1,48 @@
+// v2.11: no 'invariant' lines here. The compiler works out the boring
+// ones itself - that each counter never goes below where it started -
+// and that is enough to prove these promises before the program runs.
+//
+// Check it with:  velaris explain examples/inferred.vel
+
+fn count_up(n: Int) -> Int
+requires n >= 0
+ensures result >= 0
+{
+    let total = 0
+    let i = 0
+    while i < n {
+        total = total + 1
+        i = i + 1
+    }
+    return total
+}
+
+fn sum_to(n: Int) -> Int
+requires n >= 0
+ensures result >= 0
+{
+    let total = 0
+    let i = 1
+    while i <= n {
+        total = total + i
+        i = i + 1
+    }
+    return total
+}
+
+fn steps_down(start: Int) -> Int
+requires start >= 0
+ensures result <= start
+{
+    let left = start
+    while left > 0 {
+        left = left - 1
+    }
+    return left
+}
+
+fn main() uses io {
+    print(format("count_up(5)    = {}", count_up(5)))
+    print(format("sum_to(10)     = {}", sum_to(10)))
+    print(format("steps_down(4)  = {}", steps_down(4)))
+}
