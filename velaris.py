@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Velaris v2.1 — "The language where you can trust code you didn't write."
+Velaris v2.2 — "The language where you can trust code you didn't write."
+
+New in v2.2: out-of-the-box readiness.
+    velaris doctor          check your setup, with exact fixes
+    velaris new myproject   start a project with running code
+    Standalone executables (no Python needed) are built for every
+    release - download one file and go.
 
 New in v2.1: a documentation site in docs/ (python build_docs.py).
     The library page is parsed from std.vel by this very compiler -
@@ -131,6 +137,8 @@ Usage:
   velaris program.vel                      run a program (after pip install)
   velaris repl                             interactive session
   velaris fmt program.vel                  format to the canonical style
+  velaris doctor                           check the installation
+  velaris new <name>                       start a fresh project
   velaris lsp                              language server (for editors)
   velaris version                          print the version
   python velaris.py program.vel            run a program
@@ -224,7 +232,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -3328,6 +3336,132 @@ def fmt_main(argv: list[str]) -> int:
     return status
 
 
+STARTER = """// Welcome to Velaris - the language where you can trust code you
+// didn't write. Run me with:   velaris main.vel
+
+import "std.vel"
+
+fn discount(price: Int) -> Int
+    requires price >= 0
+    ensures result >= 0
+{
+    if price < 10 {
+        return 0
+    }
+    return price - 10
+}
+
+fn main() uses io {
+    print("hello from Velaris!")
+    print("discount(50) = " + discount(50))
+    print("sorted: " + sort([5, 3, 8, 1]))
+    check to_int(ask("type a number:")) {
+        ok n {
+            print("double that is " + (n * 2))
+        }
+        fail why {
+            print("that was not a number - " + why)
+        }
+    }
+}
+"""
+
+
+def doctor() -> int:
+    OK, OPT, BAD = "[ ok ]", "[ -- ]", "[FAIL]"
+    lines, healthy = [], True
+    pv = sys.version_info
+    if (pv.major, pv.minor) >= (3, 10):
+        lines.append(f"{OK} python {pv.major}.{pv.minor}.{pv.micro}")
+    else:
+        healthy = False
+        lines.append(f"{BAD} python {pv.major}.{pv.minor} - Velaris "
+                     f"needs 3.10+ (install from python.org)")
+    here = os.path.abspath(__file__)
+    lines.append(f"{OK} velaris {VERSION}  ({here})")
+    try:
+        import z3  # noqa: F401
+        lines.append(f"{OK} z3-solver - promises are PROVEN before "
+                     f"running")
+    except ImportError:
+        lines.append(f"{OPT} z3-solver absent - promises checked at "
+                     f"runtime instead   fix: pip install z3-solver")
+    try:
+        import llvmlite  # noqa: F401
+        lines.append(f"{OK} llvmlite - pure numeric functions run as "
+                     f"machine code")
+    except ImportError:
+        lines.append(f"{OPT} llvmlite absent - everything runs "
+                     f"interpreted   fix: pip install llvmlite")
+    std = os.path.join(os.path.dirname(here), "stdlib", "std.vel")
+    if os.path.exists(std):
+        try:
+            fs, _ = load_program(std)
+            lines.append(f"{OK} standard library - {len(fs)} functions "
+                         f"ready to import")
+        except VelarisError:
+            healthy = False
+            lines.append(f"{BAD} standard library present but broken - "
+                         f"reinstall: pip install --force-reinstall "
+                         f"velaris-lang")
+    else:
+        healthy = False
+        lines.append(f"{BAD} standard library missing - reinstall: "
+                     f"pip install --force-reinstall velaris-lang")
+    try:
+        toks = lex('fn main() uses io { print(2 + 2) }')
+        fs2, rs2, _ = Parser(toks).parse_program()
+        errs: list = []
+        check_effects(fs2, errs)
+        check_types(fs2, rs2, errs)
+        if errs:
+            raise VelarisError("E999", "self-test failed", 1)
+        lines.append(f"{OK} compiler self-test - lex, parse, effects, "
+                     f"types all answering")
+    except Exception:
+        healthy = False
+        lines.append(f"{BAD} compiler self-test failed - please report "
+                     f"this at github.com/gowrishankar-infra/"
+                     f"velaris-lang/issues")
+    print(f"velaris doctor - {VERSION}")
+    print("-" * 60)
+    for ln in lines:
+        print(ln)
+    print("-" * 60)
+    if healthy:
+        print("all essential checks passed. "
+              "[ -- ] items are optional extras.")
+        return 0
+    print("something needs fixing - see [FAIL] lines above.")
+    return 1
+
+
+def new_project(name: str) -> int:
+    if not name or name.startswith("-"):
+        print("usage: velaris new <project-name>", file=sys.stderr)
+        return 1
+    if os.path.exists(name):
+        print(f"'{name}' already exists - pick a fresh name",
+              file=sys.stderr)
+        return 1
+    os.makedirs(name)
+    with open(os.path.join(name, "main.vel"), "w",
+              encoding="utf-8") as f:
+        f.write(STARTER)
+    with open(os.path.join(name, "README.md"), "w",
+              encoding="utf-8") as f:
+        f.write(f"# {name}\n\nA Velaris project.\n\n"
+                f"```\ncd {name}\nvelaris main.vel\n```\n\n"
+                f"Docs: https://github.com/gowrishankar-infra/"
+                f"velaris-lang\n")
+    print(f"created {name}/")
+    print(f"  {name}/main.vel    - a working program with a proven "
+          f"contract")
+    print(f"  {name}/README.md")
+    print(f"next:  cd {name}  then  velaris main.vel")
+    return 0
+
+
 def repl() -> int:
     print(f"Velaris {VERSION} - interactive session.")
     print("Definitions (fn / record / import) are fully checked before "
@@ -3435,6 +3569,10 @@ def main() -> int:
         return fmt_main(argv[1:])
     if argv[:1] == ["lsp"]:
         return lsp_serve()
+    if argv[:1] == ["doctor"]:
+        return doctor()
+    if argv[:1] == ["new"]:
+        return new_project(argv[1] if len(argv) > 1 else "")
     if argv[:1] == ["run"]:
         sys.argv.pop(1)
     if "--version" in sys.argv:

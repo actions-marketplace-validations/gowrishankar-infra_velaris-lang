@@ -1,5 +1,12 @@
 # Velaris changelog
 
+## 2.2 - Out-of-the-box readiness
+velaris doctor (self-diagnosing setup with exact fixes), velaris new
+(scaffold a project that runs), standalone executables for
+Windows/Linux/macOS built and attached to every release (no Python
+required), SECURITY.md with soundness-is-security policy, issue
+templates, and a semver stability promise in the README.
+
 ## 2.1 - Documentation site
 build_docs.py generates docs/: landing page, tutorial, a library
 reference parsed from stdlib/std.vel by the real compiler (contracts

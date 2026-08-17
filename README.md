@@ -87,11 +87,18 @@ promises are never silently skipped.
 
 ## Quick start
 
-Requires Python 3.10+. From a clone of this repo:
+**Three ways in**, easiest first:
+
+1. **No Python needed** — download the standalone `velaris` executable
+   for Windows/Linux/macOS from the latest GitHub release, and run
+   `velaris doctor` to confirm all is well.
+2. **With Python 3.10+** — `pip install "git+https://github.com/gowrishankar-infra/velaris-lang"`
+3. **From a clone** (for contributors):
 
 ```
 pip install ".[full]"
-velaris examples/hello.vel
+velaris doctor
+velaris new hello && cd hello && velaris main.vel
 ```
 
 (`[full]` brings z3-solver for compile-time proofs and llvmlite for
@@ -124,6 +131,15 @@ suite (28 example programs, each with an expected verdict):
 ```
 python run_tests.py
 ```
+
+## Stability promise
+
+Velaris follows semantic versioning: breaking changes happen **only at
+major versions** (as v2.0 did, with compiler-guided migration), minor
+versions only add, and the test matrix (Linux/Windows, Python
+3.10/3.12, with and without optional dependencies) guards every
+release. Errors are stable, numbered, and available as JSON
+(`--json`) for automation.
 
 ## Editor support
 

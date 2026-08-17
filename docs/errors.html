@@ -39,7 +39,7 @@ td, th { border-bottom:1px solid #2a2e37; padding:8px 10px;
 a { color:var(--accent); }
 </style></head><body>
 <nav><a class="brand" href="index.html">Velaris</a><a href="index.html" class="">Home</a><a href="tutorial.html" class="">Tutorial</a><a href="library.html" class="">Library</a><a href="errors.html" class="here">Errors</a><a href="playground.html" class="">Playground</a>
-<span class="tag">v2.1.0</span></nav>
+<span class="tag">v2.2.0</span></nav>
 <main><h1>Every error Velaris can give</h1>
 <p>Scraped from the compiler source itself, so this list cannot go stale. Placeholders in braces are filled with your program's names and values; every error also comes with numbered fixes.</p><table><tr><th>code</th><th>message template</th></tr>
 <tr><td class="ecode">E000</td><td>unexpected character {source[pos]!r}</td></tr>
@@ -90,4 +90,5 @@ a { color:var(--accent); }
 <tr><td class="ecode">E703</td><td>cannot prove the loop keeps &#x27;invariant {expr_str(inv_expr)}&#x27; {where} in &#x27;{ctx.caller}&#x27; - the promises allow: {vals}</td></tr>
 <tr><td class="ecode">E704</td><td>loop broke its promise: invariant {expr_str(inv_expr)} ({vals})</td></tr>
 <tr><td class="ecode">E705</td><td>this &#x27;get&#x27; can reach position {m.eval(idx, model_completion=True)}, but the list has {m.eval(length, model_completion=True)} item(s) - proven without running the program</td></tr>
+<tr><td class="ecode">E999</td><td>self-test failed</td></tr>
 </table></main></body></html>

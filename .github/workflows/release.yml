@@ -1,0 +1,56 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  binaries:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: velaris-windows.exe
+            sep: ";"
+          - os: ubuntu-latest
+            asset: velaris-linux
+            sep: ":"
+          - os: macos-latest
+            asset: velaris-macos
+            sep: ":"
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install with proofs, native speed, and PyInstaller
+        run: pip install ".[full]" pyinstaller
+      - name: Build standalone executable
+        run: >
+          pyinstaller --onefile --name velaris
+          --collect-all z3 --collect-all llvmlite
+          --add-data "stdlib${{ matrix.sep }}stdlib"
+          velaris.py
+      - name: Smoke test the executable
+        shell: bash
+        run: |
+          ./dist/velaris* --version
+          ./dist/velaris* doctor
+          ./dist/velaris* examples/hello.vel
+      - name: Rename asset
+        shell: bash
+        run: |
+          cd dist
+          for f in velaris velaris.exe; do
+            [ -f "$f" ] && mv "$f" "${{ matrix.asset }}"
+          done
+          ls
+      - name: Attach to the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.asset }}
+          generate_release_notes: true
