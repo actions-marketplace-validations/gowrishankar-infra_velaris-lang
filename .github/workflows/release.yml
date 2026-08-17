@@ -58,6 +58,9 @@ jobs:
   pypi:
     name: publish to PyPI
     runs-on: ubuntu-latest
+    # until a pending publisher exists on pypi.org this cannot succeed,
+    # and a release should not be marked broken for that reason
+    continue-on-error: true
     permissions:
       id-token: write            # trusted publishing, no API token stored
     steps:

@@ -1,5 +1,11 @@
 # Velaris changelog
 
+## 2.18.1 - Releases stay green
+The PyPI job added in 2.18 cannot succeed until a pending publisher
+exists on pypi.org, and a release should not be reported as broken for
+a step that is waiting on a one-time setup. It no longer blocks the
+release; the executables build and attach as before.
+
 ## 2.18 - Records holding lists, and publishing
 A record's fields may now be lists, floats or text and still take part
 in proofs, so `ensures length(result.items) == length(b.items) + 1` is
