@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v2.5 — "The language where you can trust code you didn't write."
+Velaris v2.6 — "The language where you can trust code you didn't write."
 
-New in v2.5: namespaced imports.
-    import "lib/geo.vel" as geo   then   geo.distance(a, b)
-    Two libraries with the same function names can now live together.
+New in v2.6: division proofs and a way to SEE what code promises.
+    velaris explain program.vel   walk through every function
+    Playground "Inspect" button    the same, as cards in your browser
+    / and % now prove the divisor is never zero (E706)
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -141,6 +142,7 @@ Usage:
   velaris program.vel                      run a program (after pip install)
   velaris repl                             interactive session
   velaris fmt program.vel                  format to the canonical style
+  velaris explain program.vel              walk through what it does
   velaris doctor                           check the installation
   velaris new <name>                       start a fresh project
   velaris lsp                              language server (for editors)
@@ -236,7 +238,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.5.1"
+VERSION = "2.6.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -886,7 +888,22 @@ def expr_str(e) -> str:
     if isinstance(e, Bool): return "true" if e.value else "false"
     if isinstance(e, Var):  return e.name
     if isinstance(e, Call): return f"{e.name}({', '.join(expr_str(a) for a in e.args)})"
-    if isinstance(e, BinOp): return f"{expr_str(e.left)} {e.op} {expr_str(e.right)}"
+    if isinstance(e, BinOp):
+        # keep the meaning: parenthesise operands that bind less tightly,
+        # so (result + 1) * count never prints as result + 1 * count
+        prec = {"or": 1, "and": 2,
+                "==": 3, "!=": 3, "<": 3, ">": 3, "<=": 3, ">=": 3,
+                "+": 4, "-": 4, "*": 5, "/": 5, "%": 5}
+        here = prec.get(e.op, 6)
+
+        def side(sub, is_right: bool) -> str:
+            text = expr_str(sub)
+            if isinstance(sub, BinOp):
+                there = prec.get(sub.op, 6)
+                if there < here or (there == here and is_right):
+                    return f"({text})"
+            return text
+        return f"{side(e.left, False)} {e.op} {side(e.right, True)}"
     if isinstance(e, Not):   return f"not {expr_str(e.value)}"
     if isinstance(e, ListLit): return "[" + ", ".join(expr_str(i) for i in e.items) + "]"
     if isinstance(e, MapLit):
@@ -1076,6 +1093,13 @@ FALLIBLE_BUILTINS = {"to_int", "read_file", "fetch", "post",
                      "fetch_status"}   # + get on maps
 
 PROGRAM_ARGS: list = []    # filled by the CLI: velaris prog.vel a b c
+
+try:                        # proofs are optional; the language is not
+    import z3 as _z3_probe
+    HAVE_Z3 = True
+    del _z3_probe
+except ImportError:
+    HAVE_Z3 = False
 
 BUILTINS = {
     # name          effects needed      argument types        returns
@@ -2339,7 +2363,54 @@ def check_proofs(funcs: list[Function], records: list,
             if op == ">":  return l > r
             if op == "<=": return l <= r
             if op == ">=": return l >= r
-        raise Unprovable()             # Str, ListLit, '/', anything else
+            if op in ("/", "%") and not (z3.is_fp(l) or z3.is_fp(r)):
+                if ctx is not None:        # divide by zero, proven early
+                    prove_nonzero(r, ctx, node.line, op)
+                # Velaris divides the way Python does: the result floors
+                # toward minus infinity. That matches Z3's integer
+                # division only when the divisor is POSITIVE, so that is
+                # the only case translated - a negative divisor falls
+                # back to a runtime check rather than a formula that
+                # would quietly disagree with the interpreter.
+                if ctx is None or not provably_positive(r, ctx):
+                    raise Unprovable()
+                return (l / r) if op == "/" else (l % r)
+        raise Unprovable()             # Str, ListLit, floats, anything else
+
+    def provably_positive(divisor, ctx) -> bool:
+        """True only if the divisor cannot be zero or negative here."""
+        if has_fresh(divisor) or any(has_fresh(c) for c in ctx.conds):
+            return False
+        solver = z3.Solver()
+        solver.set("timeout", solver_budget())
+        solver.add(*ctx.param_assum)
+        solver.add(*ctx.conds)
+        solver.add(divisor <= 0)
+        return solver.check() == z3.unsat
+
+    def prove_nonzero(divisor, ctx, line, op: str):
+        """Prove the divisor is never zero; only report real violations."""
+        if has_fresh(divisor) or any(has_fresh(c) for c in ctx.conds):
+            return                       # runtime check still guards
+        solver = z3.Solver()
+        solver.set("timeout", solver_budget())
+        solver.add(*ctx.param_assum)
+        solver.add(*ctx.conds)
+        solver.add(divisor == 0)
+        if solver.check() == z3.sat:
+            m = solver.model()
+            names = sorted({d.name() for d in m.decls()
+                            if not d.name().startswith("__")})
+            shown = ", ".join(
+                f"{n} = {m.eval(z3.Int(n), model_completion=True)}"
+                for n in names[:3])
+            word = "divide by" if op == "/" else "take the remainder of"
+            raise VelarisError("E706",
+                f"this can {word} zero"
+                + (f": {shown}" if shown else "")
+                + " - proven without running the program", line,
+                fixes=["guard it: if d != 0 { ... }",
+                       "or add a 'requires' that rules out zero"])
 
     def prove_bounds(idx, length, ctx, line):
         """Prove 0 <= idx < length; report only provably-real violations."""
@@ -3321,6 +3392,54 @@ def lsp_analyze(path: str, text: str, deep: bool) -> list:
     return errors
 
 
+def inspect_source(path: str, source: str | None = None) -> dict:
+    """Everything a reader wants to know about a program, as data.
+
+    Used by 'velaris explain' and the browser inspector: for each
+    function, what it may do (effects), what it promises, whether the
+    promises are proven or left to runtime, and every error in place.
+    """
+    report: dict = {"file": path, "functions": [], "errors": [],
+                    "proofs": bool(HAVE_Z3), "version": VERSION}
+    try:
+        funcs, records = load_program(path, source)
+    except VelarisError as e:
+        report["errors"].append(json.loads(e.machine(path)))
+        return report
+    errors: list = []
+    check_effects(funcs, errors)
+    check_types(funcs, records, errors)
+    proved = set()
+    if not errors:
+        before = len(errors)
+        check_proofs(funcs, records, errors)
+        if len(errors) == before:
+            proved = {f.name for f in funcs if f.ensures or f.requires}
+    for e in errors:
+        report["errors"].append(json.loads(e.machine(path)))
+    bad_lines = {e.line for e in errors}
+    for f in funcs:
+        if f.name.startswith("fn#"):
+            continue                     # lifted lambda: shown in place
+        report["functions"].append({
+            "name": f.name,
+            "line": f.line,
+            "params": [{"name": n, "type": t} for n, t in f.params],
+            "returns": f.return_type or "nothing",
+            "effects": sorted(f.effects) or [],
+            "can_fail": bool(f.can_fail),
+            "generic": list(f.type_vars),
+            "requires": [expr_str(e) for e, _ in f.requires],
+            "ensures": [expr_str(e) for e, _ in f.ensures],
+            "status": ("error" if f.line in bad_lines else
+                       "proven" if f.name in proved and HAVE_Z3 else
+                       "checked at runtime" if (f.requires or f.ensures)
+                       else "no promises"),
+            "file": f.src_file or path,
+        })
+    return report
+
+
 def lsp_serve() -> int:
     import urllib.parse
 
@@ -3772,6 +3891,43 @@ def main() -> int:
         return fmt_main(argv[1:])
     if argv[:1] == ["lsp"]:
         return lsp_serve()
+    if argv[:1] == ["explain"]:
+        if len(argv) < 2:
+            print("usage: velaris explain program.vel", file=sys.stderr)
+            return 1
+        rep_ = inspect_source(argv[1])
+        if "--json" in argv:
+            print(json.dumps(rep_, indent=2))
+            return 0 if not rep_["errors"] else 1
+        print(f"{rep_['file']}  -  velaris {rep_['version']}")
+        print("=" * 62)
+        if not rep_["proofs"]:
+            print("note: z3-solver is not installed, so promises are "
+                  "checked while running\n")
+        for f in rep_["functions"]:
+            ps = ", ".join(f"{p['name']}: {p['type']}" for p in f["params"])
+            head = f"fn {f['name']}({ps}) -> {f['returns']}"
+            print(f"\n{head}")
+            print(f"  line {f['line']}   [{f['status']}]")
+            if f["effects"]:
+                print(f"  may perform: {', '.join(f['effects'])}")
+            else:
+                print("  may perform: nothing (pure)")
+            if f["can_fail"]:
+                print("  can fail: callers must handle it")
+            for r in f["requires"]:
+                print(f"  needs:    {r}")
+            for e in f["ensures"]:
+                print(f"  promises: {e}")
+        if rep_["errors"]:
+            print("\n" + "=" * 62)
+            print(f"{len(rep_['errors'])} problem(s):")
+            for e in rep_["errors"]:
+                print(f"  line {e['line']}: [{e['code']}] {e['message']}")
+            return 1
+        print("\n" + "=" * 62)
+        print(f"{len(rep_['functions'])} function(s), no problems found.")
+        return 0
     if argv[:1] == ["doctor"]:
         return doctor()
     if argv[:1] == ["new"]:

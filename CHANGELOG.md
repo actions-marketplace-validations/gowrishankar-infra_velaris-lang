@@ -1,5 +1,25 @@
 # Velaris changelog
 
+## 2.6 - Division proofs, and seeing what your code promises
+`velaris explain program.vel` walks through a file function by
+function: what it may do, what it needs, what it promises, and whether
+those promises are proven or left to runtime. The browser playground
+gains an **Inspect** button showing the same thing as cards, with
+errors and their fixes in place. `--json` gives the whole report as
+data for tools.
+
+Contract printing is now precedence-aware, so `(result + 1) * count`
+no longer prints as `result + 1 * count` (it did, on the docs site).
+
+## 2.6 - Division proofs
+`/` and `%` on whole numbers are now proof territory: the compiler
+proves the divisor is never zero (E706, with the value that breaks it)
+and can prove what the result means. Translated only when the divisor
+is provably positive, because Velaris floors like Python while Z3's
+integer division is Euclidean - the two disagree on negative divisors,
+so that case falls back to a runtime check rather than a formula that
+would quietly lie.
+
 ## 2.5.1 - One problem, one message
 The effect checker and type checker could both report the same unknown
 function, so a single mistake printed twice. Identical errors are now

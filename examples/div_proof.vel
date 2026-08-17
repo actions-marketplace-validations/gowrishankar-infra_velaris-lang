@@ -1,0 +1,21 @@
+// v2.6: division is proof territory now. The compiler proves the
+// divisor is never zero, and can prove what the result means -
+// here, the defining property of flooring division.
+
+fn average(total: Int, count: Int) -> Int
+requires count > 0
+requires total >= 0
+ensures result * count <= total
+ensures total < (result + 1) * count
+{
+    return total / count
+}
+
+fn is_even(n: Int) -> Bool {
+    return n % 2 == 0
+}
+
+fn main() uses io {
+    print(format("average(47, 5) = {}", average(47, 5)))
+    print(format("is_even(10) = {}", is_even(10)))
+}

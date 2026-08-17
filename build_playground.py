@@ -124,8 +124,37 @@ TEMPLATE = """<!DOCTYPE html>
     font:13.5px/1.65 ui-monospace,"SF Mono",Consolas,monospace;
     white-space:pre-wrap; border-left:1px solid var(--line); }
   .err { color:var(--err); } .note { color:var(--term-mut); }
+  button#inspect { background:var(--paper); color:var(--ink);
+    border:1px solid var(--line); border-radius:8px; padding:8px 16px;
+    font-size:14px; font-weight:600; cursor:pointer; }
+  button#inspect:hover { border-color:#c7ccd1; }
+  button#inspect:disabled { opacity:.45; cursor:wait; }
+  #cards { flex:1; overflow:auto; padding:16px 18px; background:var(--alt);
+    border-left:1px solid var(--line); font-size:13.5px; }
+  #cards.hidden, #out.hidden { display:none; }
+  .fn { background:var(--paper); border:1px solid var(--line);
+    border-radius:10px; padding:13px 15px; margin-bottom:11px; }
+  .fn h4 { margin:0 0 7px; font:600 13.5px ui-monospace,"SF Mono",
+    Consolas,monospace; word-break:break-word; }
+  .pill { display:inline-block; font-size:11px; font-weight:650;
+    border-radius:99px; padding:2px 9px; margin:0 5px 5px 0; }
+  .p-proven { background:#dcf5ea; color:#075e44; }
+  .p-runtime { background:#fdf0d5; color:#8a5a00; }
+  .p-none { background:#eef0f2; color:var(--mut); }
+  .p-err { background:#fde0e1; color:#a3161a; }
+  .p-eff { background:#e5edfb; color:#1d4ed8; }
+  .p-fail { background:#f3e8fd; color:#6b21a8; }
+  .row { font:12.5px ui-monospace,"SF Mono",Consolas,monospace;
+    color:var(--brand); margin:3px 0 0 2px; word-break:break-word; }
+  .row.need { color:#8a5a00; }
+  .prob { background:#fff4f4; border:1px solid #f6cdcf; border-radius:10px;
+    padding:12px 14px; margin-bottom:11px; }
+  .prob b { color:#a3161a; font-family:ui-monospace,monospace;
+    font-size:12.5px; }
+  .prob p { margin:5px 0 0; color:#5c1d1f; font-size:13px; }
   @media (max-width:800px) { main { flex-direction:column; }
-    #out { border-left:none; border-top:1px solid var(--line); } }
+    #out, #cards { border-left:none;
+      border-top:1px solid var(--line); } }
 </style>
 </head>
 <body>
@@ -135,6 +164,7 @@ TEMPLATE = """<!DOCTYPE html>
   <span class="tag">the real compiler, running in your browser</span>
   <select id="examples"></select>
   <button id="run" disabled>loading&hellip;</button>
+  <button id="inspect" disabled>Inspect</button>
   <a class="gh"
   href="https://github.com/gowrishankar-infra/velaris-lang">GitHub
   &rarr;</a>
@@ -148,6 +178,7 @@ Note: in the browser, promises (requires/ensures/invariant) are checked
 while the program runs. The installed version also PROVES them before
 running, using the Z3 theorem prover, and compiles hot functions to
 native code with LLVM. github.com/gowrishankar-infra/velaris-lang</span></pre>
+  <div id="cards" class="hidden"></div>
 </main>
 <script>
 const VELARIS_SRC = __SRC__;
@@ -173,12 +204,15 @@ async function boot() {
   pyodide.FS.writeFile("/velaris.py", VELARIS_SRC);
   runBtn.disabled = false;
   runBtn.textContent = "Run \\u25B6";
+  document.getElementById("inspect").disabled = false;
   out.innerHTML = '<span class="note">Ready. Pick an example or write ' +
     'your own, then press Run.</span>';
 }
 
 async function run() {
   runBtn.disabled = true; runBtn.textContent = "running\\u2026";
+  document.getElementById("cards").classList.add("hidden");
+  out.classList.remove("hidden");
   out.textContent = "";
   pyodide.FS.writeFile("/prog.vel", code.value);
   const py = `
@@ -221,6 +255,72 @@ json.dumps([o.getvalue(), e.getvalue()])
   runBtn.disabled = false; runBtn.textContent = "Run \\u25B6";
 }
 runBtn.onclick = run;
+
+const inspectBtn = document.getElementById("inspect");
+const cards = document.getElementById("cards");
+function esc(t) {
+  return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                  .replace(/>/g, "&gt;");
+}
+async function inspect() {
+  inspectBtn.disabled = true; inspectBtn.textContent = "reading\\u2026";
+  pyodide.FS.writeFile("/prog.vel", code.value);
+  const py = `
+import importlib.util, json
+spec = importlib.util.spec_from_file_location("velaris", "/velaris.py")
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+json.dumps(mod.inspect_source("/prog.vel"))
+`;
+  try {
+    const rep = JSON.parse(await pyodide.runPythonAsync(py));
+    out.classList.add("hidden"); cards.classList.remove("hidden");
+    cards.innerHTML = "";
+    for (const e of rep.errors) {
+      const d = document.createElement("div");
+      d.className = "prob";
+      d.innerHTML = "<b>line " + e.line + " \\u00b7 " + e.code + "</b><p>" +
+        esc(e.message) + "</p>" +
+        (e.fixes || []).map(f => "<p>\\u2192 " + esc(f) + "</p>").join("");
+      cards.appendChild(d);
+    }
+    for (const f of rep.functions) {
+      const ps = f.params.map(p => p.name + ": " + p.type).join(", ");
+      const st = f.status;
+      let pills = '<span class="pill ' +
+        (st === "proven" ? "p-proven" : st === "error" ? "p-err" :
+         st === "checked at runtime" ? "p-runtime" : "p-none") +
+        '">' + esc(st) + "</span>";
+      for (const eff of f.effects) {
+        pills += '<span class="pill p-eff">uses ' + esc(eff) + "</span>";
+      }
+      if (!f.effects.length) pills += '<span class="pill p-none">pure</span>';
+      if (f.can_fail) pills += '<span class="pill p-fail">can fail</span>';
+      let rows = "";
+      for (const r of f.requires) {
+        rows += '<div class="row need">needs ' + esc(r) + "</div>";
+      }
+      for (const e of f.ensures) {
+        rows += '<div class="row">promises ' + esc(e) + "</div>";
+      }
+      const d = document.createElement("div");
+      d.className = "fn";
+      d.innerHTML = "<h4>fn " + esc(f.name) + "(" + esc(ps) +
+        ") \\u2192 " + esc(f.returns) + "</h4>" + pills + rows +
+        '<div class="row" style="color:var(--mut)">line ' + f.line + "</div>";
+      cards.appendChild(d);
+    }
+    if (!rep.functions.length && !rep.errors.length) {
+      cards.innerHTML = '<div class="row" style="color:var(--mut)">' +
+        "nothing to show yet</div>";
+    }
+  } catch (err) {
+    out.classList.remove("hidden"); cards.classList.add("hidden");
+    out.innerHTML = '<span class="err">inspect error: ' + err + "</span>";
+  }
+  inspectBtn.disabled = false; inspectBtn.textContent = "Inspect";
+}
+inspectBtn.onclick = inspect;
 </script>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"
         onload="boot()"></script>

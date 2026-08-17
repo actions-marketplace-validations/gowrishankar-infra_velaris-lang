@@ -1,0 +1,12 @@
+// 'people' is allowed to be zero, so this division can divide by
+// zero. The compiler finds the value and says so before running.
+
+fn share(total: Int, people: Int) -> Int
+requires people >= 0
+{
+    return total / people
+}
+
+fn main() uses io {
+    print(share(10, 2))
+}
