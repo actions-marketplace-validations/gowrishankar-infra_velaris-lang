@@ -1,5 +1,14 @@
 # Velaris changelog
 
+## 2.7 - Reading a codebase
+`velaris check program.vel` compiles without running - for CI, editors,
+and pre-commit hooks - and takes several files at once. `velaris
+explain` now puts *your* functions first and summarises imported
+libraries in one line (`--all` expands them), because the first real
+run of explain buried a ten-function app under eighteen library
+functions. `velaris explain <folder>` maps every .vel file under a
+directory: functions, proven promises, effects, and any errors.
+
 ## 2.6 - Division proofs, and seeing what your code promises
 `velaris explain program.vel` walks through a file function by
 function: what it may do, what it needs, what it promises, and whether

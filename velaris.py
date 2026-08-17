@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v2.6 — "The language where you can trust code you didn't write."
+Velaris v2.7 — "The language where you can trust code you didn't write."
 
-New in v2.6: division proofs and a way to SEE what code promises.
-    velaris explain program.vel   walk through every function
-    Playground "Inspect" button    the same, as cards in your browser
-    / and % now prove the divisor is never zero (E706)
+New in v2.7: reading a codebase.
+    velaris check program.vel      compile only, do not run
+    velaris explain program.vel    your functions first, libraries summarised
+    velaris explain <folder>       a map of every file in a project
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -142,7 +142,9 @@ Usage:
   velaris program.vel                      run a program (after pip install)
   velaris repl                             interactive session
   velaris fmt program.vel                  format to the canonical style
+  velaris check program.vel                compile only, do not run
   velaris explain program.vel              walk through what it does
+  velaris explain <folder>                 a map of every file
   velaris doctor                           check the installation
   velaris new <name>                       start a fresh project
   velaris lsp                              language server (for editors)
@@ -238,7 +240,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.6.0"
+VERSION = "2.7.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -3891,11 +3893,63 @@ def main() -> int:
         return fmt_main(argv[1:])
     if argv[:1] == ["lsp"]:
         return lsp_serve()
+    if argv[:1] == ["check"]:
+        if len(argv) < 2:
+            print("usage: velaris check program.vel", file=sys.stderr)
+            return 1
+        bad = 0
+        for target in [a for a in argv[1:] if not a.startswith("-")]:
+            rep_ = inspect_source(target)
+            if rep_["errors"]:
+                bad += 1
+                if "--json" in argv:
+                    print(json.dumps(rep_["errors"], indent=2))
+                else:
+                    for e in rep_["errors"]:
+                        print(f"{target}:{e['line']}: [{e['code']}] "
+                              f"{e['message']}", file=sys.stderr)
+            elif "--json" not in argv:
+                own = [f for f in rep_["functions"]
+                       if os.path.abspath(f["file"])
+                       == os.path.abspath(target)]
+                proven = sum(1 for f in own if f["status"] == "proven")
+                note = "" if rep_["proofs"] else "  (no z3: runtime checks)"
+                print(f"{target}: ok - {len(own)} function(s), "
+                      f"{proven} with proven promises{note}")
+        return 1 if bad else 0
     if argv[:1] == ["explain"]:
         if len(argv) < 2:
             print("usage: velaris explain program.vel", file=sys.stderr)
             return 1
-        rep_ = inspect_source(argv[1])
+        target = argv[1]
+        if os.path.isdir(target):
+            vels = sorted(
+                os.path.join(dp, f)
+                for dp, _, fns in os.walk(target) for f in fns
+                if f.endswith(".vel"))
+            if not vels:
+                print(f"no .vel files under '{target}'", file=sys.stderr)
+                return 1
+            print(f"{len(vels)} file(s) under {target}")
+            print("=" * 62)
+            worst = 0
+            for v in vels:
+                r = inspect_source(v)
+                own = [f for f in r["functions"]
+                       if os.path.abspath(f["file"]) == os.path.abspath(v)]
+                proven = sum(1 for f in own if f["status"] == "proven")
+                effs = sorted({e for f in own for e in f["effects"]})
+                mark = "!" if r["errors"] else " "
+                print(f"{mark} {v}")
+                print(f"    {len(own)} function(s), {proven} proven"
+                      f"   performs: "
+                      f"{', '.join(effs) if effs else 'nothing'}")
+                for e in r["errors"]:
+                    worst = 1
+                    print(f"    line {e['line']}: [{e['code']}] "
+                          f"{e['message'][:70]}")
+            return worst
+        rep_ = inspect_source(target)
         if "--json" in argv:
             print(json.dumps(rep_, indent=2))
             return 0 if not rep_["errors"] else 1
@@ -3904,10 +3958,17 @@ def main() -> int:
         if not rep_["proofs"]:
             print("note: z3-solver is not installed, so promises are "
                   "checked while running\n")
+        entry = os.path.abspath(rep_["file"])
+        mine, imported = [], {}
         for f in rep_["functions"]:
+            if os.path.abspath(f["file"]) == entry:
+                mine.append(f)
+            else:
+                imported.setdefault(f["file"], []).append(f)
+
+        def show(f):
             ps = ", ".join(f"{p['name']}: {p['type']}" for p in f["params"])
-            head = f"fn {f['name']}({ps}) -> {f['returns']}"
-            print(f"\n{head}")
+            print(f"\nfn {f['name']}({ps}) -> {f['returns']}")
             print(f"  line {f['line']}   [{f['status']}]")
             if f["effects"]:
                 print(f"  may perform: {', '.join(f['effects'])}")
@@ -3919,6 +3980,25 @@ def main() -> int:
                 print(f"  needs:    {r}")
             for e in f["ensures"]:
                 print(f"  promises: {e}")
+
+        for f in mine:
+            show(f)
+        if not mine:
+            print("\n(no functions in this file)")
+        show_all = "--all" in argv
+        for path, fs in imported.items():
+            print(f"\n{'-' * 62}")
+            if show_all:
+                print(f"imported from {path}")
+                for f in fs:
+                    show(f)
+                continue
+            proven = sum(1 for f in fs if f["status"] == "proven")
+            effs = sorted({e for f in fs for e in f["effects"]})
+            print(f"imported from {path}: {len(fs)} function(s), "
+                  f"{proven} with proven promises")
+            print(f"  performs: {', '.join(effs) if effs else 'nothing'}"
+                  f"   (see them with --all)")
         if rep_["errors"]:
             print("\n" + "=" * 62)
             print(f"{len(rep_['errors'])} problem(s):")
@@ -3926,7 +4006,10 @@ def main() -> int:
                 print(f"  line {e['line']}: [{e['code']}] {e['message']}")
             return 1
         print("\n" + "=" * 62)
-        print(f"{len(rep_['functions'])} function(s), no problems found.")
+        n_imp = sum(len(v) for v in imported.values())
+        print(f"{len(mine)} function(s) in this file"
+              + (f", {n_imp} imported" if n_imp else "")
+              + ", no problems found.")
         return 0
     if argv[:1] == ["doctor"]:
         return doctor()

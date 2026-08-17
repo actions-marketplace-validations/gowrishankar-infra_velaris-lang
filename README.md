@@ -105,8 +105,11 @@ both export `distance` can be used in the same file.
 
 ## Tooling
 
+`velaris check program.vel` (compile without running; several files at
+once, `--json` for tools) ·
 `velaris explain program.vel` (a walkthrough of every function: effects,
-promises, and whether they are proven) ·
+promises, and whether they are proven — `explain <folder>` maps a whole
+project) ·
 `velaris repl` (definitions are proof-checked as you type them) ·
 `velaris fmt` (canonical style, `--check` for CI) · `velaris lsp`
 (errors as you type in any LSP editor; a dependency-free VS Code

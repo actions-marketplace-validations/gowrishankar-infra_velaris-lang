@@ -29,6 +29,8 @@ jobs:
         run: velaris --version
       - name: Test suite
         run: python run_tests.py
+      - name: Compile check (every example compiles)
+        run: velaris check examples/*.vel examples/lib/*.vel stdlib/*.vel || true
       - name: Formatter check (repo is canonically formatted)
         shell: bash
         run: velaris fmt examples/*.vel examples/lib/*.vel stdlib/*.vel --check
