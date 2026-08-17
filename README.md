@@ -225,6 +225,9 @@ pipeline order.
 - Imports (v0.16) are a flat merge — `import "lib.vel"` pulls in that
   file's functions and records with duplicate-name protection; namespaces
   and a standard library are future work.
+- Quantified list promises (v1.16): `all_of(xs, p)` / `any_of(xs, p)`
+  with a simple pure predicate become real Z3 foralls/exists - proven
+  where the solver can settle them, runtime-checked where it cannot.
 - Record proofs (v1.14) cover records whose fields are Int, Bool, or
   other such records — promises like `ensures result.x == p.x + dx` are
   proven before running. Records containing lists or Floats stay

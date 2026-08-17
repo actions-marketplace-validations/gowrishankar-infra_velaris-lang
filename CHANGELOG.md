@@ -1,5 +1,30 @@
 # Velaris changelog
 
+## 1.16 - Quantified list proofs
+`all_of` / `any_of` with a predicate function; in contracts they become
+Z3 foralls/exists with the predicate's body symbolically inlined.
+Fixed a latent soundness-of-reporting hole: an untranslatable
+`requires` now aborts the proof instead of being silently dropped
+(dropped premises manufacture false counterexamples).
+
+## 1.15 - Native Float and Bool
+Typed LLVM codegen (f64, typed allocas/boundaries); division stays
+interpreted so divide-by-zero is always a clean error;
+differential-tested against the interpreter.
+
+## 1.14 - Record proofs
+Symbolic records (one Z3 value per field): field promises proven,
+record-aware summaries, records printed in counterexamples.
+
+## 1.13 - The first real app
+examples/ledger.vel expense tracker; chars/file_exists builtins; typed
+let enabling empty [] and {}; order-flexible signature clauses;
+scripted-stdin testing so interactive apps run in CI.
+
+## 1.12 - Continuous integration
+GitHub Actions matrix (Linux/Windows x 3.10/3.12 x full/minimal deps),
+dependency-aware suite, CHANGELOG, CONTRIBUTING.
+
 ## 1.11 - Language server
 `velaris lsp`: standard LSP over stdio. Effect/type errors on every
 keystroke, full pipeline with Z3 proofs on save; per-file diagnostics

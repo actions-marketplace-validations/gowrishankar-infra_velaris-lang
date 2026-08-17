@@ -1,0 +1,31 @@
+// v1.16: quantified promises - "EVERY element" as provable mathematics.
+// all_of(xs, p) in a contract becomes a Z3 forall; the predicate's own
+// body is read symbolically and placed under the quantifier.
+
+fn is_pos(n: Int) -> Bool {
+    return n > 0
+}
+
+fn head_pos(xs: List of Int) -> Int
+requires length(xs) > 0
+requires all_of(xs, is_pos)
+ensures result > 0
+{
+    return get(xs, 0)
+}
+
+fn grow_pos(xs: List of Int, v: Int) -> List of Int
+requires v > 0
+requires all_of(xs, is_pos)
+ensures all_of(result, is_pos)
+{
+    return push(xs, v)
+}
+
+fn main() uses io {
+    let xs = [3, 1, 4]
+    print("head: " + head_pos(xs))
+    print("grown: " + grow_pos(xs, 5))
+    print("all positive? " + all_of(xs, is_pos))
+    print("any big? " + any_of(xs, is_pos))
+}

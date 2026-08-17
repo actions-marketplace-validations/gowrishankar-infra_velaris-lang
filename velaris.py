@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Velaris v1.15 — "The language where you can trust code you didn't write."
+Velaris v1.16 — "The language where you can trust code you didn't write."
+
+New in v1.16: QUANTIFIED LIST PROOFS.
+    all_of(xs, p) / any_of(xs, p) ask whether a predicate holds for
+    every / some element - and promises using them are PROVEN where Z3
+    can settle the quantifier, with runtime checks guarding the rest.
+    ensures all_of(result, is_positive)   is now a provable sentence.
 
 New in v1.15: NATIVE Float and Bool. The LLVM backend now compiles pure
     functions over Int, Float, and Bool (division and % stay interpreted
@@ -185,7 +191,7 @@ Usage:
 import json
 import os
 
-VERSION = "1.15.0"
+VERSION = "1.16.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -923,6 +929,8 @@ BUILTINS = {
     "put":        {"effects": set(),      "types": ["Any", "Any", "Any"], "ret": "Any"},
     "has":        {"effects": set(),      "types": ["Any", "Any"],  "ret": "Bool"},
     "keys":       {"effects": set(),      "types": ["Any"],         "ret": "Any"},
+    "all_of":     {"effects": set(),      "types": ["Any", "Any"],  "ret": "Bool"},
+    "any_of":     {"effects": set(),      "types": ["Any", "Any"],  "ret": "Bool"},
     "lower":      {"effects": set(),      "types": ["Text"],        "ret": "Text"},
     "length":     {"effects": set(),      "types": ["Any"],         "ret": "Int"},
     "push":       {"effects": set(),      "types": ["Any", "Any"],  "ret": "Any"},
@@ -1313,6 +1321,28 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                             f"a list cannot mix {t0} and {t}", node.line,
                             fixes=["keep every item in a list the same type"])
                 return "List of " + t0
+            if isinstance(node, Call) and node.name in (
+                    "all_of", "any_of"):
+                if len(node.args) != 2:
+                    raise VelarisError("E401",
+                        f"'{node.name}' expects 2 argument(s) but got "
+                        f"{len(node.args)}", node.line,
+                        fixes=["pass a list and a predicate function"])
+                t0 = infer(node.args[0])
+                if not t0.startswith("List of "):
+                    raise VelarisError("E501",
+                        f"'{node.name}' needs a list first, but this is "
+                        f"{t0}", node.line, fixes=["pass a list"])
+                elem = t0[len("List of "):]
+                want_p = fmt_fn_type([elem], "Bool")
+                t1 = infer(node.args[1])
+                if t1 != want_p:
+                    raise VelarisError("E501",
+                        f"'{node.name}' needs a {want_p} predicate, "
+                        f"but this is {t1}", node.line,
+                        fixes=[f"pass a function taking {elem} and "
+                               f"returning Bool"])
+                return "Bool"
             if isinstance(node, Call) and node.name in (
                     "length", "push", "get", "put", "has", "keys"):
                 n_want = {"length": 1, "keys": 1, "push": 2, "get": 2,
@@ -1854,6 +1884,38 @@ def check_proofs(funcs: list[Function], records: list,
                            "or strengthen the caller's own 'requires' to "
                            "rule this out"])
 
+    def predicate_formula(pfn: Function, val):
+        """Translate a predicate's body into 'returns true' as a Z3
+        formula over val. Only simple pure predicates qualify: one Int
+        parameter, Bool result, no loops, no calls, no failure."""
+        if (pfn.effects or pfn.can_fail or pfn.type_vars
+                or len(pfn.params) != 1 or pfn.params[0][1] != "Int"
+                or pfn.return_type != "Bool"):
+            raise Unprovable()
+
+        def paths(stmts, penv, conds):
+            out = []
+            for i, s in enumerate(stmts):
+                if isinstance(s, (Let, Assign)):
+                    penv = dict(penv)
+                    penv[s.name] = to_z3(s.value, penv, None)
+                elif isinstance(s, Return):
+                    out.append((conds, to_z3(s.value, penv, None)))
+                    return out
+                elif isinstance(s, If):
+                    c = to_z3(s.cond, penv, None)
+                    rest = stmts[i + 1:]
+                    out += paths(s.then + rest, dict(penv), conds + [c])
+                    out += paths(s.other + rest, dict(penv),
+                                 conds + [z3.Not(c)])
+                    return out
+                else:
+                    raise Unprovable()  # loops etc.: too clever to inline
+            raise Unprovable()          # fell off without returning
+        branches = paths(pfn.body, {pfn.params[0][0]: val}, [])
+        return z3.Or(*[z3.And(*(cs + [r])) if cs else r
+                       for cs, r in branches])
+
     def summarize_call(node: Call, env, ctx):
         """Model a call to a pure user function by its contract."""
         fnB = table.get(node.name)
@@ -1917,6 +1979,23 @@ def check_proofs(funcs: list[Function], records: list,
                     raise Unprovable()          # lists of lists: not yet
                 arr = z3.Store(arr, z3.IntVal(idx), v)
             return ListVal(arr, z3.IntVal(len(node.items)))
+        if isinstance(node, Call) and node.name in ("all_of", "any_of"):
+            a0 = to_z3(node.args[0], env, ctx)
+            if not isinstance(a0, ListVal):
+                raise Unprovable()
+            parg = node.args[1]
+            if not isinstance(parg, Var):
+                raise Unprovable()
+            pfn = table.get(parg.name)
+            if pfn is None:
+                raise Unprovable()      # predicate came through a variable
+            counter[0] += 1
+            k = z3.Int(f"__q{counter[0]}")
+            body = predicate_formula(pfn, z3.Select(a0.arr, k))
+            inside = z3.And(k >= 0, k < a0.length)
+            if node.name == "all_of":
+                return z3.ForAll([k], z3.Implies(inside, body))
+            return z3.Exists([k], z3.And(inside, body))
         if isinstance(node, Call) and node.name in ("length", "get", "push"):
             a0 = to_z3(node.args[0], env, ctx)
             if not isinstance(a0, ListVal):
@@ -2185,12 +2264,12 @@ def check_proofs(funcs: list[Function], records: list,
         ctx = Ctx([], list(list_facts), list(list_facts), fn.name)
         try:
             for r_expr, _ in fn.requires:
-                try:
-                    fact = to_z3(r_expr, dict(env), None)
-                    ctx.assum.append(fact)
-                    ctx.param_assum.append(fact)
-                except Unprovable:
-                    pass
+                # If a premise cannot be translated, the whole proof is
+                # off: proving with dropped premises would manufacture
+                # false counterexamples. Runtime checks still guard.
+                fact = to_z3(r_expr, dict(env), None)
+                ctx.assum.append(fact)
+                ctx.param_assum.append(fact)
             paths = explore(list(fn.body), dict(env), ctx)
             if not fn.ensures:
                 continue
@@ -2687,6 +2766,10 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
     table = {f.name: f for f in funcs}
 
     def call(name: str, args: list, line: int):
+        if name in ("all_of", "any_of"):
+            xs, p = args
+            hits = (call_function(p, [v], line) for v in xs)
+            return all(hits) if name == "all_of" else any(hits)
         if name in BUILTINS:
             return run_builtin(name, args, line)
         if name in native:

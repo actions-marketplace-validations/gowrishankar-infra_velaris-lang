@@ -1,0 +1,17 @@
+// The promise says every element of the result is positive - but the
+// code pushes a zero. One bad element breaks a forall.
+
+fn is_pos(n: Int) -> Bool {
+    return n > 0
+}
+
+fn stamp(xs: List of Int) -> List of Int
+requires all_of(xs, is_pos)
+ensures all_of(result, is_pos)
+{
+    return push(xs, 0)
+}
+
+fn main() uses io {
+    print(stamp([3, 1, 4]))
+}
