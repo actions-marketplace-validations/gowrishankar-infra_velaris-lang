@@ -41,6 +41,7 @@ EXPECT = {
     "lambda_contract.vel": "RUNS",
     "inferred.vel": "RUNS",
     "grid_proof.vel": "RUNS",
+    "native_list.vel": "RUNS",
     "grid_bad.vel": "REJECTED",
     "lambda_contract_bad.vel": "REJECTED",
     "map_bad.vel": "REJECTED",

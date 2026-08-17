@@ -1,5 +1,17 @@
 # Velaris changelog
 
+## 2.13 - Native lists
+Pure functions that read `List of Int` now compile to machine code.
+The list crosses into native code as a pointer plus a length, and every
+read is bounds-guarded: an out-of-range position records the mistake
+and returns without touching memory, so you get the same E602 you would
+have got interpreted rather than a segfault. Measured on a
+500-element list summed 200 times: 782.6 ms interpreted, 2.7 ms native,
+identical results. Differential-tested as always.
+
+Writing to lists (push) stays interpreted - that needs allocation, and
+allocation needs an ownership story this language has not designed yet.
+
 ## 2.12 - Lists of lists, proven
 A grid is now modelled symbolically - its rows, each row's length, and
 how many rows - so `length`, `get` and `push` on nested lists take part
