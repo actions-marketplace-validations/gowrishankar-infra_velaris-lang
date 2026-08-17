@@ -1,0 +1,16 @@
+// v2.4: the small things that make a language usable - command line
+// arguments, and text formatting with {} holes instead of endless +.
+
+fn main() uses io {
+    let given = args()
+    if length(given) == 0 {
+        print("try: velaris examples/tools.vel alpha beta")
+        return
+    }
+    print(format("you passed {} argument(s)", length(given)))
+    let i = 0
+    while i < length(given) {
+        print(format("  {}. {}", i + 1, get(given, i)))
+        i = i + 1
+    }
+}

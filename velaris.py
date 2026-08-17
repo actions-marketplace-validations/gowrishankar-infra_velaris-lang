@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
-Velaris v2.3 — "The language where you can trust code you didn't write."
+Velaris v2.4 — "The language where you can trust code you didn't write."
 
-New in v2.3: launch polish - a professional visual identity for the
-    docs site, playground, and README, plus a CI fix for minimal-mode
-    proof-only test expectations.
+New in v2.4: the everyday things.
+    fn(x: Int) -> Bool { ... }   function values written inline
+    format("hi {}, {} left", name, n)   text with holes
+    args()                       command line arguments
+    post(url, body) / fetch_status(url)   more than HTTP GET
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -236,7 +238,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.3.2"
+VERSION = "2.4.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -439,6 +441,7 @@ class Function:
     src_file: str = ""
     can_fail: bool = False
     type_vars: list = field(default_factory=list)
+    is_lambda: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -475,7 +478,10 @@ class VelarisError(Exception):
 # ---------------------------------------------------------------------------
 
 class Parser:
+    lambda_n = 0
+
     def __init__(self, tokens: list[Token]):
+        self.lifted: list = []
         self.toks = tokens
         self.i = 0
 
@@ -492,7 +498,7 @@ class Parser:
         return self.next()
 
     def parse_program(self):
-        funcs, records, imports = [], [], []
+        funcs, records, imports = self.lifted, [], []
         while self.peek().kind != "EOF":
             t = self.peek()
             if t.kind == "KEYWORD" and t.text == "import":
@@ -573,6 +579,39 @@ class Parser:
         f.can_fail = can_fail
         f.type_vars = type_vars
         return f
+
+    def parse_lambda(self, start: Token):
+        """fn(x: Int) -> Bool { return x > 0 } as a value.
+
+        Lifted to a real top-level function with a generated name, so
+        every later stage (types, effects, proofs, native codegen) sees
+        an ordinary function. Lambdas are pure and cannot capture
+        variables from around them - pass what you need as a parameter.
+        """
+        self.expect("OP", "(")
+        params = []
+        while self.peek().text != ")":
+            pname = self.expect("IDENT").text
+            self.expect("OP", ":")
+            params.append((pname, self.parse_type()))
+            if self.peek().text == ",":
+                self.next()
+        self.expect("OP", ")")
+        if self.peek().text != "->":
+            raise VelarisError("E100",
+                "a function value needs a result type", start.line,
+                fixes=["write: fn(x: Int) -> Bool { return x > 0 }"])
+        self.next()
+        ret = self.parse_type()
+        body = self.parse_block()
+        Parser.lambda_n += 1
+        name = f"fn#{Parser.lambda_n}"
+        f = Function(name, params, ret, set(), [], [], body, start.line)
+        f.can_fail = False
+        f.type_vars = []
+        f.is_lambda = True
+        self.lifted.append(f)
+        return Var(name, start.line)
 
     def parse_block(self) -> list:
         self.expect("OP", "{")
@@ -752,6 +791,8 @@ class Parser:
 
     def parse_atom(self):
         t = self.next()
+        if t.kind == "KEYWORD" and t.text == "fn":
+            return self.parse_lambda(t)
         if t.kind == "KEYWORD" and t.text == "try":
             inner = self.parse_postfix()
             if not isinstance(inner, Call):
@@ -952,7 +993,10 @@ def blame(fn_or_rec, err: VelarisError) -> VelarisError:
 #    Rule: a function may only cause effects it declares with `uses`.
 # ---------------------------------------------------------------------------
 
-FALLIBLE_BUILTINS = {"to_int", "read_file", "fetch"}   # + get on maps
+FALLIBLE_BUILTINS = {"to_int", "read_file", "fetch", "post",
+                     "fetch_status"}   # + get on maps
+
+PROGRAM_ARGS: list = []    # filled by the CLI: velaris prog.vel a b c
 
 BUILTINS = {
     # name          effects needed      argument types        returns
@@ -975,6 +1019,10 @@ BUILTINS = {
     "file_exists": {"effects": {"fs"},    "types": ["Text"],        "ret": "Bool"},
     "put":        {"effects": set(),      "types": ["Any", "Any", "Any"], "ret": "Any"},
     "get_or":     {"effects": set(),      "types": ["Any", "Any", "Any"], "ret": "Any"},
+    "args":       {"effects": {"io"},     "types": [],              "ret": "List of Text"},
+    "post":       {"effects": {"net"},    "types": ["Text", "Text"], "ret": "Text"},
+    "fetch_status": {"effects": {"net"},  "types": ["Text"],        "ret": "Int"},
+    "format":     {"effects": set(),      "types": ["Any"],         "ret": "Text"},
     "has":        {"effects": set(),      "types": ["Any", "Any"],  "ret": "Bool"},
     "keys":       {"effects": set(),      "types": ["Any"],         "ret": "Any"},
     "all_of":     {"effects": set(),      "types": ["Any", "Any"],  "ret": "Bool"},
@@ -1286,6 +1334,13 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                             fixes=["pass a function without 'or fail'"])
                     return fmt_fn_type([t for _, t in f2.params],
                                        f2.return_type)
+                if getattr(fn, "is_lambda", False):
+                    raise VelarisError("E402",
+                        f"a function value cannot use '{node.name}' from "
+                        f"the code around it", node.line,
+                        fixes=[f"add it as a parameter: "
+                               f"fn(x: T, {node.name}: T) -> ...",
+                               "or write a named function that takes it"])
                 raise VelarisError("E402", f"unknown variable '{node.name}'",
                                   node.line,
                                   fixes=[f"declare it first: let {node.name} = ..."])
@@ -1607,6 +1662,27 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                                f"or pass it up (inside a fallible "
                                f"function): try {node.name}(...)"])
                 ptypes, ret = callee_sig(node.name)
+                if node.name == "format":          # text, then one value
+                    if not node.args:              # per {} placeholder
+                        raise VelarisError("E401",
+                            "'format' needs the text first", node.line,
+                            fixes=['write: format("hi {}", name)'])
+                    if infer(node.args[0]) != "Text":
+                        raise VelarisError("E501",
+                            "'format' needs Text as its first argument",
+                            node.line, fixes=['write: format("hi {}", name)'])
+                    for a in node.args[1:]:
+                        infer(a)
+                    if isinstance(node.args[0], Str):   # literal: check now
+                        holes = node.args[0].value.count("{}")
+                        given = len(node.args) - 1
+                        if holes != given:
+                            raise VelarisError("E406",
+                                f"this text has {holes} placeholder(s) "
+                                f"but got {given} value(s)", node.line,
+                                fixes=[f"pass exactly {holes} value(s)",
+                                       "each {} takes one value"])
+                    return "Text"
                 if len(node.args) != len(ptypes):
                     raise VelarisError("E401",
                         f"'{node.name}' expects {len(ptypes)} argument(s) "
@@ -2894,19 +2970,49 @@ def run_builtin(name: str, args: list, line: int):
         with open(args[0], "w", encoding="utf-8") as f:
             f.write(str(args[1]))
         return None
-    if name == "fetch":
+    if name in ("fetch", "post", "fetch_status"):
         import urllib.request
         import urllib.error
         url = str(args[0])
         if not (url.startswith("http://") or url.startswith("https://")):
             url = "https://" + url
+        headers = {"User-Agent": f"velaris/{VERSION}"}
+        data = None
+        if name == "post":
+            body = str(args[1])
+            data = body.encode("utf-8")
+            headers["Content-Type"] = (
+                "application/json" if body.lstrip()[:1] in "{["
+                else "text/plain; charset=utf-8")
         try:
-            req = urllib.request.Request(
-                url, headers={"User-Agent": "velaris/0.11"})
+            req = urllib.request.Request(url, data=data, headers=headers)
             with urllib.request.urlopen(req, timeout=10) as resp:
-                return resp.read(65536).decode("utf-8", errors="replace")
+                if name == "fetch_status":
+                    return int(resp.status)
+                return resp.read(1 << 20).decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as e:      # a real answer, not silence
+            if name == "fetch_status":
+                return int(e.code)
+            raise FailSignal(f"'{url}' answered with status {e.code}")
         except Exception:
             raise FailSignal(f"cannot reach '{url}'")
+    if name == "args":
+        return list(PROGRAM_ARGS)
+    if name == "format":
+        template = str(args[0])
+        pieces = template.split("{}")
+        holes = len(pieces) - 1
+        given = len(args) - 1
+        if holes != given:
+            raise VelarisError("E406",
+                f"format has {holes} placeholder(s) but got {given} "
+                f"value(s)", line,
+                fixes=[f"pass exactly {holes} value(s) after the text",
+                       "each {} in the text takes one value"])
+        out = pieces[0]
+        for piece, val in zip(pieces[1:], args[1:]):
+            out += to_text(val) + piece
+        return out
     if name == "now":
         return int(_time.time())
     if name == "random":
@@ -3272,6 +3378,9 @@ def format_source(source: str) -> str:
                 space = False
             elif t.text == "(" and prev.kind == "IDENT":
                 space = False
+            elif (t.text == "(" and prev.kind == "KEYWORD"
+                    and prev.text == "fn"):
+                space = False              # lambda value: fn(x: Int)
             else:
                 space = True          # includes symmetric { x } spacing
             unary = (t.text == "-" and (
@@ -3587,6 +3696,8 @@ def main() -> int:
         return 1
     filename = sys.argv[1]
     as_json = "--json" in sys.argv
+    FLAGS = {"--json", "--no-native", "--time", "--check"}
+    PROGRAM_ARGS[:] = [a for a in sys.argv[2:] if a not in FLAGS]
     try:
         funcs, records = load_program(filename)
         errors: list[VelarisError] = []

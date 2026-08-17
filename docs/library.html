@@ -105,7 +105,7 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 </style></head><body>
 <nav><div class="in"><a class="brand" href="index.html">
 <span class="dot"></span>Velaris</a><a href="index.html" class="">Home</a><a href="tutorial.html" class="">Tutorial</a><a href="library.html" class="here">Library</a><a href="errors.html" class="">Errors</a><a href="playground.html" class="">Playground</a>
-<span class="ver">v2.3.2</span></div></nav>
+<span class="ver">v2.4.0</span></div></nav>
 <main class=""><h1>Standard library</h1>
 <p class="lead">Every function below is written in Velaris and parsed onto this page by the real compiler &mdash; contracts included. A violated <code>requires</code> is a compile error at your call site.</p>
 <div class="fnrow">
@@ -174,11 +174,14 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 <h2>Built-in functions</h2><table><tr><th>Name</th><th>Effects</th><th>Takes</th><th>Gives</th></tr>
 <tr><td><code>all_of</code></td><td>pure</td><td>Any, Any</td><td>Bool</td></tr>
 <tr><td><code>any_of</code></td><td>pure</td><td>Any, Any</td><td>Bool</td></tr>
+<tr><td><code>args</code></td><td>io</td><td></td><td>List of Text</td></tr>
 <tr><td><code>ask</code></td><td>io</td><td>Text</td><td>Text</td></tr>
 <tr><td><code>chars</code></td><td>pure</td><td>Text</td><td>List of Text</td></tr>
 <tr><td><code>contains</code></td><td>pure</td><td>Text, Text</td><td>Bool</td></tr>
 <tr><td><code>fetch</code> <span class="ecode">or fail</span></td><td>net</td><td>Text</td><td>Text</td></tr>
+<tr><td><code>fetch_status</code> <span class="ecode">or fail</span></td><td>net</td><td>Text</td><td>Int</td></tr>
 <tr><td><code>file_exists</code></td><td>fs</td><td>Text</td><td>Bool</td></tr>
+<tr><td><code>format</code></td><td>pure</td><td>Any</td><td>Text</td></tr>
 <tr><td><code>get</code></td><td>pure</td><td>Any, Any</td><td>Any</td></tr>
 <tr><td><code>get_or</code></td><td>pure</td><td>Any, Any, Any</td><td>Any</td></tr>
 <tr><td><code>has</code></td><td>pure</td><td>Any, Any</td><td>Bool</td></tr>
@@ -186,6 +189,7 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 <tr><td><code>length</code></td><td>pure</td><td>Any</td><td>Int</td></tr>
 <tr><td><code>lower</code></td><td>pure</td><td>Text</td><td>Text</td></tr>
 <tr><td><code>now</code></td><td>clock</td><td></td><td>Int</td></tr>
+<tr><td><code>post</code> <span class="ecode">or fail</span></td><td>net</td><td>Text, Text</td><td>Text</td></tr>
 <tr><td><code>print</code></td><td>io</td><td>Any</td><td>Unit</td></tr>
 <tr><td><code>push</code></td><td>pure</td><td>Any, Any</td><td>Any</td></tr>
 <tr><td><code>put</code></td><td>pure</td><td>Any, Any, Any</td><td>Any</td></tr>

@@ -77,6 +77,19 @@ Optional extras for source installs: `pip install ".[full]"` adds
 without them, promises are checked at runtime and everything runs
 interpreted — same language, honestly degraded.
 
+## Everyday ergonomics
+
+```
+keep_if(xs, fn(n: Int) -> Bool { return n % 2 == 0 })   // inline functions
+format("hi {}, {} left", name, count)                    // text with holes
+args()                                                   // command line
+post(url, body) / fetch_status(url)                      // not just GET
+```
+
+Function values are lifted to real functions, so proofs and native
+compilation apply to them unchanged. They can't capture surrounding
+variables — the compiler tells you to pass them in instead.
+
 ## Tooling
 
 `velaris repl` (definitions are proof-checked as you type them) ·

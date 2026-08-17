@@ -1,0 +1,22 @@
+// v2.4: function values written inline - no need to name a helper
+// three lines up just to filter a list. They are pure and cannot use
+// variables from around them, so what you see is what runs.
+
+import "std.vel"
+
+fn main() uses io {
+    let xs = [5, 3, 8, 1, 9, 2]
+    print(format("numbers: {}", xs))
+    print(format("evens: {}", keep_if(xs, fn(n: Int) -> Bool {
+        return n % 2 == 0
+    })))
+    print(format("doubled: {}", apply_to_each(xs, fn(n: Int) -> Int {
+        return n * 2
+    })))
+    print(format("descending: {}", sort_by(xs, fn(n: Int) -> Int {
+        return -n
+    })))
+    print(format("{} of them are over 4", count_where(xs, fn(n: Int) -> Bool {
+        return n > 4
+    })))
+}

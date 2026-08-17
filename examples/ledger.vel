@@ -126,10 +126,6 @@ fn add_flow(xs: List of Expense) -> List of Expense uses io {
     return xs
 }
 
-fn amount_of(e: Expense) -> Int {
-    return e.amount
-}
-
 fn main() uses io, fs {
     let xs: List of Expense = []
     print("LEDGER - your expenses, checked by a compiler.")
@@ -153,7 +149,9 @@ fn main() uses io, fs {
             if length(xs) == 0 {
                 print("(nothing to report)")
             } else {
-                let by_amount = sort_by(xs, amount_of)
+                let by_amount = sort_by(xs, fn(e: Expense) -> Int {
+                    return e.amount
+                })
                 print("REPORT - " + length(xs) + " expense(s), total "
                 + money(total_of(xs)))
                 print("biggest:  " + describe(last(by_amount)))

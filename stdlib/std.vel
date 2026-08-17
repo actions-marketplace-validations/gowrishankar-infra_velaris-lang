@@ -39,7 +39,7 @@ fn contains_item(xs: List of T, item: T) -> Bool for any T {
     return index_of(xs, item) >= 0
 }
 
-fn apply_to_each(xs: List of T, f: fn (T) -> T) -> List of T for any T {
+fn apply_to_each(xs: List of T, f: fn(T) -> T) -> List of T for any T {
     let out: List of T = []
     let i = 0
     while i < length(xs) {
@@ -49,7 +49,7 @@ fn apply_to_each(xs: List of T, f: fn (T) -> T) -> List of T for any T {
     return out
 }
 
-fn keep_if(xs: List of T, keep: fn (T) -> Bool) -> List of T for any T {
+fn keep_if(xs: List of T, keep: fn(T) -> Bool) -> List of T for any T {
     let out: List of T = []
     let i = 0
     while i < length(xs) {
@@ -62,7 +62,7 @@ fn keep_if(xs: List of T, keep: fn (T) -> Bool) -> List of T for any T {
     return out
 }
 
-fn count_where(xs: List of T, keep: fn (T) -> Bool) -> Int for any T {
+fn count_where(xs: List of T, keep: fn(T) -> Bool) -> Int for any T {
     return length(keep_if(xs, keep))
 }
 
@@ -151,7 +151,7 @@ ensures is_sorted(result)
     return out
 }
 
-fn insert_by(xs: List of T, v: T, key: fn (T) -> Int) -> List of T
+fn insert_by(xs: List of T, v: T, key: fn(T) -> Int) -> List of T
 for any T
 {
     let out: List of T = []
@@ -172,7 +172,7 @@ for any T
     return out
 }
 
-fn sort_by(xs: List of T, key: fn (T) -> Int) -> List of T for any T
+fn sort_by(xs: List of T, key: fn(T) -> Int) -> List of T for any T
 ensures length(result) == length(xs)
 {
     let out: List of T = []

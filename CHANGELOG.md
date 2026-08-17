@@ -1,5 +1,15 @@
 # Velaris changelog
 
+## 2.4 - The everyday things
+Function values inline: `keep_if(xs, fn(n: Int) -> Bool { return n > 4 })`.
+They are lifted to real top-level functions, so types, effects, proofs
+and native codegen treat them like any other function - and they cannot
+capture surrounding variables, which keeps them pure and gives a clear
+error when you try. Also: `format("hi {}", name)` with placeholder
+count checked at compile time, `args()` for command line arguments,
+`post(url, body)` and `fetch_status(url)` alongside `fetch`. The ledger
+app now uses a lambda for its report sorting.
+
 ## 2.3 - Public launch polish
 New visual identity across the docs site, playground, and README:
 light professional design, verified-green brand, refined typography.
