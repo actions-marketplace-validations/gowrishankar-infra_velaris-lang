@@ -1,0 +1,12 @@
+// Reading row 2 of a grid that may have fewer rows. Proven unsafe
+// before the program runs, the same way a flat list would be.
+
+fn second_row(grid: List of List of Int) -> List of Int
+requires length(grid) >= 1
+{
+    return get(grid, 1)
+}
+
+fn main() uses io {
+    print(second_row([[1], [2]]))
+}

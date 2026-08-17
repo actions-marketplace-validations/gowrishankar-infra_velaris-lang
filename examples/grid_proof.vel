@@ -1,0 +1,30 @@
+// v2.12: lists of lists take part in proofs. A grid is modelled as its
+// rows, each row's length, and how many rows there are - so promises
+// about rows and sizes are proven before the program runs.
+
+fn first_row(grid: List of List of Int) -> List of Int
+requires length(grid) > 0
+ensures length(result) == length(get(grid, 0))
+{
+    return get(grid, 0)
+}
+
+fn add_row(grid: List of List of Int, row: List of Int)
+-> List of List of Int
+ensures length(result) == length(grid) + 1
+{
+    return push(grid, row)
+}
+
+fn row_count(grid: List of List of Int) -> Int
+ensures result == length(grid)
+{
+    return length(grid)
+}
+
+fn main() uses io {
+    let g = [[1, 2], [3], [4, 5, 6]]
+    print(format("rows: {}", row_count(g)))
+    print(format("first row: {}", first_row(g)))
+    print(format("after adding one: {}", add_row(g, [7])))
+}

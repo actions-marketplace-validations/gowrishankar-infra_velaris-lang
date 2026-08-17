@@ -1,5 +1,16 @@
 # Velaris changelog
 
+## 2.12 - Lists of lists, proven
+A grid is now modelled symbolically - its rows, each row's length, and
+how many rows - so `length`, `get` and `push` on nested lists take part
+in proofs, and an out-of-range row is caught before the program runs
+exactly as it is for a flat list. Nested list *types* also parse now:
+`List of List of Int` was previously a syntax error.
+
+That closes the last container with no proof story. Ints, Bools,
+Floats (in IEEE-754), Texts, records, lists, nested lists and maps are
+all proof territory; only Text contents remain runtime-checked.
+
 ## 2.11 - Invariant inference (the boring ones, for free)
 Loops without a written `invariant` can now be crossed by the prover.
 Candidate invariants are proposed for every counter a loop moves - it

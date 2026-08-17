@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Velaris v2.11 — "The language where you can trust code you didn't write."
+Velaris v2.12 — "The language where you can trust code you didn't write."
 
-New in v2.11: INVARIANT INFERENCE. Loops without a written invariant
-    can still be proven: the compiler proposes bounds on each counter,
-    assumes them together, and drops whatever a loop step breaks.
-    'velaris explain' now reports proven vs runtime-checked honestly.
+New in v2.12: lists of lists are proof territory - rows, row lengths
+    and row count are all modelled, so nested reads are bounds-proven
+    like flat ones. 'List of List of Int' also parses now.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -240,7 +239,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.11.0"
+VERSION = "2.12.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -748,8 +747,7 @@ class Parser:
             if of.text != "of":
                 raise VelarisError("E100", "expected 'of' after 'List'", of.line,
                                   fixes=["write list types like: List of Int"])
-            inner = self.expect("IDENT").text
-            return "List of " + inner
+            return "List of " + self.parse_type()   # nesting allowed
         return t.text
 
     # expressions: or -> and -> not -> comparison -> add/sub -> mul/div -> atoms
@@ -2105,6 +2103,11 @@ def check_proofs(funcs: list[Function], records: list,
         def __init__(self, arr, length):
             self.arr, self.length = arr, length
 
+    class GridVal:
+        """A symbolic list of lists: rows, row lengths, and how many."""
+        def __init__(self, rows, lens, length):
+            self.rows, self.lens, self.length = rows, lens, length
+
     class MapVal:
         """A symbolic map: values, plus which keys are actually there."""
         def __init__(self, vals, present, key_t, val_t):
@@ -2187,6 +2190,9 @@ def check_proofs(funcs: list[Function], records: list,
             return has_fresh(e.arr) or has_fresh(e.length)
         if isinstance(e, MapVal):
             return has_fresh(e.vals) or has_fresh(e.present)
+        if isinstance(e, GridVal):
+            return (has_fresh(e.rows) or has_fresh(e.lens)
+                    or has_fresh(e.length))
         if z3.is_const(e) and e.decl().name().startswith("__"):
             return True
         return any(has_fresh(c) for c in e.children())
@@ -2203,6 +2209,9 @@ def check_proofs(funcs: list[Function], records: list,
             return f"length({name}) = {model.eval(v.length, model_completion=True)}"
         if isinstance(v, MapVal):
             return f"{name} = a map"        # keys are symbolic here
+        if isinstance(v, GridVal):
+            return (f"length({name}) = "
+                    f"{model.eval(v.length, model_completion=True)}")
         return f"{name} = {model.eval(v, model_completion=True)}"
 
     def bind_params(fnB: Function, args_z3: list) -> dict:
@@ -2375,6 +2384,25 @@ def check_proofs(funcs: list[Function], records: list,
                 raise Unprovable()
         if isinstance(node, MapLit):
             raise Unprovable()          # literal maps: runtime for now
+        if isinstance(node, Call) and node.name in ("length", "get",
+                                                    "push"):
+            g0 = to_z3(node.args[0], env, ctx) if node.args else None
+            if isinstance(g0, GridVal):
+                if node.name == "length":
+                    return g0.length
+                if node.name == "get":
+                    idx = to_z3(node.args[1], env, ctx)
+                    if ctx is not None:
+                        prove_bounds(idx, g0.length, ctx, node.line)
+                    return ListVal(z3.Select(g0.rows, idx),
+                                   z3.Select(g0.lens, idx))
+                row = to_z3(node.args[1], env, ctx)      # push
+                if not isinstance(row, ListVal):
+                    raise Unprovable()
+                return GridVal(
+                    z3.Store(g0.rows, g0.length, row.arr),
+                    z3.Store(g0.lens, g0.length, row.length),
+                    g0.length + 1)
         if isinstance(node, Call) and node.name in ("length", "get", "push"):
             a0 = to_z3(node.args[0], env, ctx)
             if not isinstance(a0, ListVal):
@@ -2529,7 +2557,8 @@ def check_proofs(funcs: list[Function], records: list,
             fnB = table.get(node.name)
             if (fnB is not None and fnB.requires
                     and len(fnB.params) == len(node.args)
-                    and all(pt in ("Int", "Bool", "Float", "List of Int")
+                    and all(pt in ("Int", "Bool", "Float", "List of Int",
+                                   "List of List of Int")
                             or (pt in rec_fields and provable_rec(pt))
                             for _, pt in fnB.params)):
                 try:
@@ -2680,6 +2709,15 @@ def check_proofs(funcs: list[Function], records: list,
                 facts.append(ln >= 0)
             elif old is not None and z3.is_bool(old):
                 out[n] = fresh("Bool", n)
+            elif old is not None and isinstance(old, GridVal):
+                counter[0] += 1
+                base = f"__{n}_grid_{counter[0]}"
+                inner = z3.ArraySort(z3.IntSort(), z3.IntSort())
+                gl = z3.Int(base + "__n")
+                out[n] = GridVal(z3.Array(base, z3.IntSort(), inner),
+                                 z3.Array(base + "__lens", z3.IntSort(),
+                                          z3.IntSort()), gl)
+                facts.append(gl >= 0)
             elif old is not None and isinstance(old, MapVal):
                 counter[0] += 1
                 out[n] = mk_map(f"__{n}_havoc_{counter[0]}",
@@ -2818,6 +2856,17 @@ def check_proofs(funcs: list[Function], records: list,
                 ln = z3.Int(pname + "__n")
                 env[pname] = ListVal(arr, ln)
                 list_facts.append(ln >= 0)
+            elif ptype == "List of List of Int":
+                inner = z3.ArraySort(z3.IntSort(), z3.IntSort())
+                rows = z3.Array(pname, z3.IntSort(), inner)
+                lens = z3.Array(pname + "__lens", z3.IntSort(),
+                                z3.IntSort())
+                ln = z3.Int(pname + "__n")
+                env[pname] = GridVal(rows, lens, ln)
+                list_facts.append(ln >= 0)
+                k0 = z3.Int(pname + "__k")
+                list_facts.append(z3.ForAll(
+                    [k0], z3.Select(lens, k0) >= 0))
             elif ptype in rec_fields and provable_rec(ptype):
                 env[pname] = mk_rec(pname, ptype)
             elif ptype.startswith("Map of "):
@@ -2868,6 +2917,8 @@ def check_proofs(funcs: list[Function], records: list,
                             rv = "a list"
                         elif isinstance(ret, MapVal):
                             rv = "a map"
+                        elif isinstance(ret, GridVal):
+                            rv = "a list of lists"
                         else:
                             rv = m.eval(ret, model_completion=True)
                         raise VelarisError("E700",
