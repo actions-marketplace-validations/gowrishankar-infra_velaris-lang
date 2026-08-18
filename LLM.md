@@ -175,8 +175,10 @@ including promises about a list a loop builds, such as
 also catches the classic off-by-one: `while i <= length(xs)` reading
 `get(xs, i)` is refused before running.
 
-It still falls back to runtime for: promises about the *contents* of a
-list rather than its length, loops whose counter moves by anything
+It can also prove promises about the contents of a list a loop
+builds: `ensures all_of(result, is_positive)` proves when every push
+is guarded to satisfy the predicate, with no invariant written. It
+still falls back to runtime for: loops whose counter moves by anything
 other than one, several counters moving together, and anything reached
 through `ffi`. Write contracts freely on arithmetic and on list
 lengths; expect runtime checks elsewhere.
@@ -196,8 +198,8 @@ function; an unprovable promise is worse than none.
 
 ```
 first last reverse index_of contains_item keep_if
-apply_to_each (maps T -> T, SAME type only - use a loop to project
-a record to one of its fields)
+map_to(xs, f) - projection that CAN change type: fn(T) -> R
+apply_to_each (maps T -> T, same type only)
 count_where sum_of max_of min_of is_sorted insert_sorted sort
 insert_by sort_by join range_list
 ```

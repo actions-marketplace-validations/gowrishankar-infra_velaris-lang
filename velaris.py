@@ -252,7 +252,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.45.0"
+VERSION = "2.46.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -3123,6 +3123,58 @@ def check_proofs(funcs: list[Function], records: list,
         last = limit - 1 if s.cond.op == "<" else limit
         return (left.name, last, start)
 
+    current_fn = [None]      # the function being proven, for its ensures
+
+    def quantified_candidates(env, changed):
+        """all_of(x, P) in the current ensures becomes a candidate
+        invariant over every changed list: everything in it so far
+        satisfies P. Entry is vacuous (empty list); preservation asks
+        the solver whether each pushed element satisfies P on its path;
+        afterward the promise follows directly. This is what lets
+        'ensures all_of(result, is_positive)' prove through a loop."""
+        fn = current_fn[0]
+        if fn is None or not fn.ensures:
+            return []
+        preds = []
+        def harvest(e):
+            if isinstance(e, Call) and e.name in ("all_of", "any_of") \
+                    and len(e.args) == 2 and isinstance(e.args[1], Var):
+                pfn = table.get(e.args[1].name)
+                if pfn is not None:
+                    preds.append(pfn)
+            import dataclasses as _dc
+            if _dc.is_dataclass(e):
+                for f in _dc.fields(e):
+                    v = getattr(e, f.name)
+                    if isinstance(v, (list, tuple)):
+                        for x in v:
+                            if _dc.is_dataclass(x):
+                                harvest(x)
+                    elif _dc.is_dataclass(v):
+                        harvest(v)
+        for e_expr, _ in fn.ensures:
+            harvest(e_expr)
+        if not preds:
+            return []
+        cands = []
+        for n in sorted(changed):
+            v = env.get(n)
+            if not isinstance(v, ListVal):
+                continue
+            for pfn in preds:
+                def c(e, n=n, pfn=pfn):
+                    lv = e[n]
+                    if not isinstance(lv, ListVal):
+                        raise KeyError(n)
+                    counter[0] += 1
+                    k = z3.Int(f"__qq{counter[0]}")
+                    return z3.ForAll([k], z3.Implies(
+                        z3.And(k >= 0, k < lv.length),
+                        predicate_formula(pfn, z3.Select(lv.arr, k))))
+                cands.append((f"everything in '{n}' satisfies "
+                              f"'{pfn.name}'", c))
+        return cands
+
     def infer_invariants(env, changed, s, ctx):
         """Guess the boring invariants so people stop writing them.
 
@@ -3182,6 +3234,11 @@ def check_proofs(funcs: list[Function], records: list,
                                       lambda e, n=counter, b=edge: e[n] >= b))
                     break
 
+        try:
+            cands.extend(quantified_candidates(env, changed))
+        except Unprovable:
+            pass
+
         # A list built one item per turn has exactly as many items as the
         # counter has turns. This is the bridge the prover was missing
         # between a loop and the length of what it produced.
@@ -3199,6 +3256,10 @@ def check_proofs(funcs: list[Function], records: list,
                     f"'{n}' grows one item for each turn of '{counter}'",
                     lambda e, n=n, c=counter, l0=start_len,
                     c0=start_counter: e[n].length == l0 + (e[c] - c0)))
+                cands.append((
+                    f"'{n}' never outgrows the turns of '{counter}'",
+                    lambda e, n=n, c=counter, l0=start_len,
+                    c0=start_counter: e[n].length <= l0 + (e[c] - c0)))
                 cands.append((f"'{n}' never shrinks",
                               lambda e, n=n, l0=start_len:
                               e[n].length >= l0))
@@ -3458,6 +3519,7 @@ def check_proofs(funcs: list[Function], records: list,
                     fixes=e.get("fixes", []), file=e.get("file")))
             continue
         before_errors = len(errors)
+        current_fn[0] = fn
         saw_fp[0] = False              # FP budget only when FP appears
         env = {}
         list_facts = []

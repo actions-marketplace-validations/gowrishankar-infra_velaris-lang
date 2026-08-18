@@ -206,3 +206,15 @@ fn range_list(a: Int, b: Int) -> List of Int {
     }
     return out
 }
+
+fn map_to(xs: List of T, f: fn(T) -> R) -> List of R for any T, R
+    ensures length(result) == length(xs)
+{
+    let out: List of R = []
+    let i = 0
+    while i < length(xs) {
+        out = push(out, f(get(xs, i)))
+        i = i + 1
+    }
+    return out
+}

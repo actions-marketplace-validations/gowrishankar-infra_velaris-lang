@@ -1,5 +1,24 @@
 # Velaris changelog
 
+## 2.46 - Contents, not just lengths
+Two additions, both from the adversarial rubric's remaining points.
+
+**`map_to(xs, f)`** - projection that changes type, `fn(T) -> R`, so a
+record becomes one of its fields in one call instead of a hand-written
+loop. The generics system supported two type variables all along;
+nobody had written the function. Its `ensures length(result) ==
+length(xs)` proves.
+
+**Quantified contents prove through loops.** `ensures all_of(result,
+is_positive)` on a filtering loop was runtime-only; now the inference
+harvests each all_of predicate from the function's own ensures and
+tries "everything pushed so far satisfies it" as an invariant. Entry
+is vacuous, each push must satisfy it on its path, and the promise
+follows. The unguarded version correctly does NOT prove - the
+candidate is dropped when a step can break it - and the runtime check
+catches it with the actual offending list. Sound in both directions,
+and the suite's wall time did not move.
+
 ## 2.45 - The road from 84
 Three of the four items that separate this language from the low 90s,
 by its own adversarial grading.

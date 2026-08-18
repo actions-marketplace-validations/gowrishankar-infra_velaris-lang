@@ -62,6 +62,7 @@ EXPECT = {
     "offbyone_bad.vel": "REJECTED",
     "report_fixes.vel": "RUNS",
     "conj_bad.vel": "REJECTED",
+    "quantified.vel": "RUNS",
     "grid_bad.vel": "REJECTED",
     "lambda_contract_bad.vel": "REJECTED",
     "map_bad.vel": "REJECTED",

@@ -1,0 +1,55 @@
+// Promises about the CONTENTS of what a loop builds - proven.
+//
+// Until v2.46 the prover could reason about a built list's length but
+// not what was in it: 'ensures all_of(result, is_positive)' fell back
+// to runtime the moment a loop appeared. The missing piece was one
+// inferred invariant - everything pushed so far satisfies the
+// predicate - harvested from the function's own ensures. Entry is
+// vacuous (the list starts empty), each push must satisfy it on its
+// path, and afterward the promise follows.
+//
+// The unguarded version of keep_positive does NOT prove - the
+// candidate is dropped when a step can break it - and the runtime
+// check then catches it with the actual list. Sound both ways.
+//
+// map_to is the other v2.46 addition: projection that changes type,
+// so a record becomes one of its fields in one call.
+
+import "std.vel"
+
+record Expense {
+    label: Text
+    amount: Int
+}
+
+fn is_positive(n: Int) -> Bool {
+    return n > 0
+}
+
+fn amount_of(e: Expense) -> Int {
+    return e.amount
+}
+
+fn keep_positive(xs: List of Int) -> List of Int
+    ensures all_of(result, is_positive)
+    ensures length(result) <= length(xs)
+{
+    let out: List of Int = []
+    let i = 0
+    while i < length(xs) {
+        if get(xs, i) > 0 {
+            out = push(out, get(xs, i))
+        }
+        i = i + 1
+    }
+    return out
+}
+
+fn main() uses io {
+    let rows = [Expense(label: "chai", amount: 25),
+    Expense(label: "refund", amount: -40),
+    Expense(label: "book", amount: 450)]
+    let amounts = map_to(rows, amount_of)
+    print(format("amounts:  {}", amounts))
+    print(format("positive: {}", keep_positive(amounts)))
+}
