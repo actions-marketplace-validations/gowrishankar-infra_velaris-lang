@@ -1,5 +1,10 @@
 # Velaris changelog
 
+## 2.22.1 - First extension publish
+A version bump so the tagged release has something newer than the
+Marketplace has, now that the publisher and token exist. Nothing about
+the language changed.
+
 ## 2.22 - The editor extension, ready to publish
 The VS Code extension is packaged properly: real publisher and
 repository metadata, an icon, a license, a written README, settings
