@@ -9,6 +9,7 @@ let proc = null;
 let buffer = Buffer.alloc(0);
 let nextId = 1;
 let collection = null;
+const waiting = new Map();          // request id -> resolve
 
 function send(msg) {
   if (!proc) return;
@@ -34,7 +35,25 @@ function onData(chunk) {
   }
 }
 
+function request(method, params) {
+  return new Promise((resolve) => {
+    const id = nextId++;
+    const timer = setTimeout(() => {          // never hang the editor
+      waiting.delete(id);
+      resolve(null);
+    }, 8000);
+    waiting.set(id, (result) => { clearTimeout(timer); resolve(result); });
+    send({ jsonrpc: "2.0", id, method, params });
+  });
+}
+
 function handle(msg) {
+  if (msg.id !== undefined && waiting.has(msg.id)) {
+    const done = waiting.get(msg.id);
+    waiting.delete(msg.id);
+    done(msg.result === undefined ? null : msg.result);
+    return;
+  }
   if (msg.method === "textDocument/publishDiagnostics") {
     const { uri, diagnostics } = msg.params;
     const diags = diagnostics.map((d) => {
@@ -83,7 +102,98 @@ function activate(context) {
              params: docParams(doc) });
     }
   }
+  const at = (doc, position) => ({
+    textDocument: { uri: doc.uri.toString() },
+    position: { line: position.line, character: position.character },
+  });
+  const toRange = (r) => new vscode.Range(
+    r.start.line, r.start.character, r.end.line, r.end.character);
+
   context.subscriptions.push(
+    // what a function takes, promises, and may do
+    vscode.languages.registerHoverProvider("velaris", {
+      async provideHover(doc, position) {
+        const got = await request("textDocument/hover", at(doc, position));
+        if (!got || !got.contents) return null;
+        const text = got.contents.value || got.contents;
+        return new vscode.Hover(new vscode.MarkdownString(text));
+      },
+    }),
+
+    // functions in scope with their contracts, builtins with their effects
+    vscode.languages.registerCompletionItemProvider("velaris", {
+      async provideCompletionItems(doc, position) {
+        const got = await request("textDocument/completion",
+                                  at(doc, position));
+        const items = (got && got.items) || [];
+        return items.map((it) => {
+          const item = new vscode.CompletionItem(
+            it.label,
+            it.kind === 14 ? vscode.CompletionItemKind.Keyword
+                           : vscode.CompletionItemKind.Function);
+          if (it.detail) item.detail = it.detail;
+          if (it.documentation) {
+            item.documentation = new vscode.MarkdownString(it.documentation);
+          }
+          return item;
+        });
+      },
+    }, ".", " "),
+
+    // jump to where a function is written, across imports
+    vscode.languages.registerDefinitionProvider("velaris", {
+      async provideDefinition(doc, position) {
+        const got = await request("textDocument/definition",
+                                  at(doc, position));
+        if (!got || !got.uri) return null;
+        return new vscode.Location(vscode.Uri.parse(got.uri),
+                                   toRange(got.range));
+      },
+    }),
+
+    // "promises proven before running" above each function
+    vscode.languages.registerCodeLensProvider("velaris", {
+      async provideCodeLenses(doc) {
+        const got = await request("textDocument/codeLens", {
+          textDocument: { uri: doc.uri.toString() },
+        });
+        if (!Array.isArray(got)) return [];
+        return got.map((lens) => new vscode.CodeLens(toRange(lens.range), {
+          title: lens.command.title, command: "",
+        }));
+      },
+    }),
+
+    // an outline of the file's functions
+    vscode.languages.registerDocumentSymbolProvider("velaris", {
+      async provideDocumentSymbols(doc) {
+        const got = await request("textDocument/documentSymbol", {
+          textDocument: { uri: doc.uri.toString() },
+        });
+        if (!Array.isArray(got)) return [];
+        return got.map((sym) => new vscode.DocumentSymbol(
+          sym.name, sym.detail || "", vscode.SymbolKind.Function,
+          toRange(sym.range), toRange(sym.selectionRange)));
+      },
+    }),
+
+    // rename a function everywhere it is used in this file
+    vscode.languages.registerRenameProvider("velaris", {
+      async provideRenameEdits(doc, position, newName) {
+        const params = at(doc, position);
+        params.newName = newName;
+        const got = await request("textDocument/rename", params);
+        if (!got || !got.changes) return null;
+        const edit = new vscode.WorkspaceEdit();
+        for (const [uri, edits] of Object.entries(got.changes)) {
+          for (const e of edits) {
+            edit.replace(vscode.Uri.parse(uri), toRange(e.range), e.newText);
+          }
+        }
+        return edit;
+      },
+    }),
+
     vscode.workspace.onDidOpenTextDocument((doc) => {
       if (isVel(doc)) send({ jsonrpc: "2.0",
         method: "textDocument/didOpen", params: docParams(doc) });

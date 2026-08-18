@@ -1,5 +1,27 @@
 # Velaris changelog
 
+## 2.39 - The editor asks for what the compiler already knew
+The language server has answered hover, completion, go-to-definition,
+rename, an outline and proof-status lenses since 2.32 - but the
+extension's hand-rolled client only ever listened for errors, so none
+of it reached the editor. The client now asks:
+
+- completion for functions in scope with their contracts, and every
+  builtin with its effects and whether it can fail
+- hover showing a signature with its `requires` and `ensures`
+- go to definition, across imported files
+- rename across the file
+- an outline of the file's functions
+- **proof status above every function**, from the real prover
+
+Requests time out after eight seconds and fall back to nothing rather
+than hanging the editor.
+
+Plus 17 snippets for the shapes this language actually uses: `fnp` for
+a function with promises, `fnfail` for one that can fail, `check` for
+handling both outcomes, `whileinv` for a loop with an invariant,
+`record`, `test`, `json`, `py`, `importas` and more.
+
 ## 2.38 - Testing the places languages break
 Two new suites, because a test that only checks correct code passing
 is half a test.

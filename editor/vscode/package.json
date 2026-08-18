@@ -2,7 +2,7 @@
   "name": "velaris",
   "displayName": "Velaris",
   "description": "Velaris language support: syntax highlighting, and live errors and proofs from the real compiler.",
-  "version": "2.38.0",
+  "version": "2.39.0",
   "publisher": "gowrishankar-infra",
   "engines": {
     "vscode": "^1.75.0"
@@ -46,7 +46,13 @@
           "description": "Check the file and prove its promises when you save."
         }
       }
-    }
+    },
+    "snippets": [
+      {
+        "language": "velaris",
+        "path": "./snippets/velaris.json"
+      }
+    ]
   },
   "main": "./extension.js",
   "activationEvents": [
