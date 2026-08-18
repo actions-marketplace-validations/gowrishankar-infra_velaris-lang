@@ -128,6 +128,7 @@ both export `distance` can be used in the same file.
 
 ## Tooling
 
+`velaris trace program.vel` (watch every call as it happens) ·
 `velaris test program.vel` (runs every `test_*` function written in
 Velaris) ·
 `velaris check program.vel` (compile without running; several files at

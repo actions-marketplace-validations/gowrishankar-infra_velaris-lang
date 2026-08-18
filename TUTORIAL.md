@@ -236,6 +236,7 @@ velaris program.vel          run it
 velaris check program.vel    compile it without running
 velaris explain program.vel  what each function does, needs and promises
 velaris explain .            the same for a whole project
+velaris trace program.vel    watch every call as it happens
 velaris repl                 try things, proofs and all
 velaris fmt program.vel      canonical formatting
 velaris doctor               check your setup

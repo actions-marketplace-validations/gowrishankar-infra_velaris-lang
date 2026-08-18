@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Velaris v2.20 — "The language where you can trust code you didn't write."
+Velaris v2.21 — "The language where you can trust code you didn't write."
 
-New in v2.20: whole numbers are 64-bit, and arithmetic that outgrows
-    that is an error (E407) in BOTH engines - found by the fuzzer,
-    which caught native code wrapping while the interpreter kept
-    counting.
+New in v2.21: velaris trace program.vel shows every call as it
+    happens, and the prover models upper/lower as length-preserving,
+    so promises about them can be proven.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -144,6 +143,7 @@ Usage:
   velaris fmt program.vel                  format to the canonical style
   velaris check program.vel                compile only, do not run
   velaris test program.vel                 run every test_ function
+  velaris trace program.vel                show every call as it happens
   velaris explain program.vel              walk through what it does
   velaris explain <folder>                 a map of every file
   velaris doctor                           check the installation
@@ -241,7 +241,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.20.0"
+VERSION = "2.21.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1166,6 +1166,32 @@ FALLIBLE_BUILTINS = {"to_int", "read_file", "fetch", "post",
 PROGRAM_ARGS: list = []    # filled by the CLI: velaris prog.vel a b c
 
 INT_MIN, INT_MAX = -(2 ** 63), 2 ** 63 - 1
+
+TRACE = {"on": False, "depth": 0, "calls": 0, "limit": 4000}
+
+
+def trace_enter(name: str, params, args) -> None:
+    if not TRACE["on"] or TRACE["calls"] >= TRACE["limit"]:
+        return
+    TRACE["calls"] += 1
+    shown = ", ".join(f"{p}={to_text(a)}" for (p, _), a in
+                      zip(params, args))
+    print("  " * TRACE["depth"] + f"-> {name}({shown})", file=sys.stderr)
+    TRACE["depth"] += 1
+
+
+def trace_leave(name: str, value, failed: str | None = None) -> None:
+    if not TRACE["on"] or TRACE["calls"] > TRACE["limit"]:
+        return
+    TRACE["depth"] = max(0, TRACE["depth"] - 1)
+    if failed is not None:
+        print("  " * TRACE["depth"] + f"<- {name} FAILED: {failed}",
+              file=sys.stderr)
+    elif value is None:
+        print("  " * TRACE["depth"] + f"<- {name}", file=sys.stderr)
+    else:
+        print("  " * TRACE["depth"] + f"<- {name} = {to_text(value)}",
+              file=sys.stderr)
 
 
 def checked_int(value: int, op: str, line: int) -> int:
@@ -2193,6 +2219,13 @@ def check_proofs(funcs: list[Function], records: list,
                  "Text": lambda: z3.StringSort()}
     CODE_AT = z3.Function("code_at", z3.StringSort(), z3.IntSort(),
                           z3.IntSort())
+    UPPER = z3.Function("upper", z3.StringSort(), z3.StringSort())
+    LOWER = z3.Function("lower", z3.StringSort(), z3.StringSort())
+    _t = z3.String("__case_t")
+    CASE_AXIOMS = [                     # changing case keeps the length
+        z3.ForAll([_t], z3.Length(UPPER(_t)) == z3.Length(_t)),
+        z3.ForAll([_t], z3.Length(LOWER(_t)) == z3.Length(_t)),
+    ]
 
     def map_parts(t: str):
         """('Map of Text to Int') -> ('Text', 'Int') if both are modelable."""
@@ -2451,6 +2484,11 @@ def check_proofs(funcs: list[Function], records: list,
             if node.name == "all_of":
                 return z3.ForAll([k], z3.Implies(inside, body))
             return z3.Exists([k], z3.And(inside, body))
+        if isinstance(node, Call) and node.name in ("upper", "lower"):
+            t = to_z3(node.args[0], env, ctx)
+            if not z3.is_string(t):
+                raise Unprovable()
+            return (UPPER if node.name == "upper" else LOWER)(t)
         if isinstance(node, Call) and node.name == "contains":
             hay = to_z3(node.args[0], env, ctx)
             needle = to_z3(node.args[1], env, ctx)
@@ -2974,6 +3012,22 @@ def check_proofs(funcs: list[Function], records: list,
                 mv = mk_map(pname, ptype)
                 if mv is not None:
                     env[pname] = mv
+        import dataclasses as _dc
+
+        def mentions_case(node) -> bool:
+            if isinstance(node, (list, tuple)):
+                return any(mentions_case(x) for x in node)
+            if not _dc.is_dataclass(node):
+                return False
+            if isinstance(node, Call) and node.name in ("upper", "lower"):
+                return True
+            return any(mentions_case(getattr(node, f.name))
+                       for f in _dc.fields(node))
+
+        if (mentions_case(fn.body)
+                or mentions_case([e for e, _ in fn.ensures])
+                or mentions_case([e for e, _ in fn.requires])):
+            list_facts.extend(CASE_AXIOMS)   # only where they matter
         ctx = Ctx([], list(list_facts), list(list_facts), fn.name)
         try:
             for r_expr, _ in fn.requires:
@@ -3917,8 +3971,15 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
             return all(hits) if name == "all_of" else any(hits)
         if name in BUILTINS:
             return run_builtin(name, args, line)
-        if name in native:
-            return native[name](*args)     # machine code, C-like speed
+        if name in native:                 # machine code, C-like speed
+            if TRACE["on"]:                # still visible when tracing
+                fnn = table.get(name)
+                trace_enter(name + " (native)",
+                            fnn.params if fnn else [], args)
+                out = native[name](*args)
+                trace_leave(name + " (native)", out)
+                return out
+            return native[name](*args)
         fn = table.get(name)
         if fn is None:
             raise unknown_function(name, line, table)
@@ -3949,13 +4010,19 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
                            "or loosen the promise if it is too strict"])
 
         retval = None
+        trace_enter(name, fn.params, args)
         try:
             for stmt in fn.body:
                 run(stmt, env)
         except ReturnSignal as r:
             retval = r.value
+        except FailSignal as f:
+            trace_leave(name, None, failed=str(f.reason))
+            raise
         except VelarisError as e:
+            trace_leave(name, None, failed=f"[{e.code}] {e.message}")
             raise blame(fn, e)
+        trace_leave(name, retval)
 
         for expr, cline in fn.ensures:
             check_env = dict(entry)
@@ -4615,6 +4682,13 @@ def main() -> int:
         return fmt_main(argv[1:])
     if argv[:1] == ["lsp"]:
         return lsp_serve()
+    if argv[:1] == ["trace"]:
+        if len(argv) < 2:
+            print("usage: velaris trace program.vel", file=sys.stderr)
+            return 1
+        TRACE["on"] = True
+        sys.argv = [sys.argv[0]] + argv[1:]      # run it normally
+        return main()
     if argv[:1] == ["test"]:
         if len(argv) < 2:
             print("usage: velaris test program.vel", file=sys.stderr)

@@ -1,0 +1,40 @@
+// v2.21: watch a program run.
+//
+// velaris trace examples/trace_demo.vel
+//
+// Every call is shown as it happens, indented by depth, with the
+// arguments going in and the answer coming back - including native
+// calls and the ones that fail.
+
+import "std.vel"
+
+fn is_even(n: Int) -> Bool {
+    return n % 2 == 0
+}
+
+fn halve(n: Int) -> Int or fail {
+    if not is_even(n) {
+        fail format("{} is odd", n)
+    }
+    return n / 2
+}
+
+fn shout(word: Text) -> Text
+ensures length(result) == length(word)
+{
+    return upper(word)
+}
+
+fn main() uses io {
+    print(shout("velaris"))
+    for n in [8, 7] {
+        check halve(n) {
+            ok half {
+                print(format("half of {} is {}", n, half))
+            }
+            fail why {
+                print(format("cannot halve: {}", why))
+            }
+        }
+    }
+}

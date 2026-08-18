@@ -1,5 +1,19 @@
 # Velaris changelog
 
+## 2.21 - Watching a program run, and case-changing proofs
+`velaris trace program.vel` prints every call as it happens - indented
+by depth, arguments going in, answer coming back, and `FAILED` with the
+reason when a call fails. Native calls are shown too, marked as such,
+so a trace never hides half the program. It is the tool a beginner
+reaches for when reading is not enough.
+
+The prover models `upper` and `lower` as functions that keep a text's
+length, so `ensures length(result) == length(word)` is proven rather
+than checked at runtime. Honest limit: a *false* promise about them is
+still caught at runtime rather than at compile time, because the
+solver cannot pin down the letters themselves - proven claims stay
+true, they are just fewer.
+
 ## 2.20 - Whole numbers have a size, and outgrowing it is an error
 The fuzzer added in 2.16 found a real disagreement: native code holds
 whole numbers in 64 bits and wraps around, while the interpreter used
