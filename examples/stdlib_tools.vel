@@ -1,0 +1,49 @@
+// v2.31: the standard library reaches the outside world for you.
+//
+// import "http.vel" as http     the web, without JSON plumbing
+// import "db.vel" as db         a database, without handles by hand
+// import "time.vel" as time     dates from the host language
+// import "env_tools.vel" as sys settings, and how to exit
+//
+// Every one of these still carries its effects, so 'velaris explain'
+// on your program shows exactly what it can touch.
+
+import "db.vel" as db
+import "env_tools.vel" as sys
+
+fn main() uses io, ffi {
+    print(format("running as {}", sys.setting("USER", "someone")))
+    check db.open(":memory:") {
+        ok conn {
+            check db.run(conn, "create table notes (body text)") {
+                ok made {
+                    print("table created")
+                }
+                fail why {
+                    print(format("could not create: {}", why))
+                }
+            }
+            check db.run(conn, "insert into notes values ('proven')") {
+                ok added {
+                    print("row inserted")
+                }
+                fail why {
+                    print(format("could not insert: {}", why))
+                }
+            }
+            check db.count(conn, "notes") {
+                ok n {
+                    print(format("notes stored: {}", n))
+                }
+                fail why {
+                    print(format("could not count: {}", why))
+                }
+            }
+            db.close(conn)
+            print("closed")
+        }
+        fail why {
+            print(format("could not open: {}", why))
+        }
+    }
+}

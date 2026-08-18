@@ -1,0 +1,32 @@
+// Talking to the web, without the plumbing.
+//
+// import "http.vel" as http
+// check http.get(url) { ok body { ... } fail why { ... } }
+
+fn get(url: Text) -> Text uses net or fail {
+    return try fetch(url)
+}
+
+fn status(url: Text) -> Int uses net or fail
+ensures result >= 0
+{
+    let code = try fetch_status(url)
+    if code < 0 {
+        fail "that is not a status"
+    }
+    return code
+}
+
+fn ok(url: Text) -> Bool uses net or fail {
+    let code = try status(url)
+    return code >= 200 and code < 300
+}
+
+fn send(url: Text, body: Text) -> Text uses net or fail {
+    return try post(url, body)
+}
+
+fn get_json(url: Text, path: Text) -> Text uses net or fail {
+    let body = try fetch(url)
+    return try json_get(body, path)
+}

@@ -1,0 +1,25 @@
+// Dates and times, borrowed from the host language.
+//
+// import "time.vel" as time
+
+fn today() -> Text uses ffi or fail {
+    let nothing: List of Text = []
+    return try py("datetime.date", "today", nothing)
+}
+
+fn clock_text() -> Text uses ffi or fail {
+    let nothing: List of Text = []
+    return try py("datetime.datetime", "now", nothing)
+}
+
+fn seconds() -> Int uses clock {
+    return now()
+}
+
+fn day_of(when: Text) -> Text or fail {
+    let parts = split(when, "-")
+    if length(parts) == 0 {
+        fail "nothing to read"
+    }
+    return get(parts, 0)
+}

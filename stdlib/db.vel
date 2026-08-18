@@ -1,0 +1,36 @@
+// A small SQLite database, without the plumbing.
+//
+// import "db.vel" as db
+// check db.open(":memory:") { ok conn { ... } fail why { ... } }
+
+fn open(path: Text) -> Handle uses ffi or fail {
+    return try py_new("sqlite3", "connect", format("[\"{}\"]", path))
+}
+
+fn run(conn: Handle, sql: Text) -> Text uses ffi or fail {
+    return try py_do(conn, "execute", format("[\"{}\"]", sql))
+}
+
+fn commit(conn: Handle) uses ffi or fail {
+    let done = try py_do(conn, "commit", "[]")
+}
+
+fn rows_json(conn: Handle, sql: Text) -> Text uses ffi or fail {
+    let cursor = try py_do(conn, "execute", format("[\"{}\"]", sql))
+    return try py_json("builtins", "list", format("[{}]", cursor))
+}
+
+fn count(conn: Handle, table: Text) -> Int uses ffi or fail
+ensures result >= 0
+{
+    let rows = try rows_json(conn, format("select count(*) from {}", table))
+    let n = try json_int(rows, "0[0]")
+    if n < 0 {
+        fail "a count cannot be negative"
+    }
+    return n
+}
+
+fn close(conn: Handle) uses ffi {
+    py_close(conn)
+}

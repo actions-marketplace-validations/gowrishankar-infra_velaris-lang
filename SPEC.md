@@ -1,0 +1,328 @@
+# The Velaris language reference
+
+This is the specification: what Velaris means, precisely. It is not a
+tutorial ([TUTORIAL.md](TUTORIAL.md) is), and it does not teach
+programming. It exists so that anyone deciding whether to depend on
+this language can find out exactly what it promises — and what it
+does not.
+
+Version 2.30. Where this document and the implementation disagree,
+that is a bug in one of them; please report it.
+
+## 1. Programs
+
+A program is one or more files of UTF-8 text with the extension
+`.vel`. Execution begins at `main`, which takes no parameters and
+cannot fail. A program without `main` is rejected (E400).
+
+Files are combined by `import` (§10). There is no separate linking
+step and no build configuration: the entry file plus what it imports
+is the program.
+
+## 2. Lexical structure
+
+Comments run from `//` to end of line. Whitespace is insignificant
+except as a separator; there is no layout rule and no significant
+indentation.
+
+Identifiers begin with a letter or underscore and continue with
+letters, digits or underscores. They are case-sensitive.
+
+Keywords: `fn let return if else uses true false while for requires
+ensures and or not invariant record import fail check try`.
+
+Literals:
+
+| Kind | Examples | Notes |
+|---|---|---|
+| Int | `0`, `42`, `-7` | 64-bit, signed (§4.1) |
+| Float | `1.5`, `0.0`, `-2.25` | IEEE-754 binary64 (§4.2) |
+| Bool | `true`, `false` | |
+| Text | `"hello"`, `"a\nb"` | escapes: `\n \t \\ \" \r \0` |
+| List | `[1, 2, 3]` | all elements one type |
+| Map | `{"a": 1}` | keys `Text` or `Int` |
+
+An empty `[]` or `{}` has no inferable element type; give it one with
+a typed `let` (E506, E507).
+
+## 3. Types
+
+    Int  Float  Bool  Text  Handle
+    List of T
+    Map of K to V            (K is Text or Int)
+    fn(T, ...) -> R          (a function value; pure only)
+    <record name>
+
+There is no null, no undefined, no implicit conversion, and no
+subtyping. A value has exactly one type, known at compile time.
+
+`Handle` is an opaque reference to a value living in the host language
+(§12). It can be passed and stored; it has no operations of its own.
+
+Generic functions are written `for any T` and are instantiated at each
+call site by unification with the argument types. There are no
+constraints or bounds.
+
+## 4. Numbers
+
+### 4.1 Whole numbers
+
+`Int` is a signed 64-bit integer: −9223372036854775808 to
+9223372036854775807. Arithmetic that leaves that range is an **error**
+(E407), not a wraparound and not a promotion to a larger type. This
+holds identically in interpreted and natively compiled code; the two
+are checked against each other by a fuzzer on every release.
+
+`/` on two `Int`s is division that rounds toward negative infinity
+(`-7 / 2` is `-4`). `%` returns the remainder with the sign of the
+divisor, so `x == (x / y) * y + (x % y)` holds for all `y != 0`.
+Division or remainder by zero is an error (E403), never an infinity.
+
+### 4.2 Decimals
+
+`Float` is IEEE-754 binary64 with round-to-nearest-even, including
+signed zeros, infinities and NaN. `Float` division by zero follows
+IEEE-754 and yields an infinity; this is the one place the language
+does not raise an error, because it is what the hardware defines.
+
+`Int` and `Float` never mix implicitly. `to_float(x)` widens;
+`round(x)` narrows.
+
+### 4.3 Text
+
+`Text` is a sequence of Unicode code points. `length` counts code
+points, not bytes, and `code_at(t, i)` returns the code point at a
+position. Comparison (`<`, `>`, `<=`, `>=`) is lexicographic by code
+point. Text is immutable; `+` produces a new value.
+
+## 5. Values and mutation
+
+Records, lists and maps are immutable. `push`, `put` and record
+construction produce new values; nothing observes a change made
+elsewhere. `let` introduces a binding; assignment (`x = e`) rebinds a
+local name and never mutates a value another name refers to.
+
+Equality (`==`) is structural for records, lists and maps, `fpEQ` for
+`Float` (so NaN is not equal to itself, and `0.0 == -0.0`), and
+ordinary equality elsewhere.
+
+## 6. Evaluation
+
+Evaluation is strict, left to right, depth first. Arguments are fully
+evaluated before a call. `and` and `or` short-circuit: the right side
+is not evaluated when the left decides the result. `if`/`while`
+conditions must be `Bool`; there is no truthiness.
+
+There is no undefined behaviour. Every operation either produces a
+value, raises a language error with a code, or fails in the sense of
+§8.
+
+## 7. Effects
+
+A function declares what it may do:
+
+    fn save(path: Text, body: Text) uses fs { ... }
+
+The effects are `io` (console), `fs` (files), `net` (network),
+`clock` (the time), `rand` (randomness) and `ffi` (calling the host
+language, §12).
+
+The rule is transitive and checked at compile time: a function may
+only perform effects it declares, and calling a function requires
+declaring everything that function declares. A function with no `uses`
+clause is **pure** — it cannot perform any effect, and neither can
+anything it calls, however deep. Violations are E300.
+
+This is a property of the whole call graph, not a convention. Reading
+a signature tells you the complete set of things a call can do to the
+outside world.
+
+## 8. Failure
+
+A function that can fail says so:
+
+    fn parse(t: Text) -> Int or fail { ... }
+
+Inside it, `fail "reason"` stops that call. A caller must handle the
+possibility, in one of two ways:
+
+    check parse(t) { ok n { ... } fail why { ... } }   // handle here
+    let n = try parse(t)                               // pass it up
+
+`try` is only allowed inside a function that itself says `or fail`.
+Ignoring a fallible call is a compile error (E520). `main` cannot
+fail.
+
+Fallible builtins: `to_int`, `read_file`, `fetch`, `post`,
+`fetch_status`, `get` on a **map**, the `py_*` family, and the `json_*`
+readers. `get` on a **list** is not fallible: list bounds are the
+prover's domain (§9.4), and `get_or(m, k, default)` gives a total map
+lookup.
+
+## 9. Contracts and proof
+
+### 9.1 What you write
+
+    fn f(x: Int) -> Int
+        requires x >= 0            // what the caller must ensure
+        ensures result >= x        // what f guarantees in return
+    { ... }
+
+    while i < n
+    invariant total >= 0           // true before and after each turn
+    { ... }
+
+Contract expressions must be pure and may call pure functions.
+`result` names the return value in `ensures`.
+
+### 9.2 What "proven" means
+
+When Velaris says a promise is **proven**, it means: for every input
+permitted by the `requires`, the `ensures` holds — established by the
+Z3 theorem prover before the program runs, using the semantics in this
+document, with no execution and no sampling.
+
+When it says a promise **cannot be kept** (E700), it means a
+counterexample exists and is shown. This is only reported when the
+counterexample involves no summarized calls, so a reported violation is
+always literally realisable.
+
+When neither can be established, the promise is **checked at runtime**
+instead, and violating it is an error when it happens (E600, E601).
+`velaris explain` reports which of the three applies to each function.
+The compiler never reports a promise as proven when it was in fact
+left to a runtime check.
+
+### 9.3 What is proven, and what is not
+
+Proven today: whole-number and boolean arithmetic; comparisons; loops
+(with written invariants, and with inferred bounds on counters);
+records, including fields that are lists, floats or text; flat lists
+and lists of lists via the theory of arrays; maps, modelled as values
+plus which keys are present; quantified list properties through
+`all_of` / `any_of`; failure paths, so `ensures` applies to every path
+that returns; division and remainder, including that the divisor is
+never zero; `Float` in genuine IEEE-754 rather than as real numbers;
+`length` and `contains` on text, `upper`/`lower` as length-preserving,
+and `split` as producing at least one piece.
+
+Not proven, and checked at runtime instead: the contents of text
+beyond the above; anything involving values that come back from the
+host language; and any obligation the solver cannot settle within its
+budget. Loop invariants are inferred only for simple counter bounds;
+anything richer must be written.
+
+### 9.4 Calls, and the soundness rule
+
+Calls are proven **modularly**: at a call site the callee's `ensures`
+is assumed and its `requires` becomes an obligation on the caller
+(E701). A callee's body is never inlined into a caller's proof.
+
+If any premise cannot be translated into the solver's logic, the whole
+proof for that function is abandoned and its promises fall back to
+runtime checks. Proving with a dropped premise could manufacture a
+counterexample that is not real, so it is never done.
+
+## 10. Modules
+
+    import "std.vel"                 // names merge into this file
+    import "lib/geo.vel" as geo      // names live behind geo.
+
+A plain import merges the imported file's functions and records, with
+duplicate names rejected. A named import prefixes that file's
+functions; the library's internal references are rewritten with it, so
+a library behaves identically from the inside. A local name may not
+shadow an import name (E514).
+
+Imports are resolved relative to the importing file, with the bundled
+standard library searched last. Import cycles are rejected.
+
+## 11. Compilation and execution
+
+A program is lexed, parsed, effect-checked, type-checked,
+proof-checked, then run. Pure functions over `Int`, `Float`, `Bool`,
+list reads and text — and, since 2.14, functions whose contracts are
+**proven** — may be compiled to machine code through LLVM. Everything
+else is interpreted.
+
+Native and interpreted execution are required to produce identical
+results. Where they cannot be made identical, the operation is not
+compiled: `/` and `%` stay interpreted so that division by zero is a
+clean error in both, and results of type `Text` are not returned from
+native code because that boundary is platform-specific. A fuzzer
+generates random programs and compares both engines on every release.
+
+If the native backend is unavailable or fails for any reason, the
+program runs interpreted with the same behaviour.
+
+## 12. The host language
+
+    py(module, function, args)       -> Text
+    py_int / py_float                -> Int / Float
+    py_json(module, function, args)  -> Text     (JSON in, JSON out)
+    py_new(module, function, args)   -> Handle
+    py_do(handle, method, args)      -> Text
+    py_field(handle, name)           -> Text
+    py_close(handle)
+
+All of these require `uses ffi` and all except `py_close` can fail.
+Arguments travel as a JSON list; a trailing JSON object becomes
+keyword arguments. A value the host returns that is not JSON comes
+back as a `Handle`.
+
+Nothing about values crossing this boundary is verified: the prover
+treats them as unknown. What the language still guarantees is that
+crossing it is **visible** — a function that reaches the host says
+`uses ffi`, and a pure function cannot.
+
+## 13. Concurrency
+
+**Velaris is single-threaded, deliberately, and has no concurrency
+model.** There are no threads, no async functions, no channels, and no
+parallel execution. A program is one sequence of steps.
+
+This is a position, not an oversight. The language's central claim is
+that a signature tells you what a function can do; concurrency
+introduces effects — data races, interleaving, deadlock — that a
+signature of the current design cannot express. Adding threads without
+extending the effect system to describe them would break the one
+promise the language exists to make.
+
+If concurrency is added, it will be as an effect with rules stated
+here first. Until then, a Velaris program that needs parallelism should
+get it outside the program: run several, or reach the host language
+through `uses ffi` and accept that what happens there is unverified.
+
+## 14. Errors
+
+Every error has a stable code (`E###`), a message in plain English, a
+file and line, and numbered suggested fixes. `--json` emits them as
+structured data. The complete list is generated from the compiler
+source itself and published with the documentation.
+
+Codes are grouped: E0xx lexing, E1xx parsing, E2xx names, E3xx
+effects, E4xx arity and runtime arithmetic, E5xx types, E6xx runtime
+contract violations, E7xx proof results.
+
+## 15. Versioning and stability
+
+Velaris follows semantic versioning. Breaking changes happen only at
+major versions; 2.0 made four builtins fallible and the compiler
+pointed at every call site that needed updating. Minor versions add;
+patch versions fix.
+
+The test suite runs on Linux, Windows and macOS, on two Python
+versions, with and without the optional solver and native backend, on
+every push.
+
+## 16. What this language does not have
+
+Stated plainly, because a specification that only lists strengths is
+advertising: no threads or async (§13); no exceptions — failure is in
+the signature (§8); no traits, interfaces, classes or inheritance; no
+closures — function values cannot capture their surroundings; no
+mutable data structures; no reflection; no macros; no operator
+overloading; no package registry (libraries are vendored, §10); no
+incremental compilation beyond proof caching; and a compiler written
+in Python, which is clear to read and slower than a production
+compiler.

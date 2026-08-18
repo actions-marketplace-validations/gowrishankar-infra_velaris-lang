@@ -1,5 +1,43 @@
 # Velaris changelog
 
+## 2.31 - A standard library that reaches outside
+Four modules so nobody writes FFI plumbing by hand:
+
+    import "http.vel" as http        get, status, ok, send, get_json
+    import "db.vel" as db            open, run, rows_json, count, close
+    import "time.vel" as time        today, clock_text, seconds
+    import "env_tools.vel" as sys    setting, number_setting, give_up
+
+They are written in Velaris, so they carry their effects: a program
+using `http` shows `net` in `velaris explain`, one using `db` shows
+`ffi`, and a pure function still cannot call either.
+
+Three builtins the modules needed, and every real script needs anyway:
+`env(name, fallback)` reads the environment, `exit_with(code)` sets the
+exit status (0-255, checked), and `read_line()` reads a line from
+standard input.
+
+## 2.30 - The language reference, and a position on concurrency
+`SPEC.md` is the specification: what Velaris means, precisely. Lexical
+structure, types, integer and float semantics, evaluation order,
+effect propagation as a property of the whole call graph, failure,
+what "proven" actually means and what is proven today, modular proof
+and the rule that a dropped premise abandons the proof, modules,
+native-versus-interpreted equivalence, the host language boundary,
+errors, and versioning.
+
+Two sections are there because a specification that lists only
+strengths is advertising. **Concurrency**: Velaris is single-threaded
+by design and has no concurrency model - stated as a position, with
+the reason (a signature of the current design cannot describe data
+races, so adding threads would break the language's central claim) and
+what would have to change first. **What this language does not have**:
+no exceptions, no closures, no inheritance, no macros, no package
+registry, no mutable data structures, and a compiler written in Python
+that is clear to read and slower than a production one.
+
+The reference is published with the documentation.
+
 ## 2.29 - Remembered proofs
 A proof that has already been done is not done again. Results are kept
 in `.velaris/proofs.json`, keyed by what the proof actually depends on:

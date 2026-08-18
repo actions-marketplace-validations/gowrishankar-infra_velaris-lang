@@ -253,6 +253,8 @@ running.
 
 ## Where to go next
 
+- [The language reference](SPEC.md) — what all of this means, precisely.
+
 - `examples/ledger.vel` — an expense tracker: records, files, reports.
 - `examples/wordcount.vel` — text analysis: maps, lambdas, failure.
 - `examples/fetcher.vel` — an HTTP tool: the network, honestly declared.

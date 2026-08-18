@@ -1,0 +1,32 @@
+// The environment a program runs in.
+//
+// import "env_tools.vel" as sys
+
+fn setting(name: Text, fallback: Text) -> Text uses io {
+    return env(name, fallback)
+}
+
+fn number_setting(name: Text, fallback: Int) -> Int uses io {
+    let raw = env(name, "")
+    if length(raw) == 0 {
+        return fallback
+    }
+    check to_int(raw) {
+        ok n {
+            return n
+        }
+        fail why {
+            return fallback
+        }
+    }
+    return fallback
+}
+
+fn succeed() uses io {
+    exit_with(0)
+}
+
+fn give_up(why: Text) uses io {
+    print(why)
+    exit_with(1)
+}

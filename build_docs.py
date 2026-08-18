@@ -117,8 +117,9 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 """
 
 PAGES = [("index.html", "Home"), ("tutorial.html", "Tutorial"),
-         ("library.html", "Library"), ("errors.html", "Errors"),
-         ("floats.html", "Floats"), ("playground.html", "Playground")]
+         ("spec.html", "Reference"), ("library.html", "Library"),
+         ("errors.html", "Errors"), ("floats.html", "Floats"),
+         ("playground.html", "Playground")]
 
 
 def shell(title: str, here: str, body: str, wide: bool = False) -> str:
@@ -192,7 +193,17 @@ def fn_signature(f) -> str:
 
 
 def library_page() -> str:
-    funcs, _ = velaris.load_program(str(HERE / "stdlib" / "std.vel"))
+    funcs = []
+    for mod in sorted((HERE / "stdlib").glob("*.vel")):
+        try:
+            got, _ = velaris.load_program(str(mod))
+        except Exception:
+            continue
+        for f in got:
+            if f.src_file and f.src_file.endswith(mod.name):
+                f.name = (f"{mod.stem}.{f.name}"
+                          if mod.name != "std.vel" else f.name)
+                funcs.append(f)
     body = ["<h1>Standard library</h1>",
             '<p class="lead">Every function below is written in '
             "Velaris and parsed onto this page by the real compiler "
@@ -341,6 +352,10 @@ compiler source itself.</p>"""
     shell("Library", "library.html", library_page()), encoding="utf-8")
 (OUT / "errors.html").write_text(
     shell("Errors", "errors.html", errors_page()), encoding="utf-8")
+(OUT / "spec.html").write_text(
+    shell("Language reference", "spec.html",
+          md_to_html((HERE / "SPEC.md").read_text(encoding="utf-8")),
+          wide=True), encoding="utf-8")
 (OUT / "floats.html").write_text(
     shell("Floats", "floats.html",
           md_to_html((HERE / "docs" / "floats.md").read_text(

@@ -142,6 +142,20 @@ database connection, a session — so every library Python has is
 reachable — but only from a function that declares `uses ffi`, and it
 can fail like anything else that leaves your program.
 
+## The standard library reaches outside
+
+```
+import "http.vel" as http     import "db.vel" as db
+import "time.vel" as time     import "env_tools.vel" as sys
+
+check http.get(url) { ok body { ... } fail why { ... } }
+check db.count(conn, "notes") { ok n { ... } fail why { ... } }
+```
+
+Written in Velaris, so they carry their effects — a program using
+`http` shows `net`, one using `db` shows `ffi`, and a pure function
+can call neither.
+
 ## Libraries
 
 ```
@@ -212,6 +226,13 @@ Proofs are cached in `.velaris/` and keyed by the function's text *and*
 the contracts it depends on, so changing a promise re-proves everything
 that relied on it. `--no-cache` proves from scratch; `velaris clean`
 forgets.
+
+## The reference
+
+[SPEC.md](SPEC.md) states precisely what the language means: semantics,
+evaluation order, effect propagation, what "proven" covers today, and
+what Velaris deliberately does not have — including
+[why it has no concurrency model](SPEC.md#13-concurrency).
 
 ## Stability
 

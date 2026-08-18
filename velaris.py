@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Velaris v2.29 — "The language where you can trust code you didn't write."
+Velaris v2.31 — "The language where you can trust code you didn't write."
 
-New in v2.29: proofs are remembered between runs, keyed by what they
-    actually depend on - the function's text and the contracts it
-    calls - so a slow proof is paid for once.
+New in v2.31: a standard library that reaches outside - http, db,
+    time and env_tools - plus env(), exit_with() and read_line(), the
+    process basics every real script needs.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -246,7 +246,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.29.0"
+VERSION = "2.31.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1258,6 +1258,9 @@ BUILTINS = {
     "json_has":   {"effects": set(),      "types": ["Text", "Text"], "ret": "Bool"},
     "json_of":    {"effects": set(),      "types": ["Any"],          "ret": "Text"},
     "args":       {"effects": {"io"},     "types": [],              "ret": "List of Text"},
+    "env":        {"effects": {"io"},     "types": ["Text", "Text"], "ret": "Text"},
+    "exit_with":  {"effects": {"io"},     "types": ["Int"],         "ret": "Unit"},
+    "read_line":  {"effects": {"io"},     "types": [],              "ret": "Text"},
     "post":       {"effects": {"net"},    "types": ["Text", "Text"], "ret": "Text"},
     "fetch_status": {"effects": {"net"},  "types": ["Text"],        "ret": "Int"},
     "format":     {"effects": set(),      "types": ["Any"],         "ret": "Text"},
@@ -4412,6 +4415,19 @@ def run_builtin(name: str, args: list, line: int):
             raise FailSignal(f"cannot reach '{url}'")
     if name == "args":
         return list(PROGRAM_ARGS)
+    if name == "env":
+        return os.environ.get(str(args[0]), str(args[1]))
+    if name == "exit_with":
+        code = int(args[0])
+        if not 0 <= code <= 255:
+            raise VelarisError("E408",
+                f"an exit code must be between 0 and 255, not {code}",
+                line, fixes=["0 means success; anything else means "
+                             "something went wrong"])
+        raise SystemExit(code)
+    if name == "read_line":
+        got = sys.stdin.readline()
+        return got.rstrip("\n")
     if name == "format":
         template = str(args[0])
         pieces = template.split("{}")
