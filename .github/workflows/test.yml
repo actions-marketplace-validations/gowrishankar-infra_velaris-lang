@@ -33,6 +33,8 @@ jobs:
         run: python fuzz_native.py 60
       - name: How much is proven
         run: velaris proofs examples stdlib || true
+      - name: Every fallible builtin is enforced
+        run: python check_fallible.py
       - name: The sandbox cannot be escaped
         run: python check_sandbox.py
       - name: Wrong programs are refused for the right reason

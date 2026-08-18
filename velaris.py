@@ -252,7 +252,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.44.0"
+VERSION = "2.45.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -2514,6 +2514,11 @@ def check_proofs(funcs: list[Function], records: list,
             return has_fresh(e.arr) or has_fresh(e.length)
         if isinstance(e, OpaqueList):
             return has_fresh(e.length)
+        if isinstance(e, RecListVal):
+            return has_fresh(e.length) or any(
+                has_fresh(a) for a in e.arrays.values())
+        if isinstance(e, RecElem):
+            return has_fresh(e.idx) or has_fresh(e.src.length)
         if isinstance(e, MapVal):
             return has_fresh(e.vals) or has_fresh(e.present)
         if isinstance(e, GridVal):
@@ -2702,9 +2707,17 @@ def check_proofs(funcs: list[Function], records: list,
             return RecVal(node.name, vals)
         if isinstance(node, FieldGet):
             obj = to_z3(node.obj, env, ctx)
+            if isinstance(obj, RecElem):
+                arr = obj.src.arrays.get(node.field)
+                if arr is None:
+                    raise Unprovable()   # a field the model skipped
+                return z3.Select(arr, obj.idx)
             if not isinstance(obj, RecVal):
                 raise Unprovable()
-            return obj.fields[node.field]
+            got = obj.fields.get(node.field)
+            if got is None:
+                raise Unprovable()
+            return got
         if isinstance(node, ListLit):
             vals = [to_z3(it, env, ctx) for it in node.items]
             if vals and all(z3.is_string(v) for v in vals):
@@ -2810,6 +2823,30 @@ def check_proofs(funcs: list[Function], records: list,
                 if node.name == "length":
                     return a0.length
                 raise Unprovable()      # contents are invisible
+            if isinstance(a0, RecListVal):
+                if node.name == "length":
+                    return a0.length
+                if node.name == "get":
+                    a1 = to_z3(node.args[1], env, ctx)
+                    if not hasattr(a1, "sort") or not z3.is_int(a1):
+                        raise Unprovable()
+                    if ctx is not None:
+                        prove_bounds(a1, a0.length, ctx, node.line)
+                    return RecElem(a0, a1)
+                if node.name == "push":
+                    a1 = to_z3(node.args[1], env, ctx)
+                    if not isinstance(a1, RecVal) \
+                            or a1.rname != a0.rname:
+                        raise Unprovable()
+                    new_arrays = {}
+                    for fname, arr in a0.arrays.items():
+                        fv = a1.fields.get(fname)
+                        if fv is None or not hasattr(fv, "sort") \
+                                or not z3.is_int(fv):
+                            raise Unprovable()
+                        new_arrays[fname] = z3.Store(arr, a0.length, fv)
+                    return RecListVal(a0.rname, new_arrays,
+                                      a0.length + 1)
             if not isinstance(a0, ListVal):
                 if z3.is_string(a0):
                     return z3.Length(a0)        # characters in the text
@@ -3239,6 +3276,14 @@ def check_proofs(funcs: list[Function], records: list,
                                  z3.Array(base + "__lens", z3.IntSort(),
                                           z3.IntSort()), gl)
                 facts.append(gl >= 0)
+            elif old is not None and isinstance(old, RecListVal):
+                counter[0] += 1
+                arrays = {f: z3.Array(f"__{n}_{f}_{counter[0]}",
+                                      z3.IntSort(), z3.IntSort())
+                          for f in old.arrays}
+                ln = z3.Int(f"__{n}_rlen_{counter[0]}")
+                out[n] = RecListVal(old.rname, arrays, ln)
+                facts.append(ln >= 0)
             elif old is not None and isinstance(old, OpaqueList):
                 counter[0] += 1
                 ln = z3.Int(f"__{n}_olen_{counter[0]}")
@@ -3442,6 +3487,19 @@ def check_proofs(funcs: list[Function], records: list,
                     [k0], z3.Select(lens, k0) >= 0))
             elif ptype in rec_fields and provable_rec(ptype):
                 env[pname] = mk_rec(pname, ptype)
+            elif (ptype.startswith("List of ")
+                  and ptype[len("List of "):] in rec_fields
+                  and provable_rec(ptype[len("List of "):])):
+                rname = ptype[len("List of "):]
+                arrays = {}
+                for fname, ftype in rec_fields[rname]:
+                    if ftype == "Int":
+                        arrays[fname] = z3.Array(
+                            f"{pname}__{fname}", z3.IntSort(),
+                            z3.IntSort())
+                ln = z3.Int(pname + "__n")
+                env[pname] = RecListVal(rname, arrays, ln)
+                list_facts.append(ln >= 0)
             elif ptype.startswith("List of "):
                 # the contents cannot be modelled, but the LENGTH can -
                 # and length is what contracts about lists usually say.
@@ -4262,6 +4320,27 @@ def _compile_native(funcs: list[Function],
 
 class ReturnSignal(Exception):
     def __init__(self, value): self.value = value
+
+
+class RecElem:
+    """rows[i] before a field is chosen: .amount selects from the
+    field's array at that index."""
+    def __init__(self, src, idx):
+        self.src = src
+        self.idx = idx
+
+
+class RecListVal:
+    """A list of records, as one array per provable field.
+
+    get(rows, i).amount becomes Select(amount_arr, i) - so bounds are
+    checked (the off-by-one over a record list refused before running,
+    like the Int-list case) and field arithmetic can prove.
+    """
+    def __init__(self, rname, arrays, length):
+        self.rname = rname          # the record type's name
+        self.arrays = arrays        # field name -> z3 Int array
+        self.length = length
 
 
 class OpaqueList:

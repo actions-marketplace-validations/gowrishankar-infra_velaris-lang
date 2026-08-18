@@ -293,6 +293,40 @@ here first. Until then, a Velaris program that needs parallelism should
 get it outside the program: run several, or reach the host language
 through `uses ffi` and accept that what happens there is unverified.
 
+## 13a. Early loop exit: considered, and answered
+
+Velaris has no `break` or `continue`. An adversarial review argued the
+absence *hurts* the invariant story it presumably protects: exiting via
+a flag (`while going and i < n`) makes invariants harder to state, not
+easier. That criticism is fair, and this section is the considered
+answer rather than a shrug.
+
+The reason is the prover's exit knowledge. After `while i < n` with no
+early exit, exactly two facts hold: the invariants, and `not (i < n)`.
+That negated condition is what lets the prover pin the counter at the
+boundary - it is how promises about what a loop built are proven, and
+how the final-turn bounds check works. A `break` makes the exit
+condition a disjunction of every break site's path condition, and those
+paths mention loop-local state the outside cannot see. Every current
+loop proof would weaken from "the condition is false" to "the condition
+is false OR any break fired", which in practice abandons most of them.
+
+The invariant-friendly alternative is to put the exit in the loop test,
+where the prover can see it:
+
+    while i < n and not found {
+        ...
+    }
+    // afterward: not (i < n and not found)
+    //   == i >= n or found        - still a usable fact
+
+This costs a Bool and reads slightly worse than `break`. What it buys
+is that every promise proven about loops keeps proving. If a future
+design finds a way to give `break` the same exit precision - for
+example, requiring each break site to state what holds when it fires -
+this decision will be revisited in those terms. Until then the answer
+is: no, and the flag is the supported idiom.
+
 ## 14. Errors
 
 Every error has a stable code (`E###`), a message in plain English, a

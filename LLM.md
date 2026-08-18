@@ -115,8 +115,11 @@ These are the mistakes that actually happen. Read them twice.
 8. **`main` cannot fail** and takes no parameters.
 
 9. **There are no closures, exceptions, classes, inheritance, `null`,
-   threads, `break` or `continue`.** Do not reach for them. To leave a
-   loop early, keep a flag: `while going and i < n { ... }`.
+   threads, `break` or `continue`.** To leave a loop early, put the
+   exit in the loop test where the prover can see it:
+   `while i < n and not found { ... }` - afterward the prover knows
+   `i >= n or found`, so loop promises keep proving. (SPEC.md §13a has
+   the full reasoning.)
 
 10. **Strings concatenate with `+`;** use `format("{} and {}", a, b)`
     for anything more, and the number of `{}` must match the number of

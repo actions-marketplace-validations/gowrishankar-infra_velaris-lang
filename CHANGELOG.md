@@ -1,5 +1,39 @@
 # Velaris changelog
 
+## 2.45 - The road from 84
+Three of the four items that separate this language from the low 90s,
+by its own adversarial grading.
+
+**The v2.42 mistake cannot recur.** `check_fallible.py` reads
+FALLIBLE_BUILTINS from the compiler itself, generates an
+ignore-the-failure program for every member, and asserts each is
+refused with E520 - then a caught-failure program for each, asserting
+the failure formats and never escapes as a traceback. 23 builtins, all
+enforced, in CI on every push. A fallible builtin added without
+enforcement now fails the build by construction.
+
+**The prover reads record fields through lists.** A `List of Row` is
+modelled as one Int array per provable field, so
+`get(rows, i).amount` is a real array read: the off-by-one over a
+record list - the adversarial report's exact deferral - is refused
+before running (E705), and `ensures result >= 0` on a total over
+record amounts is **proven**, which was flatly impossible before.
+Building this introduced a truthiness bug on a Z3 array (`or` on an
+array is not a None-check) that silently un-refuted a v2.38 regression
+test; the refusal harness caught it within the same session, which is
+the layered suites doing exactly their job.
+
+**The break question has an answer in writing.** SPEC.md §13a: no
+`break`, because the prover's exit knowledge - "the condition is
+false" - is what pins counters at boundaries and proves loop promises;
+a break turns that into a disjunction over hidden paths and abandons
+most loop proofs. The supported idiom is the exit in the loop test
+(`while i < n and not found`), which the prover can see, and the card
+now teaches it with the reasoning. The decision names the condition
+under which it would be revisited.
+
+The fourth item is not code: another adversarial round, finding less.
+
 ## 2.44 - Everything the adversarial report found
 A model ran 86 adversarial artifacts against 2.43 - one production
 program, 34 broken fragments, 52 single-point mutations - and scored

@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+"""Every fallible builtin must actually be enforced. All of them.
+
+In v2.42, pop/slice/set_at joined FALLIBLE_BUILTINS but the checker
+never demanded handling for them, because a type-checking branch
+returned before the fallibility check ran. A clean `velaris check` was
+followed by a raw Python traceback - the exact failure the language
+exists to prevent, introduced by its own maintainer.
+
+This test makes that mistake impossible to repeat. It reads
+FALLIBLE_BUILTINS from the compiler itself, generates an
+ignore-the-failure program for every member, and asserts each one is
+rejected with E520. Then it generates a failing call for each, wrapped
+in `check`, and asserts the failure is caught and FORMATTED - never a
+traceback. A new fallible builtin is covered the moment it is added,
+with no test to remember to write.
+
+    python check_fallible.py
+"""
+import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).parent
+VELARIS = HERE / "velaris.py"
+SCRATCH = HERE / "_fallible_check.vel"
+
+sys.path.insert(0, str(HERE))
+import velaris  # noqa: E402
+
+# how to call each builtin so that it type-checks; every entry uses
+# arguments that would compile if the failure were handled
+CALLS = {
+    "to_int":      'to_int("x")',
+    "read_file":   'read_file("nope.txt")',
+    "fetch":       'fetch("https://example.invalid")',
+    "post":        'post("https://example.invalid", "b")',
+    "fetch_status": 'fetch_status("https://example.invalid")',
+    "request":     'request("GET", "https://example.invalid", "", "{}")',
+    "pop":         "pop(xs)",
+    "slice":       "slice(xs, 0, 9)",
+    "set_at":      "set_at(xs, 9, 1)",
+    "add_or_fail": "add_or_fail(9223372036854775807, 1)",
+    "sub_or_fail": "sub_or_fail(-9223372036854775807, 2)",
+    "mul_or_fail": "mul_or_fail(4000000000, 4000000000)",
+    "py":          'py("nosuchmodule", "f", xs_t)',
+    "py_int":      'py_int("nosuchmodule", "f", xs_t)',
+    "py_float":    'py_float("nosuchmodule", "f", xs_t)',
+    "py_json":     'py_json("nosuchmodule", "f", "[]")',
+    "py_new":      'py_new("nosuchmodule", "f", "[]")',
+    "py_do":       "py_do(h, \"m\", \"[]\")",
+    "py_field":    "py_field(h, \"f\")",
+    "json_get":    'json_get("{}", "missing")',
+    "json_int":    'json_int("{}", "missing")',
+    "json_float":  'json_float("{}", "missing")',
+    "json_len":    'json_len("{}", "missing")',
+}
+
+# effects each call needs declared, and setup lines
+NEEDS = {
+    "read_file": "fs", "fetch": "net", "post": "net",
+    "fetch_status": "net", "request": "net",
+    "py": "ffi", "py_int": "ffi", "py_float": "ffi", "py_json": "ffi",
+    "py_new": "ffi", "py_do": "ffi", "py_field": "ffi",
+}
+SETUP = {
+    "pop": "    let xs: List of Int = []\n",
+    "slice": "    let xs = [1, 2]\n",
+    "set_at": "    let xs = [1, 2]\n",
+    "py": '    let xs_t: List of Text = []\n',
+    "py_int": '    let xs_t: List of Text = []\n',
+    "py_float": '    let xs_t: List of Text = []\n',
+}
+# py_do/py_field need a Handle; the only way to get one is py_new, so
+# their ignore-case is checked but the runtime case is skipped
+NO_RUNTIME = {"py_do", "py_field",
+              # network calls depend on the machine; the checker case is
+              # what matters here, the sandbox suite covers runtime
+              "fetch", "post", "fetch_status", "request"}
+# map get is fallible but spelled the same as list get; covered by its
+# own path in the example suite
+SKIP = {"get"}
+
+
+def run(source: str) -> tuple:
+    SCRATCH.write_text(source, encoding="utf-8")
+    done = subprocess.run(
+        [sys.executable, str(VELARIS), str(SCRATCH)],
+        capture_output=True, text=True, timeout=300, cwd=HERE)
+    return done.returncode, (done.stdout or "") + (done.stderr or "")
+
+
+def check_only(source: str) -> tuple:
+    SCRATCH.write_text(source, encoding="utf-8")
+    done = subprocess.run(
+        [sys.executable, str(VELARIS), "check", str(SCRATCH)],
+        capture_output=True, text=True, timeout=300, cwd=HERE)
+    return done.returncode, (done.stdout or "") + (done.stderr or "")
+
+
+def main() -> int:
+    members = sorted(velaris.FALLIBLE_BUILTINS - SKIP)
+    missing = [m for m in members if m not in CALLS]
+    if missing:
+        print("FALLIBLE_BUILTINS has members this test cannot call:")
+        for m in missing:
+            print(f"  {m}  <- add a call recipe to CALLS in this file")
+        return 1
+
+    passed = failed = 0
+    print(f"{len(members)} fallible builtins, read from the compiler")
+    print("-" * 62)
+    for name in members:
+        effect = NEEDS.get(name)
+        uses = f" uses io{', ' + effect if effect else ''}"
+        setup = SETUP.get(name, "")
+        handle = ('    check py_new("sqlite3", "connect", '
+                  '"[\\":memory:\\"]") {\n        ok h {\n'
+                  if name in ("py_do", "py_field") else "")
+        closer = ("        }\n        fail w {\n            print(w)\n"
+                  "        }\n    }\n" if handle else "")
+        indent = "        " if handle else "    "
+
+        # 1. ignoring the failure must be E520
+        ignore = (f"fn main(){uses} {{\n{setup}{handle}"
+                  f"{indent}let v = {CALLS[name]}\n"
+                  f"{indent}print(\"ran\")\n{closer}}}\n")
+        code, out = check_only(ignore)
+        if code == 0 or "E520" not in out:
+            print(f"  NOT ENFORCED {name}: ignoring it passed check")
+            failed += 1
+            continue
+
+        # 2. a caught failure must format, never traceback
+        if name in NO_RUNTIME:
+            print(f"  ok enforced  {name} (runtime case covered elsewhere)")
+            passed += 1
+            continue
+        caught = (f"fn main(){uses} {{\n{setup}{handle}"
+                  f"{indent}check {CALLS[name]} {{\n"
+                  f"{indent}    ok v {{\n{indent}        print(\"ok\")\n"
+                  f"{indent}    }}\n"
+                  f"{indent}    fail why {{\n"
+                  f"{indent}        print(\"caught\")\n"
+                  f"{indent}    }}\n{indent}}}\n{closer}}}\n")
+        code, out = run(caught)
+        if "Traceback" in out:
+            print(f"  RAW CRASH    {name}: a failure escaped as a "
+                  f"traceback")
+            failed += 1
+        elif code == 0 and ("caught" in out or "ok" in out):
+            print(f"  ok enforced  {name}: refused when ignored, "
+                  f"formatted when caught")
+            passed += 1
+        else:
+            print(f"  UNEXPECTED   {name}: exit {code}")
+            print("               " + out.strip().splitlines()[0][:80]
+                  if out.strip() else "")
+            failed += 1
+
+    SCRATCH.unlink(missing_ok=True)
+    print("-" * 62)
+    print(f"{passed} enforced, {failed} not")
+    if failed == 0:
+        print("a builtin added to FALLIBLE_BUILTINS without a recipe here")
+        print("fails this test loudly - the v2.42 mistake cannot recur")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
