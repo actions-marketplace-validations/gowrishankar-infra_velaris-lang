@@ -41,7 +41,7 @@ refutes it with an exact counterexample when it lies.
 
 | Guarantee | What it means |
 |---|---|
-| **Effects are visible** | `uses io, net, fs` — a function without `uses net` can never touch the network, transitively. Hidden behavior does not compile. |
+| **Effects are visible** | `uses io, net, fs, ffi` — a function without `uses net` can never touch the network, transitively, and one without `uses ffi` can never call out to Python. Hidden behavior does not compile. |
 | **Promises are proven** | `requires` / `ensures` / loop `invariant`, verified by Z3 with modular call summaries — including records, maps, nested lists, quantified list properties, failure paths, and floats in **genuine IEEE-754** (the prover refutes `x + 0.1 + 0.1 == x + 0.2` with the exact double that breaks it). |
 | **Failure is unignorable** | `-> Int or fail` in the signature; callers must `check` or `try`. Forgetting the error path is a compile error — builtins included. |
 | **Fast where it's safe** | Pure functions over numbers, list reads, and text — including text built inside them — JIT to native code via LLVM (~10,000× on hot arithmetic, ~45× on text building), differential-tested against the interpreter. Native reads are bounds-guarded and text is built in a runtime-owned buffer, so results always match interpreted. |
@@ -115,6 +115,19 @@ file persistence, sorted reports.
 <file> [n]` counts word frequencies and prints a ranked histogram.
 `examples/fetcher.vel` — an HTTP tool: checks a status, then summarises
 a page, with every network call declared and every failure handled.
+
+## Reaching other languages
+
+```
+fn today() -> Text uses ffi or fail {
+    let nothing: List of Text = []
+    return try py("datetime.date", "today", nothing)
+}
+```
+
+`py` / `py_int` / `py_float` call Python, so every library Python has is
+reachable — but only from a function that declares `uses ffi`, and it
+can fail like anything else that leaves your program.
 
 ## Libraries
 

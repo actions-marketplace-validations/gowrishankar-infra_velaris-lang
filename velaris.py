@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v2.24 — "The language where you can trust code you didn't write."
+Velaris v2.25 — "The language where you can trust code you didn't write."
 
-New in v2.24: lists of Text are proof territory, and split is
-    modelled - unknown pieces, but always at least one.
+New in v2.25: Velaris can call Python - py, py_int, py_float - so
+    every library Python has is reachable. It needs 'uses ffi', so
+    reaching outside is visible in the signature like every other
+    power, and a pure function still cannot do it.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -243,7 +245,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.24.1"
+VERSION = "2.25.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1163,7 +1165,7 @@ def blame(fn_or_rec, err: VelarisError) -> VelarisError:
 # ---------------------------------------------------------------------------
 
 FALLIBLE_BUILTINS = {"to_int", "read_file", "fetch", "post",
-                     "fetch_status"}   # + get on maps
+                     "fetch_status", "py", "py_int", "py_float"}   # + get on maps
 
 PROGRAM_ARGS: list = []    # filled by the CLI: velaris prog.vel a b c
 
@@ -1238,6 +1240,9 @@ BUILTINS = {
     "put":        {"effects": set(),      "types": ["Any", "Any", "Any"], "ret": "Any"},
     "get_or":     {"effects": set(),      "types": ["Any", "Any", "Any"], "ret": "Any"},
     "code_at":    {"effects": set(),      "types": ["Text", "Int"], "ret": "Int"},
+    "py":         {"effects": {"ffi"},    "types": ["Text", "Text", "List of Text"], "ret": "Text"},
+    "py_int":     {"effects": {"ffi"},    "types": ["Text", "Text", "List of Text"], "ret": "Int"},
+    "py_float":   {"effects": {"ffi"},    "types": ["Text", "Text", "List of Text"], "ret": "Float"},
     "args":       {"effects": {"io"},     "types": [],              "ret": "List of Text"},
     "post":       {"effects": {"net"},    "types": ["Text", "Text"], "ret": "Text"},
     "fetch_status": {"effects": {"net"},  "types": ["Text"],        "ret": "Int"},
@@ -3915,6 +3920,50 @@ def run_builtin(name: str, args: list, line: int):
         return args[1] in args[0]
     if name == "keys":
         return list(args[0].keys())
+    if name in ("py", "py_int", "py_float"):
+        module, func, call_args = args[0], args[1], args[2]
+        import importlib
+        mod, rest = None, ""
+        parts = str(module).split(".")
+        for cut in range(len(parts), 0, -1):     # datetime.date works:
+            try:                                  # import what imports,
+                mod = importlib.import_module(".".join(parts[:cut]))
+                rest = ".".join(parts[cut:])      # reach the rest by name
+                break
+            except ImportError:
+                continue
+        if mod is None:
+            raise FailSignal(f"cannot import '{module}'")
+        target = mod
+        for part in ([p for p in rest.split(".") if p]
+                     + [p for p in str(func).split(".") if p]):
+            target = getattr(target, part, None)
+            if target is None:
+                raise FailSignal(f"'{module}' has no '{func}'")
+        try:
+            out = target(*[str(a) for a in call_args])
+        except TypeError as e:
+            if "byte" not in str(e).lower() and "encode" not in str(e).lower():
+                raise FailSignal(f"{module}.{func} failed: {e}")
+            try:                                  # it wanted bytes: the
+                out = target(*[str(a).encode("utf-8")  # text, as UTF-8
+                               for a in call_args])
+            except Exception as e2:
+                raise FailSignal(f"{module}.{func} failed: {e2}")
+        except Exception as e:
+            raise FailSignal(f"{module}.{func} failed: {e}")
+        if isinstance(out, (bytes, bytearray)):
+            out = out.decode("utf-8", errors="replace")
+        try:
+            if name == "py_int":
+                return int(out)
+            if name == "py_float":
+                return float(out)
+            return str(out)
+        except (TypeError, ValueError):
+            raise FailSignal(
+                f"{module}.{func} gave back something that is not a "
+                f"{'whole number' if name == 'py_int' else 'decimal' if name == 'py_float' else 'text'}")
     if name == "code_at":
         t, i = args
         if i < 0 or i >= len(t):

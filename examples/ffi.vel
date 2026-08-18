@@ -1,0 +1,55 @@
+// v2.25: reaching the outside world, visibly.
+//
+// Velaris can call Python, which means it can reach every library
+// Python has - but only through a function that says 'uses ffi'. A
+// pure function still cannot do it, and neither can anything it
+// calls. The power is available; it is never hidden.
+//
+// py(module, function, args)        gives back Text
+// py_int(module, function, args)    gives back a whole number
+// py_float(module, function, args)  gives back a decimal
+//
+// All three can fail - a module that is not installed, a function
+// that does not exist, a bad argument - so callers must handle it.
+
+fn today() -> Text uses ffi or fail {
+    let nothing: List of Text = []
+    return try py("datetime.date", "today", nothing)
+}
+
+fn base64_of(text: Text) -> Text uses ffi or fail {
+    return try py("base64", "b64encode", [text])
+}
+
+fn digits_in(text: Text) -> Int uses ffi or fail
+ensures result >= 0
+{
+    return try py_int("builtins", "len", [text])
+}
+
+fn main() uses io, ffi {
+    check today() {
+        ok d {
+            print(format("today: {}", d))
+        }
+        fail why {
+            print(format("could not ask for the date: {}", why))
+        }
+    }
+    check base64_of("velaris") {
+        ok e {
+            print(format("base64: {}", e))
+        }
+        fail why {
+            print(format("could not encode: {}", why))
+        }
+    }
+    check digits_in("hello") {
+        ok n {
+            print(format("length via python: {}", n))
+        }
+        fail why {
+            print(format("could not measure: {}", why))
+        }
+    }
+}

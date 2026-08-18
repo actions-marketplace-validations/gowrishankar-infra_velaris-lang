@@ -1,5 +1,26 @@
 # Velaris changelog
 
+## 2.25 - Reaching the outside world, visibly
+Velaris can call Python now, which means it can reach every library
+Python has - JSON, dates, hashing, databases, anything - through three
+builtins:
+
+    py(module, function, args)        -> Text
+    py_int(module, function, args)    -> Int
+    py_float(module, function, args)  -> Float
+
+They need `uses ffi`, so a function that reaches outside says so in its
+signature, and a pure function still cannot do it - nor can anything it
+calls. All three can fail (module missing, function absent, bad
+argument), so callers handle it like any other failure. `velaris
+explain` lists `ffi` next to the functions that use it, which is the
+whole point: the power is available and it is never hidden.
+
+Two conveniences, both deterministic: a dotted module path like
+`datetime.date` is resolved by importing what imports and reaching the
+rest by name, and a function that wants bytes rather than text gets the
+text as UTF-8 after the first refusal.
+
 ## 2.24.1 - The extension follows the language's version
 The 2.23 release tried to publish the extension as 2.22.1 - a version
 already on the Marketplace - and reported that as a failure. The
