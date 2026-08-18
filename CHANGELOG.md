@@ -1,5 +1,21 @@
 # Velaris changelog
 
+## 2.20 - Whole numbers have a size, and outgrowing it is an error
+The fuzzer added in 2.16 found a real disagreement: native code holds
+whole numbers in 64 bits and wraps around, while the interpreter used
+Python's unlimited integers and kept counting. Same program, two
+answers, silently.
+
+Neither behaviour is acceptable, so both are gone. A whole number in
+Velaris is 64-bit, and arithmetic that outgrows it is an error (E407)
+in both engines - the interpreter checks the range, native code uses
+the processor's overflow flag through LLVM's checked intrinsics. The
+two seeds that found the bug now agree, and so do 250 fresh random
+programs.
+
+This is the first bug the fuzzer caught on its own, which is the
+entire reason it exists.
+
 ## 2.19 - pip install velaris-lang
 Velaris is on PyPI. Installing is now one line with no repository URL
 to remember, and every release publishes automatically from its tag

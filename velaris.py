@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v2.19 — "The language where you can trust code you didn't write."
+Velaris v2.20 — "The language where you can trust code you didn't write."
 
-New in v2.19: pip install velaris-lang. Velaris is on PyPI, and every
-    release publishes from its tag automatically.
+New in v2.20: whole numbers are 64-bit, and arithmetic that outgrows
+    that is an error (E407) in BOTH engines - found by the fuzzer,
+    which caught native code wrapping while the interpreter kept
+    counting.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -239,7 +241,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.19.0"
+VERSION = "2.20.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1162,6 +1164,22 @@ FALLIBLE_BUILTINS = {"to_int", "read_file", "fetch", "post",
                      "fetch_status"}   # + get on maps
 
 PROGRAM_ARGS: list = []    # filled by the CLI: velaris prog.vel a b c
+
+INT_MIN, INT_MAX = -(2 ** 63), 2 ** 63 - 1
+
+
+def checked_int(value: int, op: str, line: int) -> int:
+    """Whole numbers are 64-bit. Outgrowing that is an error, because
+    the alternative is native code wrapping while the interpreter keeps
+    counting - two engines, two answers, and no way to know which."""
+    if isinstance(value, int) and not INT_MIN <= value <= INT_MAX:
+        raise VelarisError("E407",
+            f"this '{op}' made a number too big to hold "
+            f"(whole numbers go from {INT_MIN} to {INT_MAX})", line,
+            fixes=["keep the numbers smaller",
+                   "or work in smaller units, like cents instead of "
+                   "rupees"])
+    return value
 
 try:                        # proofs are optional; the language is not
     import z3 as _z3_probe
@@ -3214,6 +3232,14 @@ def _compile_native(funcs: list[Function],
     arena_used.initializer = i64(0)
     arena_full = ir.GlobalVariable(module, i64, name="velaris_arena_full")
     arena_full.initializer = i64(0)
+    overflowed = ir.GlobalVariable(module, i64, name="velaris_overflow")
+    overflowed.initializer = i64(0)
+    ovf_fns = {}
+    for op_name in ("sadd", "ssub", "smul"):
+        fty = ir.FunctionType(
+            ir.LiteralStructType([i64, ir.IntType(1)]), [i64, i64])
+        ovf_fns[op_name] = ir.Function(
+            module, fty, name=f"llvm.{op_name}.with.overflow.i64")
     lit_count = [0]
     table = {f.name: f for f in funcs}
     llvm_fns = {}
@@ -3495,12 +3521,21 @@ def _compile_native(funcs: list[Function],
                     return b.or_(ee(e.left), ee(e.right))
                 l, r = ee(e.left), ee(e.right)
                 flt = l.type == f64
+
+                def checked(kind, value):
+                    """Same answer as interpreted: too big is an error."""
+                    pair = b.call(ovf_fns[kind], [l, r])
+                    bit = b.extract_value(pair, 1)
+                    was = b.load(overflowed)
+                    b.store(b.select(bit, i64(1), was), overflowed)
+                    return b.extract_value(pair, 0)
+
                 if e.op == "+":
-                    return b.fadd(l, r) if flt else b.add(l, r)
+                    return b.fadd(l, r) if flt else checked("sadd", None)
                 if e.op == "-":
-                    return b.fsub(l, r) if flt else b.sub(l, r)
+                    return b.fsub(l, r) if flt else checked("ssub", None)
                 if e.op == "*":
-                    return b.fmul(l, r) if flt else b.mul(l, r)
+                    return b.fmul(l, r) if flt else checked("smul", None)
                 if flt:
                     return b.zext(b.fcmp_ordered(CMP[e.op], l, r), i64)
                 return b.zext(b.icmp_signed(CMP[e.op], l, r), i64)
@@ -3588,6 +3623,8 @@ def _compile_native(funcs: list[Function],
     idx_addr = engine.get_global_value_address("velaris_oob_idx")
     len_addr = engine.get_global_value_address("velaris_oob_len")
     flag = ctypes.cast(oob_addr, I64P)
+    ovf_cell = ctypes.cast(
+        engine.get_global_value_address("velaris_overflow"), I64P)
     flag_i = ctypes.cast(idx_addr, I64P)
     flag_n = ctypes.cast(len_addr, I64P)
 
@@ -3638,9 +3675,19 @@ def _compile_native(funcs: list[Function],
                     cargs.append(v)
             for _attempt in range(6):
                 flag[0] = 0
+                ovf_cell[0] = 0
                 arena_used_cell[0] = 0
                 arena_full_cell[0] = 0
                 r = raw(*cargs)
+                if ovf_cell[0]:
+                    ovf_cell[0] = 0
+                    raise VelarisError("E407",
+                        "this arithmetic made a number too big to hold "
+                        f"(whole numbers go from {INT_MIN} to "
+                        f"{INT_MAX})", fn.line,
+                        fixes=["keep the numbers smaller",
+                               "or work in smaller units, like cents "
+                               "instead of rupees"])
                 if not arena_full_cell[0]:
                     break
                 grow_arena()          # too small: bigger buffer, run again
@@ -4009,9 +4056,11 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
             if node.op == "+":
                 if isinstance(l, str) or isinstance(r, str):
                     return to_text(l) + to_text(r)
-                return l + r
-            if node.op == "-":  return l - r
-            if node.op == "*":  return l * r
+                return checked_int(l + r, "+", node.line)
+            if node.op == "-":
+                return checked_int(l - r, "-", node.line)
+            if node.op == "*":
+                return checked_int(l * r, "*", node.line)
             if node.op == "/":
                 if r == 0:
                     raise VelarisError("E403", "division by zero", node.line,

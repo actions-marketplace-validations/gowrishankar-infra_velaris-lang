@@ -150,6 +150,13 @@ is a compile error at *your* call site. Full
 [reference](https://gowrishankar-infra.github.io/velaris-lang/library.html),
 generated from the real compiler.
 
+## Numbers
+
+Whole numbers are 64-bit. Arithmetic that outgrows that range is an
+error, not a silent wrap — and the same error whether your code is
+interpreted or running as machine code. Floats are IEEE-754 doubles,
+proven as such.
+
 ## Stability
 
 Semantic versioning: breaking changes **only at major versions** (v2.0
