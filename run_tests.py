@@ -56,6 +56,7 @@ EXPECT = {
     "edges.vel": "RUNS",
     "sandbox.vel": "RUNS",
     "rec_push.vel": "RUNS",
+    "avg_bad.vel": "REJECTED",
     "grid_bad.vel": "REJECTED",
     "lambda_contract_bad.vel": "REJECTED",
     "map_bad.vel": "REJECTED",
@@ -134,6 +135,7 @@ def main() -> int:
         # years > 30, which its main deliberately never calls - that IS
         # the demo's point. It runs clean under runtime checks.
         proof_only = ["proof_catch.vel", "fail_proof_bad.vel",
+                      "avg_bad.vel",
                       "div_bad.vel", "grid_bad.vel"]
         for name in proof_only:
             expect[name] = "RUNS"

@@ -252,7 +252,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.41.1"
+VERSION = "2.41.2"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -2798,8 +2798,14 @@ def check_proofs(funcs: list[Function], records: list,
 
     def prove_nonzero(divisor, ctx, line, op: str):
         """Prove the divisor is never zero; only report real violations."""
-        if has_fresh(divisor) or any(has_fresh(c) for c in ctx.conds):
-            return                       # runtime check still guards
+        if has_fresh(divisor):
+            return          # the divisor itself is unknown here; the
+                            # runtime check still guards it
+        # conditions mentioning havoc'd values stay in the solver rather
+        # than cancelling the proof: dropping them would invent
+        # counterexamples, and keeping them costs nothing. Without this a
+        # loop anywhere before the division hid the check entirely -
+        # which is the shape of nearly every average.
         solver = z3.Solver()
         solver.set("timeout", solver_budget())
         solver.add(*ctx.param_assum)

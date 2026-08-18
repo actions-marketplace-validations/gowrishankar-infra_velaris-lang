@@ -1,5 +1,29 @@
 # Velaris changelog
 
+## 2.41.2 - A loop no longer hides a divide by zero
+A second model read `velaris card`, wrote an expense report, then
+deliberately removed a `requires length(items) > 0` guard and predicted
+the compiler would catch the division. It did not.
+
+The cause: the divide-by-zero proof skipped itself whenever *any*
+condition on the path mentioned a value a loop had made unknown. Since
+almost every average sums in a loop before dividing, the check was
+hiding exactly where it was needed. The divisor itself was perfectly
+knowable the whole time.
+
+Now the divisor is judged on its own terms and loop conditions stay in
+the solver rather than cancelling the proof - dropping them would have
+invented counterexamples, keeping them costs nothing.
+`examples/avg_bad.vel` is the shape, rejected before running.
+
+Still runtime-checked: dividing by the length of a list of **records**,
+because the prover cannot model those at all. That limit is real and
+documented; this release fixes the case where the limit was being
+claimed falsely.
+
+Two models, two programs, two real defects found in one evening. The
+card is doing what it was built for.
+
 ## 2.41.1 - The card worked, and the first program it produced found a bug
 Pasting `velaris card` into a model that had never heard of Velaris
 produced a correct program on the first attempt - and that program

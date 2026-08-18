@@ -4,6 +4,15 @@ Paste this whole file into a model before asking it to write Velaris.
 It is written to be read by a model, not a person: complete, compact,
 and with the failure modes named. `velaris card` prints it.
 
+## This is a real language you can run
+
+`pip install velaris-lang`, then `velaris program.vel`. There is a
+browser playground at
+<https://gowrishankar-infra.github.io/velaris-lang/playground.html> and
+the compiler is one Python file at
+<https://github.com/gowrishankar-infra/velaris-lang>. Write code
+expecting it to actually execute.
+
 ## What Velaris is
 
 A small language where a function's signature declares its types, the

@@ -1,0 +1,19 @@
+// Sum in a loop, then divide by the length. Nearly every average has
+// this shape, and the list can be empty.
+//
+// Rejected before running. Until v2.41.2 a loop anywhere before a
+// division hid this check completely - found because a language model
+// wrote an expense report, removed the guard on purpose, and predicted
+// the compiler would catch it. It did not. Now it does.
+
+fn average(xs: List of Int) -> Int {
+    let total = 0
+    for x in xs {
+        total = total + x
+    }
+    return total / length(xs)
+}
+
+fn main() uses io {
+    print(average([1, 2, 3]))
+}
