@@ -1,5 +1,18 @@
 # Velaris changelog
 
+## 2.28 - velaris build: hand someone your program
+`velaris build program.vel` produces a single executable containing
+your program, everything it imports, the standard library, and the
+compiler itself. The person you give it to needs nothing installed -
+not Python, not Velaris - which is the difference between a language
+you write scripts in and one you deliver software with.
+
+The program is compiled and proof-checked before it is built, so a
+program that does not compile is never shipped. Command line arguments
+reach `args()` as usual. Building needs PyInstaller
+(`pip install pyinstaller`), and the compiler says so plainly when it
+is missing.
+
 ## 2.27 - Handles: real libraries, not just functions
 A `Handle` is a ticket for something living on the Python side - a
 database connection, an HTTP session, a file. That is the difference

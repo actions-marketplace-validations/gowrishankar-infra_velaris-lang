@@ -164,6 +164,16 @@ import "std.vel"                 // flat: sort(xs)
 A named import prefixes that library's functions, so two libraries that
 both export `distance` can be used in the same file.
 
+## Shipping a program
+
+```
+velaris build myprogram.vel      # one executable, ~90 MB
+./myprogram alpha beta           # runs anywhere, nothing installed
+```
+
+Your program, its imports, the standard library and the compiler, in
+one file. It is compiled and proof-checked before it is built.
+
 ## Tooling
 
 `velaris trace program.vel` (watch every call as it happens) ·

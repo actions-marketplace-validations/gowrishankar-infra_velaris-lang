@@ -241,6 +241,7 @@ velaris repl                 try things, proofs and all
 velaris fmt program.vel      canonical formatting
 velaris doctor               check your setup
 velaris new myproject        start something
+velaris build program.vel    one executable you can give to anyone
 velaris add <url or path>    vendor a library into lib/
 velaris verify               check your libraries are unchanged
 ```
