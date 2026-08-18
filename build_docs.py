@@ -296,7 +296,7 @@ interpreter.</p></div>
 
 <div class="strip">
 <h2 style="margin-top:0">Install in one line</h2>
-<pre style="margin-bottom:8px"><code>pip install "git+https://github.com/gowrishankar-infra/velaris-lang"
+<pre style="margin-bottom:8px"><code>pip install velaris-lang
 velaris doctor
 velaris new hello &amp;&amp; cd hello &amp;&amp; velaris main.vel</code></pre>
 <p style="font-size:14px;color:var(--mut)">No Python? Download a

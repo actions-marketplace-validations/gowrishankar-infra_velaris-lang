@@ -1,5 +1,11 @@
 # Velaris changelog
 
+## 2.19 - pip install velaris-lang
+Velaris is on PyPI. Installing is now one line with no repository URL
+to remember, and every release publishes automatically from its tag
+through trusted publishing. The README, tutorial and docs site lead
+with it.
+
 ## 2.18.2 - Minimal-mode expectations for the newest proofs
 `div_bad.vel` and `grid_bad.vel` demonstrate bugs only the prover can
 see: divide-by-zero on a path that happens not to be taken, and a row

@@ -8,6 +8,7 @@ A language where the signature tells you everything — the types, the
 effects, whether it can fail, and promises **mathematically proven
 before the program runs**.
 
+[![PyPI](https://img.shields.io/pypi/v/velaris-lang)](https://pypi.org/project/velaris-lang/)
 [![tests](https://github.com/gowrishankar-infra/velaris-lang/actions/workflows/test.yml/badge.svg)](https://github.com/gowrishankar-infra/velaris-lang/actions/workflows/test.yml)
 [![release](https://img.shields.io/github/v/release/gowrishankar-infra/velaris-lang)](https://github.com/gowrishankar-infra/velaris-lang/releases)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -61,6 +62,12 @@ reports are treated as [security issues](SECURITY.md).
 
 ## Install
 
+```
+pip install velaris-lang
+velaris doctor
+velaris new hello && cd hello && velaris main.vel
+```
+
 **Standalone executable** (no Python required) — download for
 Windows / Linux / macOS from the
 [latest release](https://github.com/gowrishankar-infra/velaris-lang/releases),
@@ -73,7 +80,7 @@ velaris doctor
 **With Python 3.10+:**
 
 ```
-pip install "git+https://github.com/gowrishankar-infra/velaris-lang"
+pip install velaris-lang
 velaris new hello && cd hello && velaris main.vel
 ```
 

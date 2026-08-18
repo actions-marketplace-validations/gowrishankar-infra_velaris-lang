@@ -11,7 +11,7 @@ You can follow along in the browser — the
 runs the real compiler — or install it:
 
 ```
-pip install "git+https://github.com/gowrishankar-infra/velaris-lang"
+pip install velaris-lang
 velaris doctor
 velaris new hello && cd hello && velaris main.vel
 ```

@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Velaris v2.18 — "The language where you can trust code you didn't write."
+Velaris v2.19 — "The language where you can trust code you didn't write."
 
-New in v2.18: records holding lists, floats or text are proof
-    territory - and switching that on found a real bug in the ledger
-    example, which is the point of proving things.
+New in v2.19: pip install velaris-lang. Velaris is on PyPI, and every
+    release publishes from its tag automatically.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -240,7 +239,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.18.2"
+VERSION = "2.19.0"
 import re
 import sys
 from dataclasses import dataclass, field
