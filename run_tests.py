@@ -103,6 +103,14 @@ def check_versions() -> None:
         print(f"VERSION MISMATCH: velaris.py says {a}, "
               f"pyproject.toml says {b}")
         raise SystemExit(1)
+    ext = root / "editor" / "vscode" / "package.json"
+    if ext.exists():
+        import json as _json
+        c = _json.loads(ext.read_text(encoding="utf-8"))["version"]
+        if c != a:
+            print(f"VERSION MISMATCH: velaris.py says {a}, "
+                  f"the VS Code extension says {c}")
+            raise SystemExit(1)
 
 
 def main() -> int:

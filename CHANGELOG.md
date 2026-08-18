@@ -1,5 +1,13 @@
 # Velaris changelog
 
+## 2.24.1 - The extension follows the language's version
+The 2.23 release tried to publish the extension as 2.22.1 - a version
+already on the Marketplace - and reported that as a failure. The
+extension's version now comes from the tag itself, an
+already-published version is treated as nothing to do rather than an
+error, and the test suite fails if the extension's version ever drifts
+from the compiler's.
+
 ## 2.24 - Lists of text, and split
 `List of Text` is modelled symbolically now, so promises about lists of
 words are proven rather than checked while running -

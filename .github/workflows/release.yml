@@ -96,6 +96,15 @@ jobs:
             exit 0
           fi
           npm install -g @vscode/vsce
-          vsce publish --pat "$VSCE_TOKEN"
+          TAG="${GITHUB_REF_NAME#v}"       # the tag is the version
+          npm version "$TAG" --no-git-tag-version --allow-same-version
+          if vsce publish --pat "$VSCE_TOKEN"; then
+            echo "published $TAG"
+          elif vsce show gowrishankar-infra.velaris | grep -q "$TAG"; then
+            echo "$TAG is already on the Marketplace - nothing to do"
+          else
+            echo "publish failed for a real reason"
+            exit 1
+          fi
         env:
           VSCE_TOKEN: ${{ secrets.VSCE_TOKEN }}
