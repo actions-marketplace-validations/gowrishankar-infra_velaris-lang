@@ -47,6 +47,7 @@ EXPECT = {
     "forloops.vel": "RUNS",
     "rec_list_proof.vel": "RUNS",
     "trace_demo.vel": "RUNS",
+    "text_list_proof.vel": "RUNS",
     "grid_bad.vel": "REJECTED",
     "lambda_contract_bad.vel": "REJECTED",
     "map_bad.vel": "REJECTED",

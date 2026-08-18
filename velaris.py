@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Velaris v2.23 — "The language where you can trust code you didn't write."
+Velaris v2.24 — "The language where you can trust code you didn't write."
 
-New in v2.23: libraries you can share. velaris add vendors a library
-    into lib/ after compiling it, records its exact sha256, and
-    velaris verify tells you if it ever changes underneath you.
+New in v2.24: lists of Text are proof territory, and split is
+    modelled - unknown pieces, but always at least one.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -244,7 +243,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.23.0"
+VERSION = "2.24.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -2222,6 +2221,12 @@ def check_proofs(funcs: list[Function], records: list,
                  "Text": lambda: z3.StringSort()}
     CODE_AT = z3.Function("code_at", z3.StringSort(), z3.IntSort(),
                           z3.IntSort())
+    SPLIT = z3.Function("split", z3.StringSort(), z3.StringSort(),
+                        z3.ArraySort(z3.IntSort(), z3.StringSort()))
+    SPLIT_N = z3.Function("split_count", z3.StringSort(),
+                          z3.StringSort(), z3.IntSort())
+    _st, _ss = z3.String("__split_t"), z3.String("__split_s")
+    SPLIT_AXIOMS = [z3.ForAll([_st, _ss], SPLIT_N(_st, _ss) >= 1)]
     UPPER = z3.Function("upper", z3.StringSort(), z3.StringSort())
     LOWER = z3.Function("lower", z3.StringSort(), z3.StringSort())
     _t = z3.String("__case_t")
@@ -2463,11 +2468,16 @@ def check_proofs(funcs: list[Function], records: list,
                 raise Unprovable()
             return obj.fields[node.field]
         if isinstance(node, ListLit):
-            arr = z3.K(z3.IntSort(), z3.IntVal(0))
             vals = [to_z3(it, env, ctx) for it in node.items]
+            if vals and all(z3.is_string(v) for v in vals):
+                arr = z3.K(z3.IntSort(), z3.StringVal(""))
+            else:
+                arr = z3.K(z3.IntSort(), z3.IntVal(0))
             for idx, v in enumerate(vals):
-                if not z3.is_int(v):            # only Int lists are modelled
-                    raise Unprovable()          # (lists of lists, Text, ...)
+                if not (z3.is_int(v) or z3.is_string(v)):
+                    raise Unprovable()      # lists of lists, records, ...
+                if v.sort() != arr.sort().range():
+                    raise Unprovable()      # a list cannot mix sorts
                 arr = z3.Store(arr, z3.IntVal(idx), v)
             return ListVal(arr, z3.IntVal(len(node.items)))
         if isinstance(node, Call) and node.name in ("all_of", "any_of"):
@@ -2487,11 +2497,24 @@ def check_proofs(funcs: list[Function], records: list,
             if node.name == "all_of":
                 return z3.ForAll([k], z3.Implies(inside, body))
             return z3.Exists([k], z3.And(inside, body))
+        if isinstance(node, Call) and node.name == "split":
+            t = to_z3(node.args[0], env, ctx)
+            sep = to_z3(node.args[1], env, ctx)
+            if not (z3.is_string(t) and z3.is_string(sep)):
+                raise Unprovable()
+            return ListVal(SPLIT(t, sep), SPLIT_N(t, sep))
         if isinstance(node, Call) and node.name in ("upper", "lower"):
             t = to_z3(node.args[0], env, ctx)
             if not z3.is_string(t):
                 raise Unprovable()
             return (UPPER if node.name == "upper" else LOWER)(t)
+        if isinstance(node, Call) and node.name == "split":
+            t = to_z3(node.args[0], env, ctx)
+            sep = to_z3(node.args[1], env, ctx)
+            if not (z3.is_string(t) and z3.is_string(sep)):
+                raise Unprovable()
+            # the pieces are unknown, but there is always at least one
+            return ListVal(SPLIT(t, sep), SPLIT_N(t, sep))
         if isinstance(node, Call) and node.name == "contains":
             hay = to_z3(node.args[0], env, ctx)
             needle = to_z3(node.args[1], env, ctx)
@@ -2556,12 +2579,12 @@ def check_proofs(funcs: list[Function], records: list,
             # records, nested lists) stays runtime-checked rather than
             # being forced into a sort it does not fit
             if node.name == "push":
-                if not z3.is_int(a1):
+                if a1.sort() != a0.arr.sort().range():
                     raise Unprovable()
                 return ListVal(z3.Store(a0.arr, a0.length, a1),
                                a0.length + 1)
             if not z3.is_int(a1):
-                raise Unprovable()
+                raise Unprovable()          # an index is always an Int
             # get: prove the read stays inside the list (E705)
             if ctx is not None:
                 prove_bounds(a1, a0.length, ctx, node.line)
@@ -2998,6 +3021,11 @@ def check_proofs(funcs: list[Function], records: list,
                 ln = z3.Int(pname + "__n")
                 env[pname] = ListVal(arr, ln)
                 list_facts.append(ln >= 0)
+            elif ptype == "List of Text":
+                arr = z3.Array(pname, z3.IntSort(), z3.StringSort())
+                ln = z3.Int(pname + "__n")
+                env[pname] = ListVal(arr, ln)
+                list_facts.append(ln >= 0)
             elif ptype == "List of List of Int":
                 inner = z3.ArraySort(z3.IntSort(), z3.IntSort())
                 rows = z3.Array(pname, z3.IntSort(), inner)
@@ -3027,10 +3055,22 @@ def check_proofs(funcs: list[Function], records: list,
             return any(mentions_case(getattr(node, f.name))
                        for f in _dc.fields(node))
 
-        if (mentions_case(fn.body)
-                or mentions_case([e for e, _ in fn.ensures])
-                or mentions_case([e for e, _ in fn.requires])):
+        def mentions(node, names) -> bool:
+            if isinstance(node, (list, tuple)):
+                return any(mentions(x, names) for x in node)
+            if not _dc.is_dataclass(node):
+                return False
+            if isinstance(node, Call) and node.name in names:
+                return True
+            return any(mentions(getattr(node, f.name), names)
+                       for f in _dc.fields(node))
+
+        parts = [fn.body, [e for e, _ in fn.ensures],
+                 [e for e, _ in fn.requires]]
+        if any(mentions(p, ("upper", "lower")) for p in parts):
             list_facts.extend(CASE_AXIOMS)   # only where they matter
+        if any(mentions(p, ("split",)) for p in parts):
+            list_facts.extend(SPLIT_AXIOMS)
         ctx = Ctx([], list(list_facts), list(list_facts), fn.name)
         try:
             for r_expr, _ in fn.requires:

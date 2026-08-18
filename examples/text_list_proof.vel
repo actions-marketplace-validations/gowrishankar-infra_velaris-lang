@@ -1,0 +1,28 @@
+// v2.24: lists of text take part in proofs, and split is modelled -
+// the pieces are unknown to the prover, but it knows there is always
+// at least one, which is what most contracts about splitting need.
+
+fn pieces(line: Text) -> List of Text
+ensures length(result) >= 1
+{
+    return split(line, ",")
+}
+
+fn add_word(words: List of Text, w: Text) -> List of Text
+ensures length(result) == length(words) + 1
+{
+    return push(words, w)
+}
+
+fn label(words: List of Text) -> Text
+requires length(words) > 0
+{
+    return get(words, 0)
+}
+
+fn main() uses io {
+    let ps = pieces("chai,book,auto")
+    print(format("{} piece(s): {}", length(ps), ps))
+    print(format("first: {}", label(ps)))
+    print(format("with one more: {}", add_word(ps, "pen")))
+}

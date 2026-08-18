@@ -1,5 +1,17 @@
 # Velaris changelog
 
+## 2.24 - Lists of text, and split
+`List of Text` is modelled symbolically now, so promises about lists of
+words are proven rather than checked while running -
+`ensures length(result) == length(words) + 1` for a push, for instance.
+List literals pick their element sort from their values, and pushing a
+value of the wrong sort simply falls back to a runtime check instead of
+being forced into a formula that would not mean the same thing.
+
+`split` is modelled as an unknown list with a known minimum: the pieces
+themselves are opaque to the prover, but it knows there is always at
+least one, which is what contracts about splitting usually rest on.
+
 ## 2.23 - Libraries you can actually share
 Until now, using someone's Velaris library meant copying a file and
 hoping. Three commands fix that:
