@@ -1,5 +1,14 @@
 # Velaris changelog
 
+## 2.40.1 - Leading with the sandbox
+The README now opens with the thing that matters most in 2026: an AI
+wrote you a script, and you can run it anyway because the runtime
+refuses whatever you did not allow. The proof story - promises checked
+before the program runs - follows immediately after, where it reads as
+the reason to believe the first claim rather than competing with it.
+New hero image to match, and the limits stated in the same breath as
+the feature.
+
 ## 2.40 - Running a program you have not read
 The compiler has always checked that a function declares what it does.
 This is the other half:

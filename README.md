@@ -2,24 +2,55 @@
 
 # Velaris
 
-**Trust code you didn't write.**
+**An AI wrote you a script. Run it anyway.**
 
-A language where the signature tells you everything — the types, the
-effects, whether it can fail, and promises **mathematically proven
-before the program runs**.
+A language where a function's signature declares what it may touch —
+and the runtime refuses anything you did not allow, whatever the code
+says about itself.
 
 [![PyPI](https://img.shields.io/pypi/v/velaris-lang)](https://pypi.org/project/velaris-lang/)
 [![tests](https://github.com/gowrishankar-infra/velaris-lang/actions/workflows/test.yml/badge.svg)](https://github.com/gowrishankar-infra/velaris-lang/actions/workflows/test.yml)
 [![release](https://img.shields.io/github/v/release/gowrishankar-infra/velaris-lang)](https://github.com/gowrishankar-infra/velaris-lang/releases)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-[**Playground**](https://gowrishankar-infra.github.io/velaris-lang/playground.html) · [**Documentation**](https://gowrishankar-infra.github.io/velaris-lang/) · [**Library reference**](https://gowrishankar-infra.github.io/velaris-lang/library.html) · [**Error index**](https://gowrishankar-infra.github.io/velaris-lang/errors.html)
+[**Playground**](https://gowrishankar-infra.github.io/velaris-lang/playground.html) · [**Documentation**](https://gowrishankar-infra.github.io/velaris-lang/) · [**Reference**](SPEC.md) · [**Library**](https://gowrishankar-infra.github.io/velaris-lang/library.html) · [**Errors**](https://gowrishankar-infra.github.io/velaris-lang/errors.html)
 
 </div>
 
-<img src="docs/hero.png" alt="The Velaris compiler proving a promise false, with the exact input that breaks it" width="100%">
+<img src="docs/hero.png" alt="Velaris refusing a network call because the run only allowed io" width="100%">
 
 ---
+
+```
+pip install velaris-lang
+velaris agent_output.vel --allow io
+```
+
+That program cannot open a socket, read a file, call Python, or ask the
+clock. Not "shouldn't" — the runtime refuses, and a refusal cannot be
+caught and carried past. You do not have to read the code, understand
+it, or trust the compiler's analysis of it.
+
+It is not a security boundary: `--allow ffi` grants everything Python
+can do, and nothing here limits memory or time. It is a real guard for
+the situation everyone is now in — running a program someone, or
+something, else wrote.
+
+## The other half: promises, proven
+
+```
+fn discount(price: Int) -> Int
+    requires price >= 0
+    ensures result >= 0
+{
+    return price - 10
+}
+```
+
+```
+error[E700] promise cannot be kept: 'discount' ensures result >= 0
+  proven without running the program: price = 5 gives result = -5
+```
 
 That `ensures` is not a comment or a runtime assert. The Z3 theorem
 prover verifies it for **every possible input** before execution — and
