@@ -17,21 +17,9 @@ before the program runs**.
 
 </div>
 
+<img src="docs/hero.png" alt="The Velaris compiler proving a promise false, with the exact input that breaks it" width="100%">
+
 ---
-
-```
-fn discount(price: Int) -> Int
-    requires price >= 0
-    ensures result >= 0
-{
-    return price - 10
-}
-```
-
-```
-error[E700] promise cannot be kept: 'discount' ensures result >= 0
-  proven without running the program: price = 5 gives result = -5
-```
 
 That `ensures` is not a comment or a runtime assert. The Z3 theorem
 prover verifies it for **every possible input** before execution — and

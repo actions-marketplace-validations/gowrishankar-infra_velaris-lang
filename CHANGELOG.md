@@ -1,5 +1,11 @@
 # Velaris changelog
 
+## 2.36.3 - A picture of the point
+The README now opens with an image of the compiler refuting a promise
+and handing back the input that breaks it. People decide in a few
+seconds whether to keep reading, and the most convincing thing about
+this language was previously three scrolls down.
+
 ## 2.36.2 - Somewhere to start
 The README points at the open `good first issue` list and spells out
 the four commands a change has to pass before it ships. The tasks
