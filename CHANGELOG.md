@@ -1,5 +1,24 @@
 # Velaris changelog
 
+## 2.34 - Unattended work, and building for machines you do not have
+`log(text)` writes to the error channel, and `log.vel` gives it levels
+(`info`, `warn`, `error`, `event`, `fail_with`). Messages and results
+finally travel separately: a pipeline captures `print` output while a
+person watching sees the log, and `fail_with` exits non-zero.
+
+`csv.vel` handles the shape most data arrives in - `fields`, `column`,
+`column_int`, `rows_of`, `line_of` - and `time.vel` gains `year_of`,
+`month_of` and `day_number`. `examples/pipeline.vel` is what an
+unattended job looks like end to end.
+
+`velaris build --for-everyone` writes a workflow that builds your
+program on Windows, Linux and macOS and attaches all three to a
+release. One machine genuinely cannot build for other machines; three
+machines can, and this hands you the three.
+
+The language server also renames: every use of a function this file
+owns, comments left alone, and only names the file actually defines.
+
 ## 2.33 - A number a team can watch, and an image to run it in
 `velaris proofs [path]` reports, for a file or a whole project, how
 many promise-carrying functions are **proven before running** versus

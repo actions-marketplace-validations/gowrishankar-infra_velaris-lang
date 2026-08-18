@@ -23,3 +23,33 @@ fn day_of(when: Text) -> Text or fail {
     }
     return get(parts, 0)
 }
+
+fn year_of(date: Text) -> Int or fail {
+    let parts = split(date, "-")
+    if length(parts) < 1 {
+        fail "that does not look like a date"
+    }
+    return try to_int(get(parts, 0))
+}
+
+fn month_of(date: Text) -> Int or fail {
+    let parts = split(date, "-")
+    if length(parts) < 2 {
+        fail "that date has no month"
+    }
+    return try to_int(get(parts, 1))
+}
+
+fn day_number(date: Text) -> Int or fail {
+    let parts = split(date, "-")
+    if length(parts) < 3 {
+        fail "that date has no day"
+    }
+    let piece = get(parts, 2)
+    let cut = split(piece, " ")
+    return try to_int(get(cut, 0))
+}
+
+// Note: adding days needs date arithmetic on the host side. Until the
+// standard library models dates as values rather than text, do it with
+// py_json directly and say 'uses ffi' where you do.

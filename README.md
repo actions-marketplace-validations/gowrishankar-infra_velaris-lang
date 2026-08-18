@@ -183,6 +183,9 @@ both export `distance` can be used in the same file.
 ```
 velaris build myprogram.vel      # one executable, ~90 MB
 ./myprogram alpha beta           # runs anywhere, nothing installed
+
+velaris build myprogram.vel --for-everyone   # a workflow that builds
+                                             # Windows, Linux and macOS
 ```
 
 Your program, its imports, the standard library and the compiler, in

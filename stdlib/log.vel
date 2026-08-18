@@ -1,0 +1,31 @@
+// Messages for whoever is watching, on the error channel so they do
+// not mix with a program's real output.
+//
+// import "log.vel" as log
+// log.info("started")
+// log.fail_with("could not reach the server")
+
+fn info(message: Text) uses io {
+    log("INFO  " + message)
+}
+
+fn warn(message: Text) uses io {
+    log("WARN  " + message)
+}
+
+fn error(message: Text) uses io {
+    log("ERROR " + message)
+}
+
+fn field(name: Text, value: Text) -> Text {
+    return format("{}={}", name, value)
+}
+
+fn event(name: Text, details: Text) uses io {
+    log(format("EVENT {} {}", name, details))
+}
+
+fn fail_with(message: Text) uses io {
+    log("ERROR " + message)
+    exit_with(1)
+}

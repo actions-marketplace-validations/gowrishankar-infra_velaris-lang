@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Velaris v2.33 — "The language where you can trust code you didn't write."
+Velaris v2.34 — "The language where you can trust code you didn't write."
 
-New in v2.33: velaris proofs reports how much of a project is proven
-    rather than checked while running, with --min to hold the line in
-    CI; the editor completes; and a Dockerfile carries the prover.
+New in v2.34: log() and log.vel for unattended work, csv.vel and
+    date helpers, velaris build --for-everyone (three machines build
+    what one cannot), and rename in the editor.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -247,7 +247,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.33.0"
+VERSION = "2.34.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1224,6 +1224,7 @@ except ImportError:
 
 BUILTINS = {
     # name          effects needed      argument types        returns
+    "log":        {"effects": {"io"},     "types": ["Any"],         "ret": "Unit"},
     "print":      {"effects": {"io"},    "types": ["Any"],         "ret": "Unit"},
     "read_file":  {"effects": {"fs"},    "types": ["Text"],        "ret": "Text"},
     "write_file": {"effects": {"fs"},    "types": ["Text", "Any"], "ret": "Unit"},
@@ -4416,6 +4417,9 @@ def run_builtin(name: str, args: list, line: int):
             raise FailSignal(f"cannot reach '{url}'")
     if name == "args":
         return list(PROGRAM_ARGS)
+    if name == "log":
+        print(to_text(args[0]), file=sys.stderr)
+        return None
     if name == "env":
         return os.environ.get(str(args[0]), str(args[1]))
     if name == "exit_with":
@@ -4788,6 +4792,42 @@ def editor_answer(method: str, params: dict, text: str, uri: str):
                 "command": {"title": title, "command": ""}})
         return lenses
 
+    if method == "textDocument/rename":
+        line_no = params["position"]["line"]
+        col = params["position"]["character"]
+        new_name = params.get("newName", "")
+        lines = text.splitlines()
+        if line_no >= len(lines) or not new_name:
+            return None
+        row = lines[line_no]
+        start, end = col, col
+        while start > 0 and (row[start - 1].isalnum()
+                             or row[start - 1] == "_"):
+            start -= 1
+        while end < len(row) and (row[end].isalnum() or row[end] == "_"):
+            end += 1
+        old_name = row[start:end]
+        if not old_name:
+            return None
+        here = {f.name for f in funcs
+                if not f.src_file
+                or os.path.abspath(f.src_file) == os.path.abspath(path)}
+        if old_name not in here:
+            return None            # only names this file owns
+        import re as _re
+        pattern = _re.compile(r"\b" + _re.escape(old_name) + r"\b")
+        edits = []
+        for i, row_text in enumerate(lines):
+            code = row_text.split("//")[0]        # leave comments alone
+            for m in pattern.finditer(code):
+                edits.append({
+                    "range": {"start": {"line": i, "character": m.start()},
+                              "end": {"line": i, "character": m.end()}},
+                    "newText": new_name})
+        if not edits:
+            return None
+        return {"changes": {uri: edits}}
+
     if method == "textDocument/completion":
         items = []
         for f in funcs:
@@ -4965,6 +5005,7 @@ def lsp_serve() -> int:
                         "openClose": True, "change": 1,
                         "save": {"includeText": True}},
                     "hoverProvider": True,
+                    "renameProvider": {"prepareProvider": False},
                     "completionProvider": {
                         "triggerCharacters": [".", " "]},
                     "definitionProvider": True,
@@ -4973,6 +5014,7 @@ def lsp_serve() -> int:
                 "serverInfo": {"name": "velaris", "version": VERSION}}})
         elif method in ("textDocument/hover", "textDocument/definition",
                         "textDocument/codeLens", "textDocument/completion",
+                        "textDocument/rename",
                         "textDocument/documentSymbol"):
             uri = params["textDocument"]["uri"]
             text = docs.get(uri, "")
@@ -5373,6 +5415,57 @@ def build_program(argv: list) -> int:
         except ImportError:
             pass
     cmd.append(launcher)
+    if "--for-everyone" in argv:
+        wf = os.path.join(".github", "workflows",
+                          f"build-{out_name}.yml")
+        os.makedirs(os.path.dirname(wf), exist_ok=True)
+        with open(wf, "w", encoding="utf-8") as f:
+            f.write(f"""# Built by velaris build --for-everyone.
+# One machine cannot build for other machines, so three build for you.
+name: build {out_name}
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: {out_name}-windows.exe
+          - os: ubuntu-latest
+            asset: {out_name}-linux
+          - os: macos-latest
+            asset: {out_name}-macos
+    runs-on: ${{{{ matrix.os }}}}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install "velaris-lang[full]" pyinstaller
+      - run: velaris build {entry} -o {out_name}
+      - shell: bash
+        run: |
+          for f in {out_name} {out_name}.exe; do
+            [ -f "$f" ] && mv "$f" "${{{{ matrix.asset }}}}"
+          done
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: ${{{{ matrix.asset }}}}
+""")
+        print(f"wrote {wf}")
+        print("commit it, then push a tag: three machines will build "
+              f"{out_name} for Windows, Linux and macOS")
+        return 0
+
     print(f"building {out_name} from {entry} "
           f"({len(sources)} file(s), this takes a minute)...")
     done = subprocess.run(cmd, capture_output=True, text=True)

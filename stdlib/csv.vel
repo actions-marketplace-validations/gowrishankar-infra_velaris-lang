@@ -1,0 +1,43 @@
+// Comma-separated data, the shape most data arrives in.
+//
+// import "csv.vel" as csv
+// let names = csv.fields(line)
+
+fn fields(line: Text) -> List of Text
+ensures length(result) >= 1
+{
+    return split(line, ",")
+}
+
+fn line_of(values: List of Text) -> Text {
+    let out = ""
+    let i = 0
+    while i < length(values) {
+        if i > 0 {
+            out = out + ","
+        }
+        out = out + get(values, i)
+        i = i + 1
+    }
+    return out
+}
+
+fn column(line: Text, at: Int) -> Text or fail {
+    let parts = split(line, ",")
+    if at < 0 or at >= length(parts) {
+        fail format("this row has {} column(s), so there is no column {}",
+        length(parts), at)
+    }
+    return get(parts, at)
+}
+
+fn column_int(line: Text, at: Int) -> Int or fail {
+    let raw = try column(line, at)
+    return try to_int(raw)
+}
+
+fn rows_of(text: Text) -> List of Text
+ensures length(result) >= 1
+{
+    return split(text, "\n")
+}

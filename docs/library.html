@@ -105,9 +105,26 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 </style></head><body>
 <nav><div class="in"><a class="brand" href="index.html">
 <span class="dot"></span>Velaris</a><a href="index.html" class="">Home</a><a href="tutorial.html" class="">Tutorial</a><a href="spec.html" class="">Reference</a><a href="library.html" class="here">Library</a><a href="errors.html" class="">Errors</a><a href="floats.html" class="">Floats</a><a href="playground.html" class="">Playground</a>
-<span class="ver">v2.33.0</span></div></nav>
+<span class="ver">v2.34.0</span></div></nav>
 <main class=""><h1>Standard library</h1>
 <p class="lead">Every function below is written in Velaris and parsed onto this page by the real compiler &mdash; contracts included. A violated <code>requires</code> is a compile error at your call site.</p>
+<div class="fnrow">
+<div class="sig">fn csv.fields(line: Text) -&gt; List of Text</div>
+<div class="contract">ensures length(result) &gt;= 1</div>
+</div>
+<div class="fnrow">
+<div class="sig">fn csv.line_of(values: List of Text) -&gt; Text</div>
+</div>
+<div class="fnrow">
+<div class="sig">fn csv.column(line: Text, at: Int) -&gt; Text or fail</div>
+</div>
+<div class="fnrow">
+<div class="sig">fn csv.column_int(line: Text, at: Int) -&gt; Int or fail</div>
+</div>
+<div class="fnrow">
+<div class="sig">fn csv.rows_of(text: Text) -&gt; List of Text</div>
+<div class="contract">ensures length(result) &gt;= 1</div>
+</div>
 <div class="fnrow">
 <div class="sig">fn db.open(path: Text) -&gt; Handle or fail uses ffi</div>
 </div>
@@ -154,6 +171,24 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 </div>
 <div class="fnrow">
 <div class="sig">fn http.get_json(url: Text, path: Text) -&gt; Text or fail uses net</div>
+</div>
+<div class="fnrow">
+<div class="sig">fn log.info(message: Text) uses io</div>
+</div>
+<div class="fnrow">
+<div class="sig">fn log.warn(message: Text) uses io</div>
+</div>
+<div class="fnrow">
+<div class="sig">fn log.error(message: Text) uses io</div>
+</div>
+<div class="fnrow">
+<div class="sig">fn log.field(name: Text, value: Text) -&gt; Text</div>
+</div>
+<div class="fnrow">
+<div class="sig">fn log.event(name: Text, details: Text) uses io</div>
+</div>
+<div class="fnrow">
+<div class="sig">fn log.fail_with(message: Text) uses io</div>
 </div>
 <div class="fnrow">
 <div class="sig">fn first(xs: List of T) -&gt; T for any T</div>
@@ -230,6 +265,15 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 <div class="fnrow">
 <div class="sig">fn time.day_of(when: Text) -&gt; Text or fail</div>
 </div>
+<div class="fnrow">
+<div class="sig">fn time.year_of(date: Text) -&gt; Int or fail</div>
+</div>
+<div class="fnrow">
+<div class="sig">fn time.month_of(date: Text) -&gt; Int or fail</div>
+</div>
+<div class="fnrow">
+<div class="sig">fn time.day_number(date: Text) -&gt; Int or fail</div>
+</div>
 <h2>Built-in functions</h2><table><tr><th>Name</th><th>Effects</th><th>Takes</th><th>Gives</th></tr>
 <tr><td><code>all_of</code></td><td>pure</td><td>Any, Any</td><td>Bool</td></tr>
 <tr><td><code>any_of</code></td><td>pure</td><td>Any, Any</td><td>Bool</td></tr>
@@ -255,6 +299,7 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 <tr><td><code>json_of</code></td><td>pure</td><td>Any</td><td>Text</td></tr>
 <tr><td><code>keys</code></td><td>pure</td><td>Any</td><td>Any</td></tr>
 <tr><td><code>length</code></td><td>pure</td><td>Any</td><td>Int</td></tr>
+<tr><td><code>log</code></td><td>io</td><td>Any</td><td>Unit</td></tr>
 <tr><td><code>lower</code></td><td>pure</td><td>Text</td><td>Text</td></tr>
 <tr><td><code>now</code></td><td>clock</td><td></td><td>Int</td></tr>
 <tr><td><code>post</code> <span class="ecode">or fail</span></td><td>net</td><td>Text, Text</td><td>Text</td></tr>
