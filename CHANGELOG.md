@@ -1,5 +1,39 @@
 # Velaris changelog
 
+## 2.42 - Findings from a model that installed it and tried to break it
+A third model read `velaris card`, installed the language, wrote a
+30-function calculator that compiled and ran correctly first try, then
+spent its time attacking it. Nearly everything it reported was true.
+
+**Lists can shrink.** `pop`, `slice` and `set_at`, all fallible, all
+returning new lists. A stack machine - the natural shape for a
+calculator - previously required rebuilding the whole list one element
+shorter for every pop. `examples/stack.vel` is that program.
+
+**Overflow can be caught.** `a * b` that outgrows 64 bits is still
+E407, which stops the program and no `check` can catch - correct for a
+bug, wrong when the numbers come from a user. `add_or_fail`,
+`sub_or_fail` and `mul_or_fail` fail in the normal way instead.
+
+**`break` says something true.** It used to report "unknown variable
+'break'" and suggest declaring one. It now says the language has no
+`break`, and suggests keeping a flag.
+
+**The formatter matches the documentation.** `requires`, `ensures` and
+`invariant` were being flattened to the margin, contradicting the style
+in Velaris's own docs. Every shipped file is reformatted.
+
+**The card states the ceiling.** The sharpest finding was that the
+prover goes blind when a loop mutates a list: `ensures length(result)
+== length(xs) - 1` will not prove even with an invariant, and
+`while i <= length(xs) { get(xs, i) }` is caught at runtime rather than
+before. That limit is real and unfixed; `LLM.md` now says so, along
+with the overflow rule and the absence of `break`.
+
+Left as-is, deliberately: the ffi escape hatch is total, and
+`velaris audit` already says so unprompted - which the model noted
+approvingly.
+
 ## 2.41.2 - A loop no longer hides a divide by zero
 A second model read `velaris card`, wrote an expense report, then
 deliberately removed a `requires length(items) > 0` guard and predicted

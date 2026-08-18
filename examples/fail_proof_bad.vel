@@ -2,7 +2,7 @@
 // positive. The prover finds the one value the guard misses.
 
 fn positive_only(n: Int) -> Int or fail
-ensures result > 0
+    ensures result > 0
 {
     if n < 0 {
         fail "negative"

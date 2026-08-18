@@ -7,7 +7,7 @@ record Point {
 }
 
 fn shift(p: Point, dx: Int) -> Point
-ensures result.x == p.x + dx
+    ensures result.x == p.x + dx
 {
     return Point(x: p.y + dx, y: p.x)
 }

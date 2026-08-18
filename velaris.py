@@ -252,7 +252,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.41.2"
+VERSION = "2.42.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1172,6 +1172,8 @@ def blame(fn_or_rec, err: VelarisError) -> VelarisError:
 # ---------------------------------------------------------------------------
 
 FALLIBLE_BUILTINS = {"to_int", "read_file", "fetch", "post",
+                     "pop", "slice", "set_at",
+                     "add_or_fail", "sub_or_fail", "mul_or_fail",
                      "fetch_status", "request", "py", "py_int", "py_float",
                      "py_json", "json_get", "json_int", "json_float",
                      "json_len", "py_new", "py_do", "py_field"}   # + get on maps
@@ -1299,6 +1301,12 @@ BUILTINS = {
     "lower":      {"effects": set(),      "types": ["Text"],        "ret": "Text"},
     "length":     {"effects": set(),      "types": ["Any"],         "ret": "Int"},
     "push":       {"effects": set(),      "types": ["Any", "Any"],  "ret": "Any"},
+    "pop":        {"effects": set(),      "types": ["Any"],         "ret": "Any"},
+    "slice":      {"effects": set(),      "types": ["Any", "Int", "Int"], "ret": "Any"},
+    "set_at":     {"effects": set(),      "types": ["Any", "Int", "Any"], "ret": "Any"},
+    "add_or_fail": {"effects": set(),     "types": ["Int", "Int"],  "ret": "Int"},
+    "sub_or_fail": {"effects": set(),     "types": ["Int", "Int"],  "ret": "Int"},
+    "mul_or_fail": {"effects": set(),     "types": ["Int", "Int"],  "ret": "Int"},
     "get":        {"effects": set(),      "types": ["Any", "Any"],  "ret": "Any"},
 }
 
@@ -1622,7 +1630,15 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                         fixes=[f"add it as a parameter: "
                                f"fn(x: T, {node.name}: T) -> ...",
                                "or write a named function that takes it"])
-                raise VelarisError("E402", f"unknown variable '{node.name}'",
+                if node.name in ("break", "continue"):
+                    raise VelarisError("E402",
+                        f"there is no '{node.name}' in this language",
+                        node.line,
+                        fixes=["use a condition in the loop test instead",
+                               "or keep a flag: "
+                               "while going and i < n { ... }"])
+                raise VelarisError("E402",
+                                  f"unknown variable '{node.name}'",
                                   node.line,
                                   fixes=[f"declare it first: let {node.name} = ..."])
             if isinstance(node, Not):
@@ -1741,9 +1757,10 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                 return "Bool"
             if isinstance(node, Call) and node.name in (
                     "length", "push", "get", "put", "has", "keys",
-                    "get_or"):
+                    "get_or", "pop", "slice", "set_at"):
                 n_want = {"length": 1, "keys": 1, "push": 2, "get": 2,
-                          "has": 2, "put": 3, "get_or": 3}[node.name]
+                          "has": 2, "put": 3, "get_or": 3, "pop": 1,
+                          "slice": 3, "set_at": 3}[node.name]
                 if len(node.args) != n_want:
                     raise VelarisError("E401",
                         f"'{node.name}' expects {n_want} argument(s) "
@@ -1753,6 +1770,27 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                 is_map = t0.startswith("Map of ")
                 if is_map:
                     key_t, _, val_t = t0[len("Map of "):].partition(" to ")
+                if node.name in ("pop", "slice", "set_at"):
+                    if not t0.startswith("List of "):
+                        raise VelarisError("E501",
+                            f"'{node.name}' works on a list, not {t0}",
+                            node.line,
+                            fixes=[f"pass a list to '{node.name}'"])
+                    if node.name == "set_at":
+                        want = t0[len("List of "):]
+                        got = infer(node.args[2])
+                        if got != want and want != "Any":
+                            raise VelarisError("E501",
+                                f"this list holds {want}, so 'set_at' "
+                                f"cannot put {got} in it", node.line,
+                                fixes=[f"pass a {want}"])
+                    for arg in node.args[1:3 if node.name == "slice" else 2]:
+                        if node.name != "pop" and infer(arg) != "Int":
+                            raise VelarisError("E501",
+                                f"'{node.name}' takes whole-number "
+                                f"positions", node.line,
+                                fixes=["pass an Int"])
+                    return t0
                 if node.name == "length":
                     if t0 == "Text" or t0.startswith("List of ") or is_map:
                         return "Int"
@@ -4100,6 +4138,36 @@ def run_builtin(name: str, args: list, line: int):
         return str(args[0]).lower()
     if name == "length":
         return len(args[0])
+    if name == "pop":
+        xs = args[0]
+        if not xs:
+            raise FailSignal("there is nothing left to take off the end")
+        return list(xs[:-1])
+    if name == "slice":
+        xs, start, stop = args[0], int(args[1]), int(args[2])
+        if start < 0 or stop > len(xs) or start > stop:
+            raise FailSignal(
+                f"a slice from {start} to {stop} does not fit a list of "
+                f"{len(xs)}")
+        return list(xs[start:stop])
+    if name == "set_at":
+        xs, at = args[0], int(args[1])
+        if at < 0 or at >= len(xs):
+            raise FailSignal(
+                f"there is no position {at} in a list of {len(xs)}")
+        out = list(xs)
+        out[at] = args[2]
+        return out
+    if name in ("add_or_fail", "sub_or_fail", "mul_or_fail"):
+        a, b = int(args[0]), int(args[1])
+        answer = (a + b if name == "add_or_fail" else
+                  a - b if name == "sub_or_fail" else a * b)
+        if not (-(2 ** 63) <= answer <= 2 ** 63 - 1):
+            word = {"add_or_fail": "adding", "sub_or_fail": "subtracting",
+                    "mul_or_fail": "multiplying"}[name]
+            raise FailSignal(
+                f"{word} {a} and {b} makes a number too big to hold")
+        return answer
     if name == "push":
         return args[0] + [args[1]]
     if name == "put":
@@ -5195,6 +5263,11 @@ def format_source(source: str) -> str:
         while lead < len(line_toks) and line_toks[lead].text == "}":
             lead += 1
         d = max(depth - lead, 0)
+        # a contract sits between the signature and the body, where no
+        # brace has opened yet - indent it under the signature it belongs
+        # to rather than flattening it to the margin
+        if line_toks[0].text in ("requires", "ensures", "invariant"):
+            d += 1
         text = render(line_toks)
         out_lines.append("    " * d + text if text else "")
         for t in line_toks:

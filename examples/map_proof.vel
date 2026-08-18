@@ -3,15 +3,15 @@
 // and defaulting are proven before the program runs.
 
 fn bump(counts: Map of Text to Int, word: Text) -> Map of Text to Int
-ensures get_or(result, word, 0) == get_or(counts, word, 0) + 1
-ensures has(result, word)
+    ensures get_or(result, word, 0) == get_or(counts, word, 0) + 1
+    ensures has(result, word)
 {
     return put(counts, word, get_or(counts, word, 0) + 1)
 }
 
 fn remember(m: Map of Int to Int, k: Int, v: Int) -> Map of Int to Int
-ensures get_or(result, k, 0) == v
-ensures has(result, k)
+    ensures get_or(result, k, 0) == v
+    ensures has(result, k)
 {
     return put(m, k, v)
 }

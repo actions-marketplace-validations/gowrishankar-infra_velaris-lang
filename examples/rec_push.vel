@@ -24,7 +24,7 @@ fn parse_one(line: Text) -> Grade or fail {
 }
 
 fn total_of(grades: List of Grade) -> Int
-ensures result >= 0
+    ensures result >= 0
 {
     let total = 0
     for g in grades {

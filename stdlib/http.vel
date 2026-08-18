@@ -8,7 +8,7 @@ fn get(url: Text) -> Text uses net or fail {
 }
 
 fn status(url: Text) -> Int uses net or fail
-ensures result >= 0
+    ensures result >= 0
 {
     let code = try fetch_status(url)
     if code < 0 {

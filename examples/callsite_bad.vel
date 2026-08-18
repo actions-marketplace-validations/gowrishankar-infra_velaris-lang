@@ -4,8 +4,8 @@
 // and rejects the file before anything executes.
 
 fn discount(price: Int) -> Int
-requires price >= 0
-ensures result >= 0
+    requires price >= 0
+    ensures result >= 0
 {
     if price > 100 {
         return price - 10

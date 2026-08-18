@@ -5,8 +5,8 @@
 // Check it with:  velaris explain examples/inferred.vel
 
 fn count_up(n: Int) -> Int
-requires n >= 0
-ensures result >= 0
+    requires n >= 0
+    ensures result >= 0
 {
     let total = 0
     let i = 0
@@ -18,8 +18,8 @@ ensures result >= 0
 }
 
 fn sum_to(n: Int) -> Int
-requires n >= 0
-ensures result >= 0
+    requires n >= 0
+    ensures result >= 0
 {
     let total = 0
     let i = 1
@@ -31,8 +31,8 @@ ensures result >= 0
 }
 
 fn steps_down(start: Int) -> Int
-requires start >= 0
-ensures result <= start
+    requires start >= 0
+    ensures result <= start
 {
     let left = start
     while left > 0 {

@@ -7,13 +7,13 @@ import "std.vel"
 fn main() uses io {
     let sizes = [4, 9, 16]
     print(format("doubled: {}", apply_to_each(sizes, fn(n: Int) -> Int
-    requires n >= 0
-    ensures result >= n
+        requires n >= 0
+        ensures result >= n
     {
         return n * 2
     })))
     print(format("kept: {}", keep_if(sizes, fn(n: Int) -> Bool
-    ensures result == (n > 5)
+        ensures result == (n > 5)
     {
         return n > 5
     })))

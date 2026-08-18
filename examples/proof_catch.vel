@@ -4,9 +4,9 @@
 // the promise - without running the program.
 
 fn pay_bonus(salary: Int, years: Int) -> Int
-requires salary >= 0
-requires years >= 0
-ensures result >= salary
+    requires salary >= 0
+    requires years >= 0
+    ensures result >= salary
 {
     if years > 30 {
         return salary - 1000

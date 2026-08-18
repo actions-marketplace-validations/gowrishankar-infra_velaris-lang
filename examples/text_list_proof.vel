@@ -3,19 +3,19 @@
 // at least one, which is what most contracts about splitting need.
 
 fn pieces(line: Text) -> List of Text
-ensures length(result) >= 1
+    ensures length(result) >= 1
 {
     return split(line, ",")
 }
 
 fn add_word(words: List of Text, w: Text) -> List of Text
-ensures length(result) == length(words) + 1
+    ensures length(result) == length(words) + 1
 {
     return push(words, w)
 }
 
 fn label(words: List of Text) -> Text
-requires length(words) > 0
+    requires length(words) > 0
 {
     return get(words, 0)
 }

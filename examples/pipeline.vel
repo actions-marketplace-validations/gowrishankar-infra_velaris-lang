@@ -11,7 +11,7 @@ import "csv.vel" as csv
 import "log.vel" as log
 
 fn total_of(text: Text) -> Int or fail
-ensures result >= 0
+    ensures result >= 0
 {
     let total = 0
     for row in csv.rows_of(text) {

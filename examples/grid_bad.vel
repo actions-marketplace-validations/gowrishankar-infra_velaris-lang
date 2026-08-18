@@ -2,7 +2,7 @@
 // before the program runs, the same way a flat list would be.
 
 fn second_row(grid: List of List of Int) -> List of Int
-requires length(grid) >= 1
+    requires length(grid) >= 1
 {
     return get(grid, 1)
 }

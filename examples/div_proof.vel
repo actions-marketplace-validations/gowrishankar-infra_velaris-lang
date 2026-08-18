@@ -3,10 +3,10 @@
 // here, the defining property of flooring division.
 
 fn average(total: Int, count: Int) -> Int
-requires count > 0
-requires total >= 0
-ensures result * count <= total
-ensures total < (result + 1) * count
+    requires count > 0
+    requires total >= 0
+    ensures result * count <= total
+    ensures total < (result + 1) * count
 {
     return total / count
 }

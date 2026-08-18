@@ -7,17 +7,17 @@ fn is_pos(n: Int) -> Bool {
 }
 
 fn head_pos(xs: List of Int) -> Int
-requires length(xs) > 0
-requires all_of(xs, is_pos)
-ensures result > 0
+    requires length(xs) > 0
+    requires all_of(xs, is_pos)
+    ensures result > 0
 {
     return get(xs, 0)
 }
 
 fn grow_pos(xs: List of Int, v: Int) -> List of Int
-requires v > 0
-requires all_of(xs, is_pos)
-ensures all_of(result, is_pos)
+    requires v > 0
+    requires all_of(xs, is_pos)
+    ensures all_of(result, is_pos)
 {
     return push(xs, v)
 }

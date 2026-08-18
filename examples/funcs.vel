@@ -11,7 +11,7 @@ fn is_even(n: Int) -> Bool {
 }
 
 fn apply_to_each(xs: List of Int, f: fn(Int) -> Int) -> List of Int
-requires length(xs) > 0
+    requires length(xs) > 0
 {
     let out = [f(get(xs, 0))]
     let i = 1

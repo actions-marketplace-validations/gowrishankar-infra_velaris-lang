@@ -19,7 +19,7 @@ fn run(db: Handle, sql: Text) -> Text uses ffi or fail {
 }
 
 fn count_rows(db: Handle) -> Int uses ffi or fail
-ensures result >= 0
+    ensures result >= 0
 {
     let cursor = try py_do(db, "execute", "[\"select count(*) from t\"]")
     let rows = try py_json("builtins", "list", format("[{}]", cursor))

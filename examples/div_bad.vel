@@ -2,7 +2,7 @@
 // zero. The compiler finds the value and says so before running.
 
 fn share(total: Int, people: Int) -> Int
-requires people >= 0
+    requires people >= 0
 {
     return total / people
 }

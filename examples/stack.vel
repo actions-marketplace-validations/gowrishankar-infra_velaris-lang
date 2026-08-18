@@ -1,0 +1,78 @@
+// A stack machine: the shape that needed lists to shrink.
+//
+// Until v2.42 a list could only grow. Popping meant rebuilding the
+// whole list one element shorter, which is O(n) per pop - not a
+// missing convenience but a data structure the language could not
+// express. Found by a model writing a calculator.
+//
+// Arithmetic here uses mul_or_fail, because a calculator's numbers
+// come from its user and 'a * b' that outgrows 64 bits is an error
+// that no 'check' can catch. These fail in the normal way instead.
+
+import "std.vel"
+
+fn apply(stack: List of Int, operator: Text) -> List of Int or fail {
+    if length(stack) < 2 {
+        fail format("'{}' needs two numbers, the stack holds {}",
+        operator, length(stack))
+    }
+    let right = get(stack, length(stack) - 1)
+    let left = get(stack, length(stack) - 2)
+    let rest = try slice(stack, 0, length(stack) - 2)
+
+    if operator == "+" {
+        return push(rest, try add_or_fail(left, right))
+    }
+    if operator == "-" {
+        return push(rest, try sub_or_fail(left, right))
+    }
+    if operator == "*" {
+        return push(rest, try mul_or_fail(left, right))
+    }
+    if operator == "/" {
+        if right == 0 {
+            fail "cannot divide by zero"
+        }
+        return push(rest, left / right)
+    }
+    fail format("'{}' is not an operator I know", operator)
+}
+
+fn run(words: List of Text) -> Int or fail {
+    let stack: List of Int = []
+    for word in words {
+        check to_int(word) {
+            ok number {
+                stack = push(stack, number)
+            }
+            fail why {
+                stack = try apply(stack, word)
+            }
+        }
+    }
+    if length(stack) != 1 {
+        fail format("the stack ended with {} value(s), not 1",
+        length(stack))
+    }
+    return get(stack, 0)
+}
+
+fn show(words: List of Text) uses io {
+    check run(words) {
+        ok answer {
+            print(format("{} = {}", join(words, " "), answer))
+        }
+        fail why {
+            print(format("{} -> {}", join(words, " "), why))
+        }
+    }
+}
+
+fn main() uses io {
+    show(["3", "4", "+", "2", "*"])
+    show(["10", "2", "/"])
+    show(["9", "0", "/"])
+    show(["5", "+"])
+    show(["4000000000", "4000000000", "*"])
+    show(["1", "2", "%"])
+}

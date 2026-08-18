@@ -9,7 +9,7 @@
 // velaris examples/native_list.vel --no-native --time
 
 fn build(n: Int) -> List of Int
-requires n >= 0
+    requires n >= 0
 {
     let xs: List of Int = []
     let i = 0

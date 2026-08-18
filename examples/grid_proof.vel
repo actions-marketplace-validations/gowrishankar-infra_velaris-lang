@@ -3,21 +3,21 @@
 // about rows and sizes are proven before the program runs.
 
 fn first_row(grid: List of List of Int) -> List of Int
-requires length(grid) > 0
-ensures length(result) == length(get(grid, 0))
+    requires length(grid) > 0
+    ensures length(result) == length(get(grid, 0))
 {
     return get(grid, 0)
 }
 
 fn add_row(grid: List of List of Int, row: List of Int)
 -> List of List of Int
-ensures length(result) == length(grid) + 1
+    ensures length(result) == length(grid) + 1
 {
     return push(grid, row)
 }
 
 fn row_count(grid: List of List of Int) -> Int
-ensures result == length(grid)
+    ensures result == length(grid)
 {
     return length(grid)
 }

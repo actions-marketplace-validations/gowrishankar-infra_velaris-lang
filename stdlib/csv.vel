@@ -4,7 +4,7 @@
 // let names = csv.fields(line)
 
 fn fields(line: Text) -> List of Text
-ensures length(result) >= 1
+    ensures length(result) >= 1
 {
     return split(line, ",")
 }
@@ -37,7 +37,7 @@ fn column_int(line: Text, at: Int) -> Int or fail {
 }
 
 fn rows_of(text: Text) -> List of Text
-ensures length(result) >= 1
+    ensures length(result) >= 1
 {
     return split(text, "\n")
 }

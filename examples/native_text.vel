@@ -7,7 +7,7 @@
 // velaris examples/native_text.vel --no-native --time
 
 fn count_letters(word: Text) -> Int
-ensures result >= 0
+    ensures result >= 0
 {
     let n = 0
     let i = 0

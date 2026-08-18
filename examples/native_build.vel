@@ -26,7 +26,7 @@ fn stretch(word: Text, times: Int) -> Text {
 }
 
 fn framed_length(word: Text, rounds: Int) -> Int
-ensures result >= 0
+    ensures result >= 0
 {
     let n = 0
     let r = 0

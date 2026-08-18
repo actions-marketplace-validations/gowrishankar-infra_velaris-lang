@@ -4,14 +4,14 @@
 // WITH A LOOP is now fully proven before running.
 
 fn sum_to(n: Int) -> Int
-requires n >= 0
-ensures result >= 0
+    requires n >= 0
+    ensures result >= 0
 {
     let total = 0
     let i = 1
     while i <= n
-    invariant total >= 0
-    invariant i >= 1
+        invariant total >= 0
+        invariant i >= 1
     {
         total = total + i
         i = i + 1

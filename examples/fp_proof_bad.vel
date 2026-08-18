@@ -3,7 +3,7 @@
 // x + 0.2 for many x. Velaris proves in IEEE-754, so it refuses.
 
 fn add_twice(x: Float) -> Float
-ensures result == x + 0.2
+    ensures result == x + 0.2
 {
     return x + 0.1 + 0.1
 }

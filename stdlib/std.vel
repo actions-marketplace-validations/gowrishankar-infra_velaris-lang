@@ -3,13 +3,13 @@
 // at YOUR call site, at compile time. Import with: import "std.vel"
 
 fn first(xs: List of T) -> T for any T
-requires length(xs) > 0
+    requires length(xs) > 0
 {
     return get(xs, 0)
 }
 
 fn last(xs: List of T) -> T for any T
-requires length(xs) > 0
+    requires length(xs) > 0
 {
     return get(xs, length(xs) - 1)
 }
@@ -77,8 +77,8 @@ fn sum_of(xs: List of Int) -> Int {
 }
 
 fn max_of(xs: List of Int) -> Int
-requires length(xs) > 0
-ensures contains_item(xs, result)
+    requires length(xs) > 0
+    ensures contains_item(xs, result)
 {
     let best = get(xs, 0)
     let i = 1
@@ -93,8 +93,8 @@ ensures contains_item(xs, result)
 }
 
 fn min_of(xs: List of Int) -> Int
-requires length(xs) > 0
-ensures contains_item(xs, result)
+    requires length(xs) > 0
+    ensures contains_item(xs, result)
 {
     let best = get(xs, 0)
     let i = 1
@@ -139,8 +139,8 @@ fn insert_sorted(xs: List of Int, v: Int) -> List of Int {
 }
 
 fn sort(xs: List of Int) -> List of Int
-ensures length(result) == length(xs)
-ensures is_sorted(result)
+    ensures length(result) == length(xs)
+    ensures is_sorted(result)
 {
     let out: List of Int = []
     let i = 0
@@ -173,7 +173,7 @@ for any T
 }
 
 fn sort_by(xs: List of T, key: fn(T) -> Int) -> List of T for any T
-ensures length(result) == length(xs)
+    ensures length(result) == length(xs)
 {
     let out: List of T = []
     let i = 0

@@ -25,8 +25,8 @@ record Basket {
 // ---------------------------------------------------------------- proofs
 
 fn discount(price: Int) -> Int
-requires price >= 0
-ensures result >= 0
+    requires price >= 0
+    ensures result >= 0
 {
     if price < 10 {
         return 0
@@ -35,8 +35,8 @@ ensures result >= 0
 }
 
 fn sum_to(n: Int) -> Int
-requires n >= 0
-ensures result >= 0
+    requires n >= 0
+    ensures result >= 0
 {
     let total = 0
     for i in 0 to n {
@@ -46,48 +46,48 @@ ensures result >= 0
 }
 
 fn average(total: Int, count: Int) -> Int
-requires count > 0
-requires total >= 0
-ensures result * count <= total
+    requires count > 0
+    requires total >= 0
+    ensures result * count <= total
 {
     return total / count
 }
 
 fn shift(p: Point, dx: Int) -> Point
-ensures result.x == p.x + dx
-ensures result.y == p.y
+    ensures result.x == p.x + dx
+    ensures result.y == p.y
 {
     return Point(x: p.x + dx, y: p.y)
 }
 
 fn add_item(b: Basket, price: Int) -> Basket
-ensures length(result.items) == length(b.items) + 1
-ensures result.owner == b.owner
+    ensures length(result.items) == length(b.items) + 1
+    ensures result.owner == b.owner
 {
     return Basket(owner: b.owner, items: push(b.items, price))
 }
 
 fn bump(counts: Map of Text to Int, word: Text) -> Map of Text to Int
-ensures get_or(result, word, 0) == get_or(counts, word, 0) + 1
-ensures has(result, word)
+    ensures get_or(result, word, 0) == get_or(counts, word, 0) + 1
+    ensures has(result, word)
 {
     return put(counts, word, get_or(counts, word, 0) + 1)
 }
 
 fn shout(word: Text) -> Text
-ensures length(result) == length(word)
+    ensures length(result) == length(word)
 {
     return upper(word)
 }
 
 fn tag_it(word: Text) -> Text
-ensures contains(result, word)
+    ensures contains(result, word)
 {
     return "[" + word + "]"
 }
 
 fn rows_of(grid: List of List of Int) -> Int
-ensures result == length(grid)
+    ensures result == length(grid)
 {
     return length(grid)
 }
@@ -109,7 +109,7 @@ fn quarter(n: Int) -> Int or fail {
 // -------------------------------------------------------------- native
 
 fn count_letters(word: Text) -> Int
-ensures result >= 0
+    ensures result >= 0
 {
     let n = 0
     let i = 0

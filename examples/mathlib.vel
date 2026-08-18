@@ -2,7 +2,7 @@
 // Its promises are proven like any other Velaris code.
 
 fn square(n: Int) -> Int
-ensures result >= 0
+    ensures result >= 0
 {
     return n * n
 }

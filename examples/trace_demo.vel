@@ -20,7 +20,7 @@ fn halve(n: Int) -> Int or fail {
 }
 
 fn shout(word: Text) -> Text
-ensures length(result) == length(word)
+    ensures length(result) == length(word)
 {
     return upper(word)
 }

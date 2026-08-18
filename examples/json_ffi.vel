@@ -19,7 +19,7 @@ fn name_in(doc: Text) -> Text or fail {
 }
 
 fn age_in(doc: Text) -> Int or fail
-ensures result >= 0
+    ensures result >= 0
 {
     let years = try json_int(doc, "user.age")
     if years < 0 {

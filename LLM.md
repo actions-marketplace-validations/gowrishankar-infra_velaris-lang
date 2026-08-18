@@ -115,7 +115,8 @@ These are the mistakes that actually happen. Read them twice.
 8. **`main` cannot fail** and takes no parameters.
 
 9. **There are no closures, exceptions, classes, inheritance, `null`,
-   or threads.** Do not reach for them.
+   threads, `break` or `continue`.** Do not reach for them. To leave a
+   loop early, keep a flag: `while going and i < n { ... }`.
 
 10. **Strings concatenate with `+`;** use `format("{} and {}", a, b)`
     for anything more, and the number of `{}` must match the number of
@@ -145,6 +146,21 @@ invariant total >= 0
 
 Contract expressions must be pure. Promises the prover cannot settle
 fall back to runtime checks — the program still runs.
+
+**What the prover can and cannot reach.** It is strong on arithmetic
+over whole numbers and floats, on straight-line list length reasoning,
+and on simple counter loops. It goes blind the moment a **loop mutates
+a list**: `ensures length(result) == length(xs) - 1` on a
+hand-written loop will not prove even with an invariant, and an
+off-by-one like `while i <= length(xs) { get(xs, i) }` is caught at
+runtime (E602) rather than before running. Write contracts on pure
+arithmetic helpers where they prove; elsewhere expect a runtime check.
+
+**Whole-number overflow is an error, not a failure.** `a * b` that
+outgrows 64 bits raises E407 and stops the program - `check` cannot
+catch it. When the numbers come from a user, use `add_or_fail`,
+`sub_or_fail` and `mul_or_fail`, which fail in the normal way and can
+be caught.
 
 Write contracts when the guarantee matters. Do not decorate every
 function; an unprovable promise is worse than none.
@@ -185,6 +201,9 @@ args() uses io                exit_with(code) uses io
 read_line() uses io
 
 length(x)     get(list, i)    push(list, v)    get(map, k) CAN FAIL
+pop(list) CAN FAIL            slice(list, from, to) CAN FAIL
+set_at(list, i, v) CAN FAIL   (lists are values; these return new ones)
+add_or_fail(a, b) CAN FAIL    sub_or_fail / mul_or_fail CAN FAIL
 put(map, k, v)  get_or(map, k, default)  has(map, k)  keys(map)
 all_of(xs, p)   any_of(xs, p)
 

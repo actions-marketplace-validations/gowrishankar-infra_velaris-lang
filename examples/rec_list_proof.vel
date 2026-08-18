@@ -8,14 +8,14 @@ record Basket {
 }
 
 fn add_item(b: Basket, price: Int) -> Basket
-ensures length(result.items) == length(b.items) + 1
-ensures result.owner == b.owner
+    ensures length(result.items) == length(b.items) + 1
+    ensures result.owner == b.owner
 {
     return Basket(owner: b.owner, items: push(b.items, price))
 }
 
 fn item_count(b: Basket) -> Int
-ensures result == length(b.items)
+    ensures result == length(b.items)
 {
     return length(b.items)
 }

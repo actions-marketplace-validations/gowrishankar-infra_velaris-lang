@@ -22,7 +22,7 @@ fn base64_of(text: Text) -> Text uses ffi or fail {
 }
 
 fn digits_in(text: Text) -> Int uses ffi or fail
-ensures result >= 0
+    ensures result >= 0
 {
     return try py_int("builtins", "len", [text])
 }

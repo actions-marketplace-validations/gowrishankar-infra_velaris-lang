@@ -12,8 +12,8 @@
 import "std.vel"
 
 fn pure_work(n: Int) -> Int
-requires n >= 0
-ensures result >= 0
+    requires n >= 0
+    ensures result >= 0
 {
     let total = 0
     for i in 0 to n {

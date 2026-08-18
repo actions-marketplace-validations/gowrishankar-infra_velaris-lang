@@ -4,7 +4,7 @@
 // proved separately. Verification scales function by function.
 
 fn clamp_pos(n: Int) -> Int
-ensures result >= 0
+    ensures result >= 0
 {
     if n < 0 {
         return 0
@@ -13,8 +13,8 @@ ensures result >= 0
 }
 
 fn shipping(weight: Int) -> Int
-requires weight >= 0
-ensures result >= 50
+    requires weight >= 0
+    ensures result >= 50
 {
     return 50 + clamp_pos(weight - 10) * 2
 }

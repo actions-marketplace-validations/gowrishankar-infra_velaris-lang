@@ -2,7 +2,7 @@
 // Negative numbers, and / or / not, and lists - with a contract on top.
 
 fn biggest(xs: List of Int) -> Int
-requires length(xs) > 0
+    requires length(xs) > 0
 {
     let best = get(xs, 0)
     let i = 1

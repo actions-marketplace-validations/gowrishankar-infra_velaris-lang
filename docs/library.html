@@ -105,7 +105,7 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 </style></head><body>
 <nav><div class="in"><a class="brand" href="index.html">
 <span class="dot"></span>Velaris</a><a href="index.html" class="">Home</a><a href="tutorial.html" class="">Tutorial</a><a href="spec.html" class="">Reference</a><a href="library.html" class="here">Library</a><a href="errors.html" class="">Errors</a><a href="floats.html" class="">Floats</a><a href="playground.html" class="">Playground</a>
-<span class="ver">v2.41.2</span></div></nav>
+<span class="ver">v2.42.0</span></div></nav>
 <main class=""><h1>Standard library</h1>
 <p class="lead">Every function below is written in Velaris and parsed onto this page by the real compiler &mdash; contracts included. A violated <code>requires</code> is a compile error at your call site.</p>
 <div class="fnrow">
@@ -323,6 +323,7 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 <div class="sig">fn time.day_number(date: Text) -&gt; Int or fail</div>
 </div>
 <h2>Built-in functions</h2><table><tr><th>Name</th><th>Effects</th><th>Takes</th><th>Gives</th></tr>
+<tr><td><code>add_or_fail</code> <span class="ecode">or fail</span></td><td>pure</td><td>Int, Int</td><td>Int</td></tr>
 <tr><td><code>all_of</code></td><td>pure</td><td>Any, Any</td><td>Bool</td></tr>
 <tr><td><code>any_of</code></td><td>pure</td><td>Any, Any</td><td>Bool</td></tr>
 <tr><td><code>args</code></td><td>io</td><td></td><td>List of Text</td></tr>
@@ -349,7 +350,9 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 <tr><td><code>length</code></td><td>pure</td><td>Any</td><td>Int</td></tr>
 <tr><td><code>log</code></td><td>io</td><td>Any</td><td>Unit</td></tr>
 <tr><td><code>lower</code></td><td>pure</td><td>Text</td><td>Text</td></tr>
+<tr><td><code>mul_or_fail</code> <span class="ecode">or fail</span></td><td>pure</td><td>Int, Int</td><td>Int</td></tr>
 <tr><td><code>now</code></td><td>clock</td><td></td><td>Int</td></tr>
+<tr><td><code>pop</code> <span class="ecode">or fail</span></td><td>pure</td><td>Any</td><td>Any</td></tr>
 <tr><td><code>post</code> <span class="ecode">or fail</span></td><td>net</td><td>Text, Text</td><td>Text</td></tr>
 <tr><td><code>print</code></td><td>io</td><td>Any</td><td>Unit</td></tr>
 <tr><td><code>push</code></td><td>pure</td><td>Any, Any</td><td>Any</td></tr>
@@ -367,7 +370,10 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 <tr><td><code>read_line</code></td><td>io</td><td></td><td>Text</td></tr>
 <tr><td><code>request</code> <span class="ecode">or fail</span></td><td>net</td><td>Text, Text, Text, Text</td><td>Text</td></tr>
 <tr><td><code>round</code></td><td>pure</td><td>Float</td><td>Int</td></tr>
+<tr><td><code>set_at</code> <span class="ecode">or fail</span></td><td>pure</td><td>Any, Int, Any</td><td>Any</td></tr>
+<tr><td><code>slice</code> <span class="ecode">or fail</span></td><td>pure</td><td>Any, Int, Int</td><td>Any</td></tr>
 <tr><td><code>split</code></td><td>pure</td><td>Text, Text</td><td>List of Text</td></tr>
+<tr><td><code>sub_or_fail</code> <span class="ecode">or fail</span></td><td>pure</td><td>Int, Int</td><td>Int</td></tr>
 <tr><td><code>to_float</code></td><td>pure</td><td>Int</td><td>Float</td></tr>
 <tr><td><code>to_int</code> <span class="ecode">or fail</span></td><td>pure</td><td>Text</td><td>Int</td></tr>
 <tr><td><code>to_text</code></td><td>pure</td><td>Any</td><td>Text</td></tr>

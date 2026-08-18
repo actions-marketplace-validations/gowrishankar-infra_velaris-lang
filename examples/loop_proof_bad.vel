@@ -3,13 +3,13 @@
 // that one loop step breaks. Rejected before running.
 
 fn drain(n: Int) -> Int
-requires n >= 0
-ensures result >= 0
+    requires n >= 0
+    ensures result >= 0
 {
     let total = 0
     let i = 1
     while i <= n
-    invariant total >= 0
+        invariant total >= 0
     {
         total = total - i
         i = i + 1

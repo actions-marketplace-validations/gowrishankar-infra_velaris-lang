@@ -4,15 +4,15 @@
 // because NaN fails every comparison - the prover knows that too.)
 
 fn bump(x: Float) -> Float
-requires x >= 0.0
-ensures result >= 1.0
+    requires x >= 0.0
+    ensures result >= 1.0
 {
     return x + 1.0
 }
 
 fn magnitude_up(x: Float) -> Float
-requires x >= 1.0
-ensures result >= x
+    requires x >= 1.0
+    ensures result >= x
 {
     return x * 2.0
 }

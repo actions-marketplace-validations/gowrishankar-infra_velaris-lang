@@ -5,8 +5,8 @@
 import "std.vel"
 
 fn sum_to(n: Int) -> Int
-requires n >= 0
-ensures result >= 0
+    requires n >= 0
+    ensures result >= 0
 {
     let total = 0
     for i in 0 to n {
@@ -16,7 +16,7 @@ ensures result >= 0
 }
 
 fn longest(words: List of Text) -> Int
-ensures result >= 0
+    ensures result >= 0
 {
     let best = 0
     for w in words {

@@ -10,7 +10,7 @@
 import "std.vel" as std
 
 fn summarise(body: Text, top: Int) -> Text
-requires top > 0
+    requires top > 0
 {
     let words = split(body, " ")
     let shown = top

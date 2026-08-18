@@ -6,8 +6,8 @@ fn is_pos(n: Int) -> Bool {
 }
 
 fn stamp(xs: List of Int) -> List of Int
-requires all_of(xs, is_pos)
-ensures all_of(result, is_pos)
+    requires all_of(xs, is_pos)
+    ensures all_of(result, is_pos)
 {
     return push(xs, 0)
 }

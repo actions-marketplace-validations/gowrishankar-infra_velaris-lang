@@ -5,7 +5,7 @@ import "std.vel"
 
 fn main() uses io {
     print(apply_to_each([1, 2], fn(n: Int) -> Int
-    ensures result >= n
+        ensures result >= n
     {
         return n - 1
     }))

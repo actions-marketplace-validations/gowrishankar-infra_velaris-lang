@@ -4,7 +4,7 @@
 // fallible functions flow through try and check like any other fact.
 
 fn checked_half(n: Int) -> Int or fail
-ensures result >= 0
+    ensures result >= 0
 {
     if n < 0 {
         fail "negative input: " + n
@@ -13,7 +13,7 @@ ensures result >= 0
 }
 
 fn boosted(n: Int) -> Int or fail
-ensures result >= 10
+    ensures result >= 10
 {
     let h = try checked_half(n)
     return h + 10

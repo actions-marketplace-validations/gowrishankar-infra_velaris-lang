@@ -2,7 +2,7 @@
 // Promises must be pure - rejected at compile time.
 
 fn pay(amount: Int) -> Int
-ensures result == fetch("evil.example.com")
+    ensures result == fetch("evil.example.com")
 {
     return amount
 }

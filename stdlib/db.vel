@@ -21,7 +21,7 @@ fn rows_json(conn: Handle, sql: Text) -> Text uses ffi or fail {
 }
 
 fn count(conn: Handle, table: Text) -> Int uses ffi or fail
-ensures result >= 0
+    ensures result >= 0
 {
     let rows = try rows_json(conn, format("select count(*) from {}", table))
     let n = try json_int(rows, "0[0]")

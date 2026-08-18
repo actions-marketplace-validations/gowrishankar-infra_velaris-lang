@@ -13,10 +13,10 @@ record Date {
 }
 
 fn days_in(year: Int, month: Int) -> Int
-requires month >= 1
-requires month <= 12
-ensures result >= 28
-ensures result <= 31
+    requires month >= 1
+    requires month <= 12
+    ensures result >= 28
+    ensures result <= 31
 {
     if month == 2 {
         if year % 4 == 0 and year % 100 != 0 {
@@ -85,8 +85,8 @@ fn same(a: Date, b: Date) -> Bool {
 }
 
 fn next_day(d: Date) -> Date or fail
-requires d.month >= 1
-requires d.month <= 12
+    requires d.month >= 1
+    requires d.month <= 12
 {
     if d.day < days_in(d.year, d.month) {
         return try make(d.year, d.month, d.day + 1)
