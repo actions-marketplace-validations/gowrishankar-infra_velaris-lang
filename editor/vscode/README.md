@@ -10,6 +10,11 @@ before the program runs.
 - **Syntax highlighting** for `.vel` files
 - **Live errors as you type**, from the real compiler — including
   promises proven false, with the exact input that breaks them
+- **Proof status above every function** — "promises proven before
+  running" or "promises checked while running", from the real prover
+- **Hover** for any function: its signature, effects, and contracts
+- **Go to definition**, across imported files
+- An outline of the file's functions
 - Comment toggling, bracket matching, and indentation
 
 ## Requirements

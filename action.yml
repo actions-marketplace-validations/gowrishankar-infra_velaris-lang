@@ -1,0 +1,64 @@
+name: "Velaris"
+description: "Install Velaris and check that a project compiles and its promises hold."
+branding:
+  icon: "check-circle"
+  color: "green"
+
+inputs:
+  files:
+    description: "Which files to check (a glob). Default: every .vel file."
+    required: false
+    default: ""
+  version:
+    description: "Which Velaris version to install. Default: the newest."
+    required: false
+    default: ""
+  proofs:
+    description: "Install the theorem prover so promises are proven, not just checked (true/false)."
+    required: false
+    default: "true"
+  format:
+    description: "Also fail if the code is not canonically formatted (true/false)."
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Velaris
+      shell: bash
+      run: |
+        pkg="velaris-lang"
+        if [ -n "${{ inputs.version }}" ]; then
+          pkg="velaris-lang==${{ inputs.version }}"
+        fi
+        if [ "${{ inputs.proofs }}" = "true" ]; then
+          pip install "$pkg" z3-solver
+        else
+          pip install "$pkg"
+        fi
+        velaris doctor
+
+    - name: Check
+      shell: bash
+      run: |
+        files="${{ inputs.files }}"
+        if [ -z "$files" ]; then
+          files=$(find . -name '*.vel' -not -path './.git/*' | sort)
+        fi
+        if [ -z "$files" ]; then
+          echo "no .vel files found"
+          exit 0
+        fi
+        echo "checking $(echo "$files" | wc -w) file(s)"
+        velaris check $files
+
+    - name: Formatting
+      if: ${{ inputs.format == 'true' }}
+      shell: bash
+      run: |
+        files="${{ inputs.files }}"
+        if [ -z "$files" ]; then
+          files=$(find . -name '*.vel' -not -path './.git/*' | sort)
+        fi
+        velaris fmt $files --check

@@ -1,5 +1,29 @@
 # Velaris changelog
 
+## 2.32 - The editor knows what is proven, and CI is one line
+The language server answers hover (signature, effects and contracts),
+go-to-definition across imported files, an outline of the file, and -
+the one that matters for this language - **code lenses above every
+function saying whether its promises are proven before running or
+checked while running**. That status comes from the real prover, using
+the proof cache, so it is the truth rather than a guess.
+
+`action.yml` makes Velaris a GitHub Action:
+
+    - uses: gowrishankar-infra/velaris-lang@v2.32
+      with:
+        files: "src/*.vel"
+        format: "true"
+
+It installs Velaris with the prover and fails the build if anything
+does not compile or a promise cannot be kept.
+
+`ROADMAP.md` says what is planned, what is deliberately not (and why),
+and how to change it. `SUPPORT.md` states plainly what one maintainer
+can promise - and that an organisation depending on this today is
+taking a real, non-technical risk. Both exist because a company reads
+those before it reads code, and silence is worse than an honest limit.
+
 ## 2.31 - A standard library that reaches outside
 Four modules so nobody writes FFI plumbing by hand:
 

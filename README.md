@@ -242,6 +242,26 @@ on Linux and Windows, Python 3.10 and 3.12, with and without the
 optional dependencies. Errors are stable, numbered, and
 [fully documented](https://gowrishankar-infra.github.io/velaris-lang/errors.html).
 
+## Using Velaris in CI
+
+```yaml
+- uses: gowrishankar-infra/velaris-lang@v2.32
+  with:
+    files: "src/*.vel"     # optional; default is every .vel file
+    format: "true"         # optional; also check formatting
+```
+
+Installs Velaris with the prover and fails the build if anything does
+not compile or a promise cannot be kept.
+
+## Project
+
+[Roadmap](ROADMAP.md) · [Support and expectations](SUPPORT.md) ·
+[Security policy](SECURITY.md) · [Changelog](CHANGELOG.md)
+
+Maintained by one person, in the open, with the limits stated plainly
+in [SUPPORT.md](SUPPORT.md).
+
 ## Contributing
 
 The entire implementation is one readable file, `velaris.py`, in

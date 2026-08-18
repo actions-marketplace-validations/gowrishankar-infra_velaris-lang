@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v2.31 — "The language where you can trust code you didn't write."
+Velaris v2.32 — "The language where you can trust code you didn't write."
 
-New in v2.31: a standard library that reaches outside - http, db,
-    time and env_tools - plus env(), exit_with() and read_line(), the
-    process basics every real script needs.
+New in v2.32: the editor shows whether each function's promises are
+    proven, with hover and go-to-definition; Velaris is a GitHub
+    Action; and ROADMAP.md and SUPPORT.md say what is planned and what
+    one maintainer can honestly promise.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -246,7 +247,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.31.0"
+VERSION = "2.32.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -4725,6 +4726,137 @@ def inspect_source(path: str, source: str | None = None) -> dict:
     return report
 
 
+def editor_answer(method: str, params: dict, text: str, uri: str):
+    """Hover, go-to-definition, proof lenses and an outline."""
+    import urllib.parse
+    path = urllib.parse.unquote(uri.replace("file://", ""))
+    if os.name == "nt" and path.startswith("/"):
+        path = path[1:]
+    try:
+        funcs, records = load_program(path, text)
+    except VelarisError:
+        return None if "codeLens" not in method else []
+
+    proven: set = set()
+    if "codeLens" in method:
+        errors: list = []
+        check_effects(funcs, errors)
+        check_types(funcs, records, errors)
+        if not errors:
+            try:
+                check_proofs(funcs, records, errors, proven, use_cache=True)
+            except Exception:
+                pass
+
+    mine = [f for f in funcs
+            if not f.src_file or os.path.abspath(f.src_file)
+            == os.path.abspath(path)]
+
+    def signature(f) -> str:
+        ps = ", ".join(f"{n}: {t}" for n, t in f.params)
+        out = f"fn {f.name}({ps})"
+        if f.return_type and f.return_type != "Unit":
+            out += f" -> {f.return_type}"
+        if f.type_vars:
+            out += " for any " + ", ".join(f.type_vars)
+        if f.can_fail:
+            out += " or fail"
+        if f.effects:
+            out += " uses " + ", ".join(sorted(f.effects))
+        return out
+
+    if method == "textDocument/codeLens":
+        lenses = []
+        for f in mine:
+            if f.name.startswith("fn#"):
+                continue
+            if f.requires or f.ensures:
+                title = ("promises proven before running"
+                         if f.name in proven
+                         else "promises checked while running")
+            elif f.effects:
+                title = "may perform: " + ", ".join(sorted(f.effects))
+            else:
+                title = "pure"
+            if f.can_fail:
+                title += " - can fail"
+            lenses.append({
+                "range": {"start": {"line": max(f.line - 1, 0),
+                                    "character": 0},
+                          "end": {"line": max(f.line - 1, 0),
+                                  "character": 1}},
+                "command": {"title": title, "command": ""}})
+        return lenses
+
+    if method == "textDocument/documentSymbol":
+        return [{"name": f.name, "kind": 12,
+                 "range": {"start": {"line": max(f.line - 1, 0),
+                                     "character": 0},
+                           "end": {"line": max(f.line - 1, 0),
+                                   "character": 80}},
+                 "selectionRange": {
+                     "start": {"line": max(f.line - 1, 0), "character": 0},
+                     "end": {"line": max(f.line - 1, 0), "character": 80}},
+                 "detail": signature(f)}
+                for f in mine if not f.name.startswith("fn#")]
+
+    # hover and definition both need the word under the cursor
+    line_no = params["position"]["line"]
+    col = params["position"]["character"]
+    lines = text.splitlines()
+    if line_no >= len(lines):
+        return None
+    row = lines[line_no]
+    start = col
+    while start > 0 and (row[start - 1].isalnum()
+                         or row[start - 1] in "_."):
+        start -= 1
+    end = col
+    while end < len(row) and (row[end].isalnum() or row[end] in "_."):
+        end += 1
+    word = row[start:end]
+    if not word:
+        return None
+
+    table = {f.name: f for f in funcs}
+    found = table.get(word)
+
+    if method == "textDocument/definition":
+        if found is None or found.name.startswith("fn#"):
+            return None
+        target = found.src_file or path
+        return {"uri": "file://" + os.path.abspath(target).replace(
+                    "\\", "/"),
+                "range": {"start": {"line": max(found.line - 1, 0),
+                                    "character": 0},
+                          "end": {"line": max(found.line - 1, 0),
+                                  "character": 1}}}
+
+    if found is not None:
+        parts = [signature(found)]
+        for e, _ in found.requires:
+            parts.append(f"    requires {expr_str(e)}")
+        for e, _ in found.ensures:
+            parts.append(f"    ensures {expr_str(e)}")
+        body = ["```velaris", "\n".join(parts), "```"]
+        if found.src_file and os.path.abspath(found.src_file) != \
+                os.path.abspath(path):
+            body.append(f"from `{os.path.basename(found.src_file)}`")
+        return {"contents": {"kind": "markdown",
+                             "value": "\n".join(body)}}
+
+    if word in BUILTINS:
+        info = BUILTINS[word]
+        eff = ", ".join(sorted(info["effects"])) or "pure"
+        fail = " (can fail)" if word in FALLIBLE_BUILTINS else ""
+        return {"contents": {"kind": "markdown", "value":
+                f"**{word}**{fail}\n\n"
+                f"takes: {', '.join(info['types']) or 'nothing'}  \n"
+                f"gives: {info['ret']}  \n"
+                f"effects: {eff}"}}
+    return None
+
+
 def lsp_serve() -> int:
     import urllib.parse
 
@@ -4803,10 +4935,22 @@ def lsp_serve() -> int:
         params = msg.get("params", {})
         if method == "initialize":
             send({"jsonrpc": "2.0", "id": msg["id"], "result": {
-                "capabilities": {"textDocumentSync": {
-                    "openClose": True, "change": 1,
-                    "save": {"includeText": True}}},
+                "capabilities": {
+                    "textDocumentSync": {
+                        "openClose": True, "change": 1,
+                        "save": {"includeText": True}},
+                    "hoverProvider": True,
+                    "definitionProvider": True,
+                    "codeLensProvider": {"resolveProvider": False},
+                    "documentSymbolProvider": True},
                 "serverInfo": {"name": "velaris", "version": VERSION}}})
+        elif method in ("textDocument/hover", "textDocument/definition",
+                        "textDocument/codeLens",
+                        "textDocument/documentSymbol"):
+            uri = params["textDocument"]["uri"]
+            text = docs.get(uri, "")
+            result = editor_answer(method, params, text, uri)
+            send({"jsonrpc": "2.0", "id": msg["id"], "result": result})
         elif method == "shutdown":
             send({"jsonrpc": "2.0", "id": msg["id"], "result": None})
         elif method == "exit":
