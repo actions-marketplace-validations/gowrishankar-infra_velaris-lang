@@ -1,0 +1,81 @@
+# How the compiler works
+
+Everything is in one file, `velaris.py`, in the order the compiler
+uses it. If you read it top to bottom you follow a program through the
+whole pipeline. This document is the map.
+
+    text -> lexer -> parser -> loader -> effects -> types
+         -> proofs -> native codegen -> interpreter
+
+## The stages
+
+**Lexer** turns text into tokens. Keywords are a fixed set; everything
+else is an identifier, a literal, or an operator.
+
+**Parser** builds an AST of dataclasses (`Function`, `Call`, `BinOp`,
+`If`, `While`, ...). Two things are desugared here so nothing later
+has to know about them: `for` loops become `while` loops, and inline
+functions are lifted into ordinary top-level functions. That is why
+proofs and native compilation work on them unchanged.
+
+**Loader** resolves `import`, tracks which file each function came
+from (for error blame), and prefixes names for a named import.
+
+**Effect checker** walks the call graph. A function may only perform
+effects it declares, transitively. This runs before types because a
+missing effect is a clearer error than a type mismatch downstream.
+
+**Type checker** infers local types, checks calls, unifies generics at
+call sites, and decides which builtins are fallible in context (`get`
+on a map can fail; on a list it cannot).
+
+**Prover** is the interesting part. For each function it explores the
+body symbolically, building Z3 formulas, and asks whether the
+`ensures` can be false given the `requires`. Calls use *summaries*:
+the callee's contract is assumed, its body is never inlined. Loops use
+invariants — written, or inferred for simple counter bounds. The rules
+that matter most are in SPEC.md §9; the one to internalise is that an
+untranslatable premise abandons the proof rather than dropping it.
+
+**Native codegen** (llvmlite) compiles pure functions over Int, Float,
+Bool, list reads and text reads — and functions whose contracts are
+proven, since a proven promise needs no runtime check. Anything that
+cannot be made identical to the interpreter is not compiled.
+
+**Interpreter** runs everything, with runtime checks for promises the
+prover could not settle.
+
+## Where things live
+
+| What | Where to look |
+|---|---|
+| Adding a builtin | `BUILTINS` table, then `run_builtin` |
+| Making a builtin fallible | `FALLIBLE_BUILTINS` |
+| A new proof capability | `to_z3` in the prover section |
+| A new statement | parser, then `explore`, `run`, and codegen |
+| Editor features | `editor_answer` and `lsp_serve` |
+| CLI commands | `main`, near the other `argv[:1] == [...]` checks |
+
+## The rules this project holds
+
+1. **Never claim something is proven when it is not.** If a premise
+   cannot be translated, abandon the proof; runtime checks still guard.
+2. **Native and interpreted must agree.** If they cannot, do not
+   compile that case. `fuzz_native.py` checks this on every release.
+3. **Every new example gets `velaris fmt`** before it ships.
+4. **A moved or deleted file needs an explicit `git rm`** — release
+   archives overlay, they do not delete.
+5. **Write the limitation down.** The changelog records mistakes on
+   purpose; a project that only lists wins cannot be trusted about
+   anything else.
+
+## Working on it
+
+    pip install -e ".[full]" pyinstaller
+    python run_tests.py          # 79 examples, expected verdicts
+    velaris test examples/std_test.vel
+    python fuzz_native.py 60     # both engines must agree
+    velaris fmt examples/*.vel stdlib/*.vel --check
+
+All four must pass before a release. CI runs them on Linux, Windows
+and macOS, with and without the optional solver.

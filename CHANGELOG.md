@@ -1,5 +1,50 @@
 # Velaris changelog
 
+## 2.36 - A tool worth running, and errors that read like a language
+`examples/linkcheck.vel` is a real utility rather than a demonstration:
+give it URLs on the command line or pipe a list in, and it reports each
+one's status, counts the broken ones, and exits non-zero so a scheduler
+can act. Progress goes to the error channel and the report to the
+output channel, so `linkcheck ... 2>/dev/null` is a clean report. It
+uses the http, log and standard modules together - the first program
+here written the way a user would write one.
+
+Writing it found a papercut worth fixing: a failed request handed
+Python's own words to the user
+(`<urlopen error [Errno -2] Name or service not known>`). Network
+failures now say what happened - the address did not resolve, it did
+not answer in time, the connection was refused, the certificate was not
+accepted - because an error message is part of a language's surface,
+not a place to leak the implementation.
+
+## 2.35 - Dates as values, HTTP with headers, and a way in for others
+`request(method, url, body, headers)` is one honest HTTP builtin: any
+method, headers as JSON, and the whole answer back as JSON - status,
+body and response headers together. `http.vel` wraps it as `call`,
+`get_with`, `post_json`, `code_of`, `body_of`, `header_of`. Still
+`uses net`, still fallible.
+
+`dates.vel` makes a date a **record**, not text: `make` and `parse`
+refuse impossible dates, `days_in` is proven to return between 28 and
+31, and `before`, `same`, `next_day` and `text_of` work on values.
+Writing it, the prover caught a real bug in it: `next_day` called
+`days_in` without knowing the month was valid, because a record cannot
+promise anything about its own fields. The fix was to say what the
+function needs, which is the language working as intended on its own
+standard library.
+
+`velaris proofs --detail` lists each promise-carrying function and,
+for the ones not proven, the contracts involved - so "60% proven"
+becomes a list you can act on.
+
+And the part that is not code: [ARCHITECTURE.md](ARCHITECTURE.md) is a
+map of the compiler with a table of where things live and the five
+rules this project holds; [MAINTAINERS.md](MAINTAINERS.md) says how
+someone becomes a maintainer, what a maintainer may not do (weaken a
+guarantee quietly), and lists six real, small, self-contained places
+to start. A second maintainer is the single thing that would most
+change what this project can promise, and now there is a door.
+
 ## 2.34 - Unattended work, and building for machines you do not have
 `log(text)` writes to the error channel, and `log.vel` gives it levels
 (`info`, `warn`, `error`, `event`, `fail_with`). Messages and results

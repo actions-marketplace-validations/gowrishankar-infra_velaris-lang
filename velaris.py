@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Velaris v2.34 — "The language where you can trust code you didn't write."
+Velaris v2.36 — "The language where you can trust code you didn't write."
 
-New in v2.34: log() and log.vel for unattended work, csv.vel and
-    date helpers, velaris build --for-everyone (three machines build
-    what one cannot), and rename in the editor.
+New in v2.36: examples/linkcheck.vel - a tool worth running, not a
+    demonstration - and network failures that say what happened
+    instead of quoting the implementation.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -143,6 +143,7 @@ Usage:
   velaris fmt program.vel                  format to the canonical style
   velaris check program.vel                compile only, do not run
   velaris proofs [path] [--min 80]         how much is proven, not just checked
+  velaris proofs . --detail                which functions, one by one
   velaris clean                            forget remembered proofs
   velaris test program.vel                 run every test_ function
   velaris trace program.vel                show every call as it happens
@@ -247,7 +248,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.34.0"
+VERSION = "2.36.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1167,7 +1168,7 @@ def blame(fn_or_rec, err: VelarisError) -> VelarisError:
 # ---------------------------------------------------------------------------
 
 FALLIBLE_BUILTINS = {"to_int", "read_file", "fetch", "post",
-                     "fetch_status", "py", "py_int", "py_float",
+                     "fetch_status", "request", "py", "py_int", "py_float",
                      "py_json", "json_get", "json_int", "json_float",
                      "json_len", "py_new", "py_do", "py_field"}   # + get on maps
 
@@ -1265,6 +1266,7 @@ BUILTINS = {
     "read_line":  {"effects": {"io"},     "types": [],              "ret": "Text"},
     "post":       {"effects": {"net"},    "types": ["Text", "Text"], "ret": "Text"},
     "fetch_status": {"effects": {"net"},  "types": ["Text"],        "ret": "Int"},
+    "request":    {"effects": {"net"},    "types": ["Text", "Text", "Text", "Text"], "ret": "Text"},
     "format":     {"effects": set(),      "types": ["Any"],         "ret": "Text"},
     "has":        {"effects": set(),      "types": ["Any", "Any"],  "ret": "Bool"},
     "keys":       {"effects": set(),      "types": ["Any"],         "ret": "Any"},
@@ -4389,6 +4391,52 @@ def run_builtin(name: str, args: list, line: int):
         with open(args[0], "w", encoding="utf-8") as f:
             f.write(str(args[1]))
         return None
+    if name == "request":
+        import json as _json
+        import urllib.request
+        import urllib.error
+        method, url, body, headers_json = (str(a) for a in args)
+        method = method.upper() or "GET"
+        if not (url.startswith("http://") or url.startswith("https://")):
+            url = "https://" + url
+        try:
+            headers = _json.loads(headers_json) if headers_json.strip() \
+                else {}
+        except Exception as e:
+            raise FailSignal(f"the headers are not valid JSON: {e}")
+        if not isinstance(headers, dict):
+            raise FailSignal('the headers must be a JSON object, like '
+                             '{"Accept": "application/json"}')
+        headers = {str(k): str(v) for k, v in headers.items()}
+        headers.setdefault("User-Agent", f"velaris/{VERSION}")
+        data = body.encode("utf-8") if body else None
+        req = urllib.request.Request(url, data=data, headers=headers,
+                                     method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                answer = {
+                    "status": int(resp.status),
+                    "body": resp.read(1 << 20).decode("utf-8",
+                                                      errors="replace"),
+                    "headers": {k: v for k, v in resp.headers.items()}}
+        except urllib.error.HTTPError as e:      # a real answer
+            answer = {
+                "status": int(e.code),
+                "body": e.read(1 << 20).decode("utf-8", errors="replace"),
+                "headers": {k: v for k, v in (e.headers or {}).items()}}
+        except Exception as e:            # say what happened, not how
+            reason = "the address did not resolve"
+            text = str(e).lower()
+            if "timed out" in text or "timeout" in text:
+                reason = "it did not answer in time"
+            elif "refused" in text:
+                reason = "the connection was refused"
+            elif "certificate" in text or "ssl" in text:
+                reason = "the certificate was not accepted"
+            elif "unreachable" in text or "network" in text:
+                reason = "the network is unreachable"
+            raise FailSignal(f"cannot reach '{url}': {reason}")
+        return _json.dumps(answer, ensure_ascii=False)
     if name in ("fetch", "post", "fetch_status"):
         import urllib.request
         import urllib.error
@@ -5726,6 +5774,30 @@ def main() -> int:
         if "--json" in argv:
             print(json.dumps({"files": rows, "totals": totals,
                               "proven_share": round(share, 1)}, indent=2))
+        elif "--detail" in argv:
+            print(f"{len(files)} file(s)")
+            print("-" * 62)
+            for path in files:
+                rep_ = inspect_source(path)
+                own = [f for f in rep_["functions"]
+                       if os.path.abspath(f["file"])
+                       == os.path.abspath(path)
+                       and (f["requires"] or f["ensures"])]
+                if not own:
+                    continue
+                print(path)
+                for f in own:
+                    mark = ("proven " if f["status"] == "proven"
+                            else "runtime")
+                    print(f"    [{mark}] {f['name']}")
+                    if f["status"] != "proven":
+                        for r in f["requires"]:
+                            print(f"                needs    {r}")
+                        for e in f["ensures"]:
+                            print(f"                promises {e}")
+            print("-" * 62)
+            print(f"{totals['proven']} of {promising} proven "
+                  f"({share:.0f}%)")
         else:
             print(f"{len(files)} file(s)")
             print("-" * 62)

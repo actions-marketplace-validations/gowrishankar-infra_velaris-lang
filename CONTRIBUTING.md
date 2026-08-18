@@ -1,4 +1,9 @@
-# Contributing to Velaris
+# Contributing
+
+Start with [ARCHITECTURE.md](ARCHITECTURE.md) for how the compiler is laid out, and
+[MAINTAINERS.md](MAINTAINERS.md) for small, self-contained places to begin.
+
+to Velaris
 
 Thanks for looking under the hood.
 

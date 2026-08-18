@@ -113,6 +113,9 @@ variables — the compiler tells you to pass them in instead.
 file persistence, sorted reports.
 `examples/wordcount.vel` — text analysis: `velaris examples/wordcount.vel
 <file> [n]` counts word frequencies and prints a ranked histogram.
+`examples/linkcheck.vel` — a link checker you would actually run:
+`velaris examples/linkcheck.vel <url> ...`, non-zero exit when
+something is broken.
 `examples/fetcher.vel` — an HTTP tool: checks a status, then summarises
 a page, with every network call declared and every failure handled.
 
@@ -274,6 +277,7 @@ not compile or a promise cannot be kept.
 ## Project
 
 [Roadmap](ROADMAP.md) · [Support and expectations](SUPPORT.md) ·
+[How the compiler works](ARCHITECTURE.md) · [Maintainers](MAINTAINERS.md) ·
 [Security policy](SECURITY.md) · [Changelog](CHANGELOG.md)
 
 Maintained by one person, in the open, with the limits stated plainly

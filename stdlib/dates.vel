@@ -1,0 +1,104 @@
+// Dates as values, not text.
+//
+// import "dates.vel" as dates
+// check dates.parse("2026-08-18") { ok d { ... } fail why { ... } }
+//
+// A Date is a record, so it compares, prints and travels like any
+// other value - and the promises here are proven, not hoped for.
+
+record Date {
+    year: Int
+    month: Int
+    day: Int
+}
+
+fn days_in(year: Int, month: Int) -> Int
+requires month >= 1
+requires month <= 12
+ensures result >= 28
+ensures result <= 31
+{
+    if month == 2 {
+        if year % 4 == 0 and year % 100 != 0 {
+            return 29
+        }
+        if year % 400 == 0 {
+            return 29
+        }
+        return 28
+    }
+    if month == 4 or month == 6 or month == 9 or month == 11 {
+        return 30
+    }
+    return 31
+}
+
+fn make(year: Int, month: Int, day: Int) -> Date or fail {
+    if month < 1 or month > 12 {
+        fail format("{} is not a month", month)
+    }
+    if day < 1 or day > days_in(year, month) {
+        fail format("{} is not a day in month {} of {}", day, month, year)
+    }
+    return Date(year: year, month: month, day: day)
+}
+
+fn parse(text: Text) -> Date or fail {
+    let parts = split(text, "-")
+    if length(parts) < 3 {
+        fail format("'{}' is not a date like 2026-08-18", text)
+    }
+    let y = try to_int(get(parts, 0))
+    let m = try to_int(get(parts, 1))
+    let rest = split(get(parts, 2), " ")
+    let d = try to_int(get(rest, 0))
+    return try make(y, m, d)
+}
+
+// A record cannot promise anything about its own fields, so a function
+// that reads a Date says what it needs. 'make' and 'parse' are the only
+// ways to build one, and both refuse impossible dates.
+fn text_of(d: Date) -> Text {
+    let month = to_text(d.month)
+    if d.month < 10 {
+        month = "0" + month
+    }
+    let day = to_text(d.day)
+    if d.day < 10 {
+        day = "0" + day
+    }
+    return format("{}-{}-{}", d.year, month, day)
+}
+
+fn before(a: Date, b: Date) -> Bool {
+    if a.year != b.year {
+        return a.year < b.year
+    }
+    if a.month != b.month {
+        return a.month < b.month
+    }
+    return a.day < b.day
+}
+
+fn same(a: Date, b: Date) -> Bool {
+    return a.year == b.year and a.month == b.month and a.day == b.day
+}
+
+fn next_day(d: Date) -> Date or fail
+requires d.month >= 1
+requires d.month <= 12
+{
+    if d.day < days_in(d.year, d.month) {
+        return try make(d.year, d.month, d.day + 1)
+    }
+    if d.month < 12 {
+        return try make(d.year, d.month + 1, 1)
+    }
+    return try make(d.year + 1, 1, 1)
+}
+
+fn today() -> Date uses ffi or fail {
+    let nothing: List of Text = []
+    let text = try py("datetime.date", "today", nothing)
+    return try parse(text)
+}
