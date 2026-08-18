@@ -50,6 +50,7 @@ EXPECT = {
     "text_list_proof.vel": "RUNS",
     "ffi.vel": "RUNS",
     "json_ffi.vel": "RUNS",
+    "database.vel": "RUNS",
     "grid_bad.vel": "REJECTED",
     "lambda_contract_bad.vel": "REJECTED",
     "map_bad.vel": "REJECTED",

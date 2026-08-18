@@ -1,0 +1,67 @@
+// v2.27: real libraries, not just functions.
+//
+// A Handle is a ticket for something living on the Python side - a
+// database connection, a session, a file. py_new makes one, py_do
+// calls a method on it, py_field reads an attribute, py_close lets it
+// go. Arguments travel as JSON, and a trailing JSON object becomes
+// keyword arguments.
+//
+// Every one of these needs 'uses ffi', so a program that talks to a
+// database says so in its signatures - and a pure function still
+// cannot.
+
+fn open_db(path: Text) -> Handle uses ffi or fail {
+    return try py_new("sqlite3", "connect", format("[\"{}\"]", path))
+}
+
+fn run(db: Handle, sql: Text) -> Text uses ffi or fail {
+    return try py_do(db, "execute", format("[\"{}\"]", sql))
+}
+
+fn count_rows(db: Handle) -> Int uses ffi or fail
+ensures result >= 0
+{
+    let cursor = try py_do(db, "execute", "[\"select count(*) from t\"]")
+    let rows = try py_json("builtins", "list", format("[{}]", cursor))
+    let n = try json_int(rows, "0[0]")
+    if n < 0 {
+        fail "a count cannot be negative"
+    }
+    return n
+}
+
+fn main() uses io, ffi {
+    check open_db(":memory:") {
+        ok db {
+            check run(db, "create table t (name text)") {
+                ok made {
+                    print("table created")
+                }
+                fail why {
+                    print(format("could not create: {}", why))
+                }
+            }
+            check run(db, "insert into t values ('velaris')") {
+                ok added {
+                    print("row inserted")
+                }
+                fail why {
+                    print(format("could not insert: {}", why))
+                }
+            }
+            check count_rows(db) {
+                ok n {
+                    print(format("rows in the table: {}", n))
+                }
+                fail why {
+                    print(format("could not count: {}", why))
+                }
+            }
+            py_close(db)
+            print("connection closed")
+        }
+        fail why {
+            print(format("could not open the database: {}", why))
+        }
+    }
+}

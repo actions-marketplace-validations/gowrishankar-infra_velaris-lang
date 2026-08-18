@@ -136,7 +136,9 @@ fn today() -> Text uses ffi or fail {
 }
 ```
 
-`py` / `py_int` / `py_float` call Python, so every library Python has is
+`py` / `py_int` / `py_float` / `py_json` call Python functions, and
+`py_new` / `py_do` / `py_field` / `py_close` hold real objects — a
+database connection, a session — so every library Python has is
 reachable — but only from a function that declares `uses ffi`, and it
 can fail like anything else that leaves your program.
 

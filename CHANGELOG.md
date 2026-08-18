@@ -1,5 +1,25 @@
 # Velaris changelog
 
+## 2.27 - Handles: real libraries, not just functions
+A `Handle` is a ticket for something living on the Python side - a
+database connection, an HTTP session, a file. That is the difference
+between calling functions and using libraries:
+
+    py_new(module, function, args)   -> Handle    make one
+    py_do(handle, method, args)      -> Text      call a method on it
+    py_field(handle, name)           -> Text      read an attribute
+    py_close(handle)                              let it go
+
+`examples/database.vel` opens a real SQLite database, creates a table,
+inserts a row, counts the rows and closes the connection - all from
+Velaris, and all behind `uses ffi`, so a program that talks to a
+database says so in its signatures.
+
+Arguments travel as JSON and a trailing JSON object becomes keyword
+arguments, which many Python APIs require. Handles pass through calls
+as arguments too, and anything Python hands back that is not JSON
+comes back as a handle rather than being flattened into a string.
+
 ## 2.26 - JSON, and calling Python with real data
 The FFI shipped in 2.25 could only pass text and receive a scalar,
 which is not "call any Python library" - it is "call the ones that

@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Velaris v2.26 — "The language where you can trust code you didn't write."
+Velaris v2.27 — "The language where you can trust code you didn't write."
 
-New in v2.26: JSON is first class and pure (json_get, json_int,
-    json_len, json_of, paths like "items[0].price"), and py_json sends
-    and receives JSON so real data - numbers, lists, nested objects -
-    survives a call into Python.
+New in v2.27: HANDLES. py_new / py_do / py_field / py_close hold a
+    real Python object - a database connection, a session - so whole
+    libraries are usable, still behind 'uses ffi'.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -245,7 +244,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.26.0"
+VERSION = "2.27.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1167,7 +1166,7 @@ def blame(fn_or_rec, err: VelarisError) -> VelarisError:
 FALLIBLE_BUILTINS = {"to_int", "read_file", "fetch", "post",
                      "fetch_status", "py", "py_int", "py_float",
                      "py_json", "json_get", "json_int", "json_float",
-                     "json_len"}   # + get on maps
+                     "json_len", "py_new", "py_do", "py_field"}   # + get on maps
 
 PROGRAM_ARGS: list = []    # filled by the CLI: velaris prog.vel a b c
 
@@ -1246,6 +1245,10 @@ BUILTINS = {
     "py_int":     {"effects": {"ffi"},    "types": ["Text", "Text", "List of Text"], "ret": "Int"},
     "py_float":   {"effects": {"ffi"},    "types": ["Text", "Text", "List of Text"], "ret": "Float"},
     "py_json":    {"effects": {"ffi"},    "types": ["Text", "Text", "Text"], "ret": "Text"},
+    "py_new":     {"effects": {"ffi"},    "types": ["Text", "Text", "Text"], "ret": "Handle"},
+    "py_do":      {"effects": {"ffi"},    "types": ["Handle", "Text", "Text"], "ret": "Text"},
+    "py_field":   {"effects": {"ffi"},    "types": ["Handle", "Text"], "ret": "Text"},
+    "py_close":   {"effects": {"ffi"},    "types": ["Handle"],       "ret": "Unit"},
     "json_get":   {"effects": set(),      "types": ["Text", "Text"], "ret": "Text"},
     "json_int":   {"effects": set(),      "types": ["Text", "Text"], "ret": "Int"},
     "json_float": {"effects": set(),      "types": ["Text", "Text"], "ret": "Float"},
@@ -1266,7 +1269,7 @@ BUILTINS = {
     "get":        {"effects": set(),      "types": ["Any", "Any"],  "ret": "Any"},
 }
 
-KNOWN_TYPES = {"Int", "Text", "Bool", "Float"}
+KNOWN_TYPES = {"Int", "Text", "Bool", "Float", "Handle"}
 
 def local_names_of(fn: Function) -> set[str]:
     out = {p for p, _ in fn.params}
@@ -3851,6 +3854,21 @@ class FailSignal(Exception):
     def __init__(self, reason): self.reason = reason
 
 
+class HandleValue:
+    """A ticket for something living on the Python side of the bridge."""
+    __slots__ = ("id", "what")
+
+    def __init__(self, id_: int, what: str):
+        self.id, self.what = id_, what
+
+    def __repr__(self):
+        return f"<{self.what} #{self.id}>"
+
+
+PY_OBJECTS: dict = {}
+PY_NEXT = [1]
+
+
 class RecordValue:
     def __init__(self, rname: str, fields: dict):
         self.rname, self.fields = rname, fields
@@ -3870,6 +3888,8 @@ def to_text(v) -> str:
     if isinstance(v, RecordValue):
         inner = ", ".join(f"{k}: {to_text(x)}" for k, x in v.fields.items())
         return f"{v.rname}({inner})"
+    if isinstance(v, HandleValue):
+        return f"<{v.what} #{v.id}>"
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, list):
@@ -3929,6 +3949,110 @@ def run_builtin(name: str, args: list, line: int):
         return args[1] in args[0]
     if name == "keys":
         return list(args[0].keys())
+    if name in ("py_new", "py_do", "py_field", "py_close"):
+        import json as _json
+
+        def resolve(module: str, func: str):
+            import importlib
+            mod, rest = None, ""
+            parts = str(module).split(".")
+            for cut in range(len(parts), 0, -1):
+                try:
+                    mod = importlib.import_module(".".join(parts[:cut]))
+                    rest = ".".join(parts[cut:])
+                    break
+                except ImportError:
+                    continue
+            if mod is None:
+                raise FailSignal(f"cannot import '{module}'")
+            target = mod
+            for part in ([p for p in rest.split(".") if p]
+                         + [p for p in str(func).split(".") if p]):
+                target = getattr(target, part, None)
+                if target is None:
+                    raise FailSignal(f"'{module}' has no '{func}'")
+            return target
+
+        def split_args(raw):
+            """A JSON list of arguments; a trailing object is keywords."""
+            try:
+                vals = _json.loads(str(raw))
+            except Exception as e:
+                raise FailSignal(f"the arguments are not valid JSON: {e}")
+            if not isinstance(vals, list):
+                raise FailSignal("the arguments must be a JSON list")
+            kwargs = {}
+            if (vals and isinstance(vals[-1], dict)
+                    and set(vals[-1]) != {"handle"}):
+                kwargs = {str(k): v for k, v in vals[-1].items()}
+                vals = vals[:-1]
+            return [unwrap(v) for v in vals], {k: unwrap(v)
+                                               for k, v in kwargs.items()}
+
+        def unwrap(v):
+            """A handle written as {"handle": 3} becomes the object."""
+            if isinstance(v, dict) and set(v) == {"handle"}:
+                obj = PY_OBJECTS.get(int(v["handle"]))
+                if obj is None:
+                    raise FailSignal("that handle is closed or unknown")
+                return obj
+            return v
+
+        def keep(obj) -> "HandleValue":
+            PY_NEXT[0] += 1
+            PY_OBJECTS[PY_NEXT[0]] = obj
+            return HandleValue(PY_NEXT[0], type(obj).__name__)
+
+        def answer(out):
+            if isinstance(out, (bytes, bytearray)):
+                out = out.decode("utf-8", errors="replace")
+            try:
+                return _json.dumps(out, ensure_ascii=False)
+            except TypeError:                  # not JSON: keep it alive
+                return _json.dumps({"handle": keep(out).id})
+
+        if name == "py_close":
+            h = args[0]
+            if isinstance(h, HandleValue):
+                obj = PY_OBJECTS.pop(h.id, None)
+                for closer in ("close", "shutdown", "__exit__"):
+                    fn_ = getattr(obj, closer, None)
+                    if fn_ is not None:
+                        try:
+                            fn_() if closer != "__exit__" else fn_(
+                                None, None, None)
+                        except Exception:
+                            pass
+                        break
+            return None
+
+        if name == "py_new":
+            target = resolve(args[0], args[1])
+            pos, kw = split_args(args[2])
+            try:
+                return keep(target(*pos, **kw))
+            except Exception as e:
+                raise FailSignal(f"{args[0]}.{args[1]} failed: {e}")
+
+        h = args[0]
+        if not isinstance(h, HandleValue):
+            raise FailSignal("this is not a handle")
+        obj = PY_OBJECTS.get(h.id)
+        if obj is None:
+            raise FailSignal("that handle is closed")
+        if name == "py_field":
+            got = getattr(obj, str(args[1]), None)
+            if got is None:
+                raise FailSignal(f"no '{args[1]}' on {h.what}")
+            return answer(got)
+        method = getattr(obj, str(args[1]), None)
+        if method is None:
+            raise FailSignal(f"{h.what} has no '{args[1]}'")
+        pos, kw = split_args(args[2])
+        try:
+            return answer(method(*pos, **kw))
+        except Exception as e:
+            raise FailSignal(f"{h.what}.{args[1]} failed: {e}")
     if name.startswith("json_") or name == "py_json":
         import json as _json
 
@@ -4017,6 +4141,21 @@ def run_builtin(name: str, args: list, line: int):
         if not isinstance(call_args, list):
             raise FailSignal("the arguments must be a JSON list, "
                              'like [1, "two", [3]]')
+        def unwrap_handle(v):
+            if isinstance(v, dict) and set(v) == {"handle"}:
+                obj = PY_OBJECTS.get(int(v["handle"]))
+                if obj is None:
+                    raise FailSignal("that handle is closed or unknown")
+                return obj
+            return v
+
+        kwargs = {}
+        if (call_args and isinstance(call_args[-1], dict)
+                and set(call_args[-1]) != {"handle"}):
+            kwargs = {str(k): unwrap_handle(v)
+                      for k, v in call_args[-1].items()}
+            call_args = call_args[:-1]
+        call_args = [unwrap_handle(v) for v in call_args]
         import importlib
         mod, rest = None, ""
         parts = str(module).split(".")
@@ -4036,15 +4175,17 @@ def run_builtin(name: str, args: list, line: int):
             if target is None:
                 raise FailSignal(f"'{module}' has no '{func}'")
         try:
-            out = target(*call_args)
+            out = target(*call_args, **kwargs)
         except Exception as e:
             raise FailSignal(f"{module}.{func} failed: {e}")
         if isinstance(out, (bytes, bytearray)):
             out = out.decode("utf-8", errors="replace")
         try:
-            return _json.dumps(out, ensure_ascii=False, default=str)
-        except Exception:
-            return _json.dumps(str(out))
+            return _json.dumps(out, ensure_ascii=False)
+        except TypeError:                     # not JSON: keep it alive
+            PY_NEXT[0] += 1
+            PY_OBJECTS[PY_NEXT[0]] = out
+            return _json.dumps({"handle": PY_NEXT[0]})
     if name in ("py", "py_int", "py_float"):
         module, func, call_args = args[0], args[1], args[2]
         import importlib
