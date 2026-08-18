@@ -126,6 +126,21 @@ compilation apply to them unchanged — and they can carry their own
 `requires` / `ensures`, proven like any other function's. They can't capture surrounding
 variables — the compiler tells you to pass them in instead.
 
+## Written by a model, audited by you, run in a box
+
+```
+velaris card > card.md          # ~1,500 words: paste into any model
+velaris audit script.vel        # what it can touch, before you run it
+velaris script.vel --allow io   # it cannot touch anything else
+```
+
+`velaris audit` is written for the reviewer: what the program reaches,
+what it promises, how much of that is *proven* rather than checked
+while running, what can fail, and the exact command to run it safely.
+`agent_loop.py` closes the circle — a model writes it, `velaris check
+--json` hands back errors with fixes, and it iterates until the program
+compiles and its promises prove.
+
 ## Running code you did not write
 
 ```

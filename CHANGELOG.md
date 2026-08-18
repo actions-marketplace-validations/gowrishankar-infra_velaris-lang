@@ -1,5 +1,46 @@
 # Velaris changelog
 
+## 2.41.1 - The card worked, and the first program it produced found a bug
+Pasting `velaris card` into a model that had never heard of Velaris
+produced a correct program on the first attempt - and that program
+crashed the prover. Pushing a **record** onto a list inside a `check`
+inside a loop reached a comparison that assumed every value has a Z3
+sort. Records do not. The rule was already right (a list of records
+cannot be modelled, so abandon the proof and let the runtime check);
+the translator simply asked the question in a way that crashed instead
+of answering it.
+
+`examples/rec_push.vel` is that program, kept as a regression test.
+
+Worth recording plainly: the card's first user found a real defect
+within minutes, which is exactly why it was worth building.
+
+## 2.41 - Written by a model, audited by you, run in a box
+Three pieces that make one story.
+
+**`velaris card`** prints `LLM.md` - about 1,500 words containing the
+whole language, the ten rules models actually get wrong, every builtin
+with its effects and whether it can fail, the error table, and a
+complete program to imitate. Paste it into any model and it can write
+Velaris that compiles. Until now the language's biggest problem with
+generated code was that no model had heard of it.
+
+**`velaris audit program.vel`** answers the reviewer's question rather
+than the author's: what this program can touch and which functions
+reach outside, what it promises and how much of that is **proven**
+before running versus checked while running, what can fail, and the
+exact command to run it under a budget. When a program calls Python it
+says plainly that an effect budget cannot contain that. `--json` for
+tooling.
+
+**`agent_loop.py`** writes a program with a model and iterates against
+the compiler: `velaris check --json` hands back codes, lines and
+numbered fixes, which go straight back to the model, up to six rounds,
+then the result is audited. Most agent loops iterate against tests;
+this one iterates against a proof, which is a stronger signal - the
+compiler does not say "a test failed", it says which input breaks which
+promise.
+
 ## 2.40.1 - Leading with the sandbox
 The README now opens with the thing that matters most in 2026: an AI
 wrote you a script, and you can run it anyway because the runtime

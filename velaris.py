@@ -150,6 +150,8 @@ Usage:
   velaris test program.vel                 run every test_ function
   velaris trace program.vel                show every call as it happens
   velaris explain program.vel              walk through what it does
+  velaris audit program.vel                what it can touch, before you run it
+  velaris card                             the language, for pasting into a model
   velaris explain <folder>                 a map of every file
   velaris doctor                           check the installation
   velaris new <name>                       start a fresh project
@@ -250,7 +252,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.40.1"
+VERSION = "2.41.1"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -2710,11 +2712,14 @@ def check_proofs(funcs: list[Function], records: list,
             # records, nested lists) stays runtime-checked rather than
             # being forced into a sort it does not fit
             if node.name == "push":
-                if a1.sort() != a0.arr.sort().range():
+                # a record, a nested list or a map has no Z3 sort at all;
+                # ask before assuming, or the translator crashes
+                if not hasattr(a1, "sort") or \
+                        a1.sort() != a0.arr.sort().range():
                     raise Unprovable()
                 return ListVal(z3.Store(a0.arr, a0.length, a1),
                                a0.length + 1)
-            if not z3.is_int(a1):
+            if not hasattr(a1, "sort") or not z3.is_int(a1):
                 raise Unprovable()          # an index is always an Int
             # get: prove the read stays inside the list (E705)
             if ctx is not None:
@@ -5853,6 +5858,119 @@ def main() -> int:
                       f"required {want:.0f}%", file=sys.stderr)
                 return 1
         return 1 if totals["errors"] else 0
+    if argv[:1] == ["card"]:
+        here = os.path.dirname(os.path.abspath(__file__))
+        for where in (os.path.join(here, "LLM.md"),
+                      os.path.join(here, "..", "LLM.md")):
+            if os.path.exists(where):
+                sys.stdout.write(open(where, encoding="utf-8").read())
+                return 0
+        print("LLM.md is not installed alongside the compiler; read it at "
+              "https://github.com/gowrishankar-infra/velaris-lang/blob/"
+              "main/LLM.md", file=sys.stderr)
+        return 1
+
+    if argv[:1] == ["audit"]:
+        if len(argv) < 2:
+            print("usage: velaris audit program.vel", file=sys.stderr)
+            return 1
+        target = argv[1]
+        if not os.path.exists(target):
+            print(f"no such file: {target}", file=sys.stderr)
+            return 1
+        report = inspect_source(target)
+        own = [f for f in report["functions"]
+               if os.path.abspath(f["file"]) == os.path.abspath(target)]
+        outside = sorted({e for f in own for e in f["effects"]})
+        promising = [f for f in own if f["requires"] or f["ensures"]]
+        proven = [f for f in promising if f["status"] == "proven"]
+        runtime = [f for f in promising if f["status"] != "proven"]
+        reaching = [f for f in own if f["effects"]]
+        fallible = [f for f in own if f["can_fail"]]
+
+        if "--json" in argv:
+            print(json.dumps({
+                "file": target,
+                "compiles": not report["errors"],
+                "errors": report["errors"],
+                "effects": outside,
+                "functions": len(own),
+                "proven": [f["name"] for f in proven],
+                "checked_at_runtime": [f["name"] for f in runtime],
+                "reaching_outside": {f["name"]: sorted(f["effects"])
+                                     for f in reaching},
+                "can_fail": [f["name"] for f in fallible],
+                "safe_command": (f"velaris {target} --allow "
+                                 + (",".join(outside) or "''")),
+            }, indent=2))
+            return 1 if report["errors"] else 0
+
+        print(f"AUDIT  {target}")
+        print("=" * 62)
+        if report["errors"]:
+            print(f"This does not compile ({len(report['errors'])} "
+                  f"problem(s)). Do not run it.")
+            for e in report["errors"][:5]:
+                print(f"  line {e['line']}: [{e['code']}] {e['message']}")
+            return 1
+
+        print("WHAT IT CAN TOUCH")
+        if not outside:
+            print("  nothing. This program cannot reach the console, the")
+            print("  disk, the network, the clock, randomness or Python.")
+        else:
+            words = {"io": "the console", "fs": "files",
+                     "net": "the network", "clock": "the time",
+                     "rand": "randomness", "ffi": "Python, and so "
+                                                  "anything Python can do"}
+            for e in outside:
+                print(f"  {e:<6} {words.get(e, e)}")
+            print()
+            print("  reached by:")
+            for f in reaching:
+                print(f"    {f['name']} ({', '.join(sorted(f['effects']))})")
+        print()
+
+        print("WHAT IT PROMISES")
+        if not promising:
+            print("  nothing. No function here carries a contract.")
+        else:
+            for f in proven:
+                print(f"  [proven ] {f['name']}")
+                for e in f["ensures"]:
+                    print(f"              always: {e}")
+            for f in runtime:
+                print(f"  [runtime] {f['name']}")
+                for e in f["ensures"]:
+                    print(f"              claims: {e}")
+            share = 100 * len(proven) / len(promising)
+            print()
+            print(f"  {len(proven)} of {len(promising)} proven before "
+                  f"running ({share:.0f}%); the rest are checked while "
+                  f"it runs.")
+        print()
+
+        if fallible:
+            print("WHAT CAN FAIL")
+            for f in fallible:
+                print(f"  {f['name']}")
+            print()
+
+        print("HOW TO RUN IT SAFELY")
+        budget = ",".join(outside)
+        if budget:
+            print(f"  velaris {target} --allow {budget}")
+            print("  Anything it did not declare is refused while it runs.")
+        else:
+            print(f"  velaris {target} --allow ''")
+            print("  It needs no permissions at all.")
+        if "ffi" in outside:
+            print()
+            print("  NOTE: this program calls Python, which means it can")
+            print("  do anything Python can. An effect budget does not")
+            print("  contain that. Read the code before running it.")
+        return 0
+
     if argv[:1] == ["clean"]:
         import shutil
         if os.path.exists(CACHE_DIR):

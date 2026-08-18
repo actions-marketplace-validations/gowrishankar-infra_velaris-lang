@@ -1,0 +1,52 @@
+// A record pushed onto a list, inside a check, inside a loop.
+//
+// The prover models lists of whole numbers. A list of records has no
+// shape it can translate, so it abandons the proof and lets the runtime
+// check instead - which is the rule, and it must not crash on the way.
+//
+// Found by the first program a language model ever wrote in Velaris.
+
+record Grade {
+    student: Text
+    score: Int
+}
+
+fn parse_one(line: Text) -> Grade or fail {
+    let parts = split(line, ",")
+    if length(parts) < 2 {
+        fail format("not a grade: {}", line)
+    }
+    let score = try to_int(get(parts, 1))
+    if score < 0 {
+        fail format("a score cannot be negative: {}", score)
+    }
+    return Grade(student: get(parts, 0), score: score)
+}
+
+fn total_of(grades: List of Grade) -> Int
+ensures result >= 0
+{
+    let total = 0
+    for g in grades {
+        if g.score > 0 {
+            total = total + g.score
+        }
+    }
+    return total
+}
+
+fn main() uses io {
+    let rows = ["alice,85", "bob,92", "charlie,oops", "diana,78"]
+    let kept: List of Grade = []
+    for row in rows {
+        check parse_one(row) {
+            ok g {
+                kept = push(kept, g)
+            }
+            fail why {
+                print(format("skipping: {}", why))
+            }
+        }
+    }
+    print(format("{} grade(s), total {}", length(kept), total_of(kept)))
+}
