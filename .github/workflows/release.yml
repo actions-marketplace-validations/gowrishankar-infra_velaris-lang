@@ -76,3 +76,26 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
+
+  vscode:
+    name: publish the VS Code extension
+    runs-on: ubuntu-latest
+    # needs a one-time VSCE_TOKEN secret; until then this is skipped
+    if: ${{ github.repository_owner != '' }}
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Publish to the Marketplace
+        working-directory: editor/vscode
+        run: |
+          if [ -z "$VSCE_TOKEN" ]; then
+            echo "no VSCE_TOKEN secret set - skipping"
+            exit 0
+          fi
+          npm install -g @vscode/vsce
+          vsce publish --pat "$VSCE_TOKEN"
+        env:
+          VSCE_TOKEN: ${{ secrets.VSCE_TOKEN }}

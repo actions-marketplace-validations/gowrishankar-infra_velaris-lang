@@ -1,5 +1,13 @@
 # Velaris changelog
 
+## 2.22 - The editor extension, ready to publish
+The VS Code extension is packaged properly: real publisher and
+repository metadata, an icon, a license, a written README, settings
+for where Velaris lives and whether to check on save, and categories
+so it can be found by search. A release workflow publishes it to the
+Marketplace when a `VSCE_TOKEN` secret exists, and quietly skips when
+it does not - so nothing breaks while that waits on a one-time setup.
+
 ## 2.21 - Watching a program run, and case-changing proofs
 `velaris trace program.vel` prints every call as it happens - indented
 by depth, arguments going in, answer coming back, and `FAILED` with the

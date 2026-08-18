@@ -1,27 +1,34 @@
 # Velaris for VS Code
 
-Syntax highlighting AND live errors for `.vel` files. If the `velaris`
-command is installed (`pip install .` from the repo), the extension
-launches `velaris lsp` automatically: effect, type, and proof errors
-appear as red squiggles while you type - each with its numbered fixes
-in the hover.
+Language support for [Velaris](https://gowrishankar-infra.github.io/velaris-lang/) —
+the language where a function's signature declares its types, its
+effects, whether it can fail, and promises that a theorem prover checks
+before the program runs.
 
-Also covers: keywords, contracts (`requires`,
-`ensures`, `invariant`), effects (`uses`), types, builtins, strings with
-escapes, and comments.
+## What you get
 
-## Install (no marketplace needed)
+- **Syntax highlighting** for `.vel` files
+- **Live errors as you type**, from the real compiler — including
+  promises proven false, with the exact input that breaks them
+- Comment toggling, bracket matching, and indentation
 
-Copy this folder into your VS Code extensions directory and restart:
+## Requirements
 
-**Windows (PowerShell):**
+Velaris itself:
+
 ```
-Copy-Item -Recurse -Force editor\vscode "$env:USERPROFILE\.vscode\extensions\velaris-syntax-1.11.0"
-```
-
-**macOS / Linux:**
-```
-cp -r editor/vscode ~/.vscode/extensions/velaris-syntax-1.11.0
+pip install velaris-lang
+velaris doctor
 ```
 
-Then reload VS Code and open any `.vel` file.
+If `velaris` is not on your PATH, set `velaris.command` in settings.
+
+## Settings
+
+| Setting | Default | What it does |
+|---|---|---|
+| `velaris.command` | `velaris` | How to run Velaris |
+| `velaris.checkOnSave` | `true` | Check and prove on save |
+
+MIT licensed. Issues and ideas:
+[github.com/gowrishankar-infra/velaris-lang](https://github.com/gowrishankar-infra/velaris-lang/issues)

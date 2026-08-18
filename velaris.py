@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Velaris v2.21 — "The language where you can trust code you didn't write."
+Velaris v2.22 — "The language where you can trust code you didn't write."
 
-New in v2.21: velaris trace program.vel shows every call as it
-    happens, and the prover models upper/lower as length-preserving,
-    so promises about them can be proven.
+New in v2.22: the VS Code extension is packaged for the Marketplace -
+    icon, README, settings, and a publish-on-tag workflow.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -241,7 +240,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.21.0"
+VERSION = "2.22.0"
 import re
 import sys
 from dataclasses import dataclass, field

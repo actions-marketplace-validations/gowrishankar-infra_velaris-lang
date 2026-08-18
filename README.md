@@ -138,8 +138,8 @@ promises, and whether they are proven — `explain <folder>` maps a whole
 project) ·
 `velaris repl` (definitions are proof-checked as you type them) ·
 `velaris fmt` (canonical style, `--check` for CI) · `velaris lsp`
-(errors as you type in any LSP editor; a dependency-free VS Code
-extension lives in [`editor/vscode`](editor/vscode)) ·
+(errors as you type in any LSP editor; a VS Code extension lives in
+[`editor/vscode`](editor/vscode)) ·
 `velaris doctor` · `velaris new` · `--json` errors for automation.
 
 ## Standard library
