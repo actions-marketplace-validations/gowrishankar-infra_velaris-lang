@@ -97,6 +97,10 @@ jobs:
           fi
           npm install -g @vscode/vsce
           TAG="${GITHUB_REF_NAME#v}"       # the tag is the version
+          case "$(echo "$TAG" | tr -cd '.' | wc -c)" in
+            0) TAG="$TAG.0.0" ;;           # npm wants three parts:
+            1) TAG="$TAG.0" ;;             # v2.36 becomes 2.36.0
+          esac
           npm version "$TAG" --no-git-tag-version --allow-same-version
           if vsce publish --pat "$VSCE_TOKEN"; then
             echo "published $TAG"

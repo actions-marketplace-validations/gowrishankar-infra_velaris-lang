@@ -1,5 +1,11 @@
 # Velaris changelog
 
+## 2.36.1 - Two-part tags publish the extension again
+Tags here are two-part (`v2.36`) but npm requires three
+(`2.36.0`), so the extension publish failed with
+`Invalid version: 2.36`. The workflow now pads a short tag before
+using it. Nothing about the language changed.
+
 ## 2.36 - A tool worth running, and errors that read like a language
 `examples/linkcheck.vel` is a real utility rather than a demonstration:
 give it URLs on the command line or pipe a list in, and it reports each
