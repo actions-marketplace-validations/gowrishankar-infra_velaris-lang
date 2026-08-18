@@ -140,6 +140,8 @@ New in v1.0: the testers' release.
 Usage:
   velaris program.vel                      run a program (after pip install)
   velaris repl                             interactive session
+  velaris <file> --allow io                refuse every other effect
+  velaris <file> --deny net,ffi            allow everything but these
   velaris fmt program.vel                  format to the canonical style
   velaris check program.vel                compile only, do not run
   velaris proofs [path] [--min 80]         how much is proven, not just checked
@@ -248,7 +250,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.39.1"
+VERSION = "2.40.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1173,6 +1175,26 @@ FALLIBLE_BUILTINS = {"to_int", "read_file", "fetch", "post",
                      "json_len", "py_new", "py_do", "py_field"}   # + get on maps
 
 PROGRAM_ARGS: list = []    # filled by the CLI: velaris prog.vel a b c
+
+ALL_EFFECTS = ("io", "fs", "net", "clock", "rand", "ffi")
+EFFECT_BUDGET: set = set(ALL_EFFECTS)   # everything, unless you say less
+
+
+def spend(effect: str, what: str, line: int) -> None:
+    """Refuse an effect the person running this did not allow.
+
+    The compiler checks that a function declares what it does. This is
+    the other half: the runtime refuses anything outside the budget
+    given on the command line, whatever the source says about itself -
+    so you can run a program you have not read.
+    """
+    if effect in EFFECT_BUDGET:
+        return
+    raise VelarisError("E310",
+        f"'{what}' needs the '{effect}' effect, which this run does not "
+        f"allow", line,
+        fixes=[f"allow it: velaris <file> --allow {effect}",
+               "or use a program that does not need it"])
 
 INT_MIN, INT_MAX = -(2 ** 63), 2 ** 63 - 1
 
@@ -4026,6 +4048,8 @@ def to_text(v) -> str:
 def run_builtin(name: str, args: list, line: int):
     import time as _time
     import random as _rand
+    for effect in sorted(BUILTINS.get(name, {}).get("effects", set())):
+        spend(effect, name, line)
     if name == "print":
         print(to_text(args[0]))
         return None
@@ -6023,6 +6047,29 @@ def main() -> int:
         return 1
     filename = sys.argv[1]
     as_json = "--json" in sys.argv
+    if "--allow" in sys.argv or "--deny" in sys.argv:
+        allowed = set()
+        if "--allow" in sys.argv:
+            for name in sys.argv[sys.argv.index("--allow") + 1].split(","):
+                name = name.strip()
+                if name and name not in ALL_EFFECTS:
+                    print(f"'{name}' is not an effect. They are: "
+                          f"{', '.join(ALL_EFFECTS)}", file=sys.stderr)
+                    return 2
+                if name:
+                    allowed.add(name)
+        else:
+            allowed = set(ALL_EFFECTS)
+        if "--deny" in sys.argv:
+            for name in sys.argv[sys.argv.index("--deny") + 1].split(","):
+                name = name.strip()
+                if name and name not in ALL_EFFECTS:
+                    print(f"'{name}' is not an effect. They are: "
+                          f"{', '.join(ALL_EFFECTS)}", file=sys.stderr)
+                    return 2
+                allowed.discard(name)
+        EFFECT_BUDGET.clear()
+        EFFECT_BUDGET.update(allowed)
     FLAGS = {"--json", "--no-native", "--time", "--check"}
     PROGRAM_ARGS[:] = [a for a in sys.argv[2:] if a not in FLAGS]
     try:

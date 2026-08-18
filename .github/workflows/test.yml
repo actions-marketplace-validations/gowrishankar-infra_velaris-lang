@@ -33,6 +33,8 @@ jobs:
         run: python fuzz_native.py 60
       - name: How much is proven
         run: velaris proofs examples stdlib || true
+      - name: The sandbox cannot be escaped
+        run: python check_sandbox.py
       - name: Wrong programs are refused for the right reason
         run: python check_refusals.py
       - name: Edge, property and round-trip tests

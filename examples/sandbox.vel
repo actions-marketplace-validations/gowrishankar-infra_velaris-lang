@@ -1,0 +1,70 @@
+// Running a program you have not read.
+//
+// velaris examples/sandbox.vel                  everything allowed
+// velaris examples/sandbox.vel --allow io       only printing
+// velaris examples/sandbox.vel --deny net,ffi   everything but those
+//
+// The compiler checks that a function declares what it does. The
+// runtime refuses anything outside the budget you granted on the
+// command line, whatever the source says about itself. A refusal is
+// not a failure the program can catch - it stops there.
+
+import "std.vel"
+
+fn pure_work(n: Int) -> Int
+requires n >= 0
+ensures result >= 0
+{
+    let total = 0
+    for i in 0 to n {
+        total = total + i
+    }
+    return total
+}
+
+fn touches_the_disk(path: Text) -> Text uses fs or fail {
+    return try read_file(path)
+}
+
+fn touches_the_network(url: Text) -> Int uses net or fail {
+    return try fetch_status(url)
+}
+
+fn touches_python(word: Text) -> Text uses ffi or fail {
+    return try py("builtins", "str", [word])
+}
+
+fn main() uses io, fs, net, ffi {
+    print("pure work needs no permission at all")
+    print(format("  sum to 10: {}", pure_work(10)))
+    print(format("  sorted:    {}", sort([5, 1, 3])))
+    print("")
+    print("everything below needs permission from whoever runs this:")
+
+    check touches_python("hello") {
+        ok text {
+            print(format("  ffi allowed: python gave back {}", text))
+        }
+        fail why {
+            print(format("  ffi failed: {}", why))
+        }
+    }
+    check touches_the_disk("velaris.py") {
+        ok body {
+            print(format("  fs allowed: read {} characters", length(body)))
+        }
+        fail why {
+            print(format("  fs failed: {}", why))
+        }
+    }
+    check touches_the_network("https://example.com") {
+        ok code {
+            print(format("  net allowed: status {}", code))
+        }
+        fail why {
+            print(format("  net failed: {}", why))
+        }
+    }
+    print("")
+    print("finished")
+}

@@ -95,12 +95,25 @@ compilation apply to them unchanged — and they can carry their own
 `requires` / `ensures`, proven like any other function's. They can't capture surrounding
 variables — the compiler tells you to pass them in instead.
 
+## Running code you did not write
+
+```
+velaris agent_output.vel --allow io      # it cannot touch anything else
+velaris agent_output.vel --deny net,ffi  # everything except these
+```
+
+The runtime refuses any effect outside the budget you grant, whatever
+the source claims — and a refusal cannot be caught and carried past.
+Not a security boundary (`ffi` grants everything Python can do), but a
+real guard for running a program you have not read.
+
 ## Checking everything at once
 
 ```
 velaris examples/stress.vel     # 33 checks across the whole language
 velaris examples/edges.vel      # 20 boundary, property and round-trip checks
 python check_refusals.py        # 20 wrong programs, each refused correctly
+python check_sandbox.py         # 11 escape attempts, all refused
 ```
 
 One command that exercises the language, the standard library, the

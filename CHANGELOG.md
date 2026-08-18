@@ -1,5 +1,35 @@
 # Velaris changelog
 
+## 2.40 - Running a program you have not read
+The compiler has always checked that a function declares what it does.
+This is the other half:
+
+    velaris program.vel --allow io          refuse every other effect
+    velaris program.vel --deny net,ffi      allow everything but these
+
+The runtime refuses any effect outside the budget granted on the
+command line, **whatever the source says about itself**. A refusal is
+not a failure the program can catch with `check` - it stops there, so
+a program cannot swallow the refusal and carry on.
+
+`check_sandbox.py` proves it holds: eleven escape attempts - reading,
+writing, the network, calling Python, opening a database through a
+handle, the clock, randomness, hiding the effect behind two layers of
+helper, catching the refusal to continue anyway, and both `--deny`
+forms - all refused with E310, with a file-existence check confirming
+nothing was actually written. Four honest programs still run untouched,
+including one with no permissions at all. Needs no prover, so it
+behaves identically in every CI configuration.
+
+`examples/sandbox.vel` shows the same thing by hand.
+
+**What this is not**: a security boundary. A program granted `ffi` can
+do anything Python can, and nothing here limits memory, time, or what a
+program prints. It is a strong guard against accident and casual
+misbehaviour - which is the situation you are in when an AI hands you a
+script - not a defence against a hostile author you have already
+granted permission.
+
 ## 2.39.1 - The refusal harness knows what needs the prover
 Nine of the twenty refusals in `check_refusals.py` are proof results -
 a false promise, a possible divide by zero, an out-of-range read, a
