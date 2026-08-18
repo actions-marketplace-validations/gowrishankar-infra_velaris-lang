@@ -116,6 +116,18 @@ file persistence, sorted reports.
 `examples/fetcher.vel` — an HTTP tool: checks a status, then summarises
 a page, with every network call declared and every failure handled.
 
+## Libraries
+
+```
+velaris add https://example.com/geo.vel as geo   # vendored into lib/
+velaris deps                                     # what you depend on
+velaris verify                                   # unchanged since?
+```
+
+A library is compiled before it is accepted, recorded with its exact
+sha256 in `velaris.toml`, and kept in your repository where you can
+read it. No registry, no resolver, nothing fetched at build time.
+
 ## Imports
 
 ```

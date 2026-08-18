@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Velaris v2.22 — "The language where you can trust code you didn't write."
+Velaris v2.23 — "The language where you can trust code you didn't write."
 
-New in v2.22: the VS Code extension is packaged for the Marketplace -
-    icon, README, settings, and a publish-on-tag workflow.
+New in v2.23: libraries you can share. velaris add vendors a library
+    into lib/ after compiling it, records its exact sha256, and
+    velaris verify tells you if it ever changes underneath you.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -147,6 +148,9 @@ Usage:
   velaris explain <folder>                 a map of every file
   velaris doctor                           check the installation
   velaris new <name>                       start a fresh project
+  velaris add <url or path> [as name]      vendor a library into lib/
+  velaris deps                             what this project depends on
+  velaris verify                           are the libraries unchanged?
   velaris lsp                              language server (for editors)
   velaris version                          print the version
   python velaris.py program.vel            run a program
@@ -240,7 +244,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.22.1"
+VERSION = "2.23.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -4479,6 +4483,134 @@ fn main() uses io {
 """
 
 
+MANIFEST = "velaris.toml"
+
+
+def _manifest_read() -> list:
+    """Every dependency, as (name, source, sha256)."""
+    if not os.path.exists(MANIFEST):
+        return []
+    import re as _re
+    text = open(MANIFEST, encoding="utf-8").read()
+    return [(m.group(1), m.group(2), m.group(3)) for m in _re.finditer(
+        r'^(\w[\w.-]*)\s*=\s*\{\s*source\s*=\s*"([^"]*)"\s*,\s*'
+        r'sha256\s*=\s*"([0-9a-f]{64})"\s*\}\s*$', text, _re.M)]
+
+
+def _manifest_write(deps: list) -> None:
+    with open(MANIFEST, "w", encoding="utf-8") as f:
+        f.write("# Velaris dependencies. Every library is vendored into\n"
+                "# lib/ and recorded here with the exact bytes it had, so\n"
+                "# 'velaris verify' can tell you if anything changed.\n\n")
+        f.write("[dependencies]\n")
+        for name, source, digest in sorted(deps):
+            f.write(f'{name} = {{ source = "{source}", '
+                    f'sha256 = "{digest}" }}\n')
+
+
+def packages(argv: list) -> int:
+    import hashlib
+    cmd = argv[0]
+    deps = _manifest_read()
+
+    if cmd == "deps":
+        if not deps:
+            print("no dependencies yet - add one with: "
+                  "velaris add <url or path>")
+            return 0
+        print(f"{len(deps)} dependenc(ies), vendored in lib/")
+        for name, source, digest in deps:
+            here = os.path.join("lib", name + ".vel")
+            mark = "ok " if os.path.exists(here) else "MISSING"
+            print(f"  [{mark}] {name}\n      from {source}"
+                  f"\n      {digest[:16]}...")
+        return 0
+
+    if cmd == "verify":
+        if not deps:
+            print("nothing to verify")
+            return 0
+        bad = 0
+        for name, source, digest in deps:
+            path = os.path.join("lib", name + ".vel")
+            if not os.path.exists(path):
+                print(f"  MISSING  {name} (re-add it: velaris add {source})")
+                bad += 1
+                continue
+            now = hashlib.sha256(open(path, "rb").read()).hexdigest()
+            if now != digest:
+                print(f"  CHANGED  {name} - the file is not what was "
+                      f"recorded")
+                bad += 1
+            else:
+                print(f"  ok       {name}")
+        if bad:
+            print(f"\n{bad} problem(s). A library that changed under you "
+                  f"is worth looking at before trusting it.")
+            return 1
+        print(f"\nall {len(deps)} dependenc(ies) are exactly as recorded")
+        return 0
+
+    if len(argv) < 2:                     # add
+        print("usage: velaris add <url or path> [as <name>]",
+              file=sys.stderr)
+        return 1
+    source = argv[1]
+    name = None
+    if len(argv) >= 4 and argv[2] == "as":
+        name = argv[3]
+    if name is None:
+        name = os.path.basename(source)
+        if name.endswith(".vel"):
+            name = name[:-4]
+    if not name or "/" in name or "\\" in name:
+        print(f"'{name}' is not a usable library name", file=sys.stderr)
+        return 1
+
+    if source.startswith("http://") or source.startswith("https://"):
+        import urllib.request
+        try:
+            with urllib.request.urlopen(source, timeout=20) as resp:
+                data = resp.read(4 << 20)
+        except Exception as e:
+            print(f"could not fetch {source}: {e}", file=sys.stderr)
+            return 1
+    else:
+        if not os.path.exists(source):
+            print(f"no such file: {source}", file=sys.stderr)
+            return 1
+        data = open(source, "rb").read()
+
+    text = data.decode("utf-8", errors="replace")
+    os.makedirs("lib", exist_ok=True)
+    path = os.path.join("lib", name + ".vel")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+
+    rep_ = inspect_source(path)           # a library must compile
+    if rep_["errors"]:
+        os.remove(path)
+        print(f"'{name}' does not compile, so it was not added:",
+              file=sys.stderr)
+        for e in rep_["errors"][:3]:
+            print(f"  line {e['line']}: [{e['code']}] {e['message']}",
+                  file=sys.stderr)
+        return 1
+
+    digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
+    deps = [d for d in deps if d[0] != name] + [(name, source, digest)]
+    _manifest_write(deps)
+    own = [f for f in rep_["functions"]
+           if os.path.abspath(f["file"]) == os.path.abspath(path)]
+    proven = sum(1 for f in own if f["status"] == "proven")
+    effs = sorted({e for f in own for e in f["effects"]})
+    print(f"added {name} -> lib/{name}.vel")
+    print(f"  {len(own)} function(s), {proven} with proven promises")
+    print(f"  performs: {', '.join(effs) if effs else 'nothing'}")
+    print(f'  use it with: import "lib/{name}.vel" as {name}')
+    return 0
+
+
 def doctor() -> int:
     OK, OPT, BAD = "[ ok ]", "[ -- ]", "[FAIL]"
     lines, healthy = [], True
@@ -4681,6 +4813,8 @@ def main() -> int:
         return fmt_main(argv[1:])
     if argv[:1] == ["lsp"]:
         return lsp_serve()
+    if argv[:1] in (["add"], ["deps"], ["verify"]):
+        return packages(argv)
     if argv[:1] == ["trace"]:
         if len(argv) < 2:
             print("usage: velaris trace program.vel", file=sys.stderr)

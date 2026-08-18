@@ -1,5 +1,25 @@
 # Velaris changelog
 
+## 2.23 - Libraries you can actually share
+Until now, using someone's Velaris library meant copying a file and
+hoping. Three commands fix that:
+
+    velaris add <url or path> [as name]   vendor it into lib/
+    velaris deps                          what this project depends on
+    velaris verify                        are they exactly as recorded?
+
+`add` fetches the file (local path or https), **compiles it before
+accepting it** - a library that does not compile is not added - and
+records its exact sha256 in `velaris.toml`. It then tells you what you
+just took on: how many functions, how many with proven promises, and
+what effects the library performs. `verify` re-checks every hash, so a
+library that changed underneath you is something you find out about
+rather than run.
+
+Deliberately not a registry: the file lives in your repository where
+you can read it, there is no resolver inventing versions for you, and
+nothing is fetched at build time.
+
 ## 2.22.1 - First extension publish
 A version bump so the tagged release has something newer than the
 Marketplace has, now that the publisher and token exist. Nothing about
