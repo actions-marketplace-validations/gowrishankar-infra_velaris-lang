@@ -148,13 +148,17 @@ Contract expressions must be pure. Promises the prover cannot settle
 fall back to runtime checks — the program still runs.
 
 **What the prover can and cannot reach.** It is strong on arithmetic
-over whole numbers and floats, on straight-line list length reasoning,
-and on simple counter loops. It goes blind the moment a **loop mutates
-a list**: `ensures length(result) == length(xs) - 1` on a
-hand-written loop will not prove even with an invariant, and an
-off-by-one like `while i <= length(xs) { get(xs, i) }` is caught at
-runtime (E602) rather than before running. Write contracts on pure
-arithmetic helpers where they prove; elsewhere expect a runtime check.
+over whole numbers and floats, on list lengths, and on counter loops -
+including promises about a list a loop builds, such as
+`ensures length(result) == length(xs)`, with no invariant needed. It
+also catches the classic off-by-one: `while i <= length(xs)` reading
+`get(xs, i)` is refused before running.
+
+It still falls back to runtime for: promises about the *contents* of a
+list rather than its length, loops whose counter moves by anything
+other than one, several counters moving together, and anything reached
+through `ffi`. Write contracts freely on arithmetic and on list
+lengths; expect runtime checks elsewhere.
 
 **Whole-number overflow is an error, not a failure.** `a * b` that
 outgrows 64 bits raises E407 and stops the program - `check` cannot

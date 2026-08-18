@@ -252,7 +252,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.42.0"
+VERSION = "2.43.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -2864,11 +2864,16 @@ def check_proofs(funcs: list[Function], records: list,
                 fixes=["guard it: if d != 0 { ... }",
                        "or add a 'requires' that rules out zero"])
 
+    pinned_counter = [False]   # True while checking a real final turn
+
     def prove_bounds(idx, length, ctx, line):
         """Prove 0 <= idx < length; report only provably-real violations."""
-        if has_fresh(idx) or has_fresh(length) or \
-                any(has_fresh(c) for c in ctx.conds):
+        if not pinned_counter[0] and (
+                has_fresh(idx) or has_fresh(length)
+                or any(has_fresh(c) for c in ctx.conds)):
             return                       # runtime bounds check still guards
+        if has_fresh(length) and not pinned_counter[0]:
+            return
         solver = z3.Solver()
         solver.set("timeout", solver_budget())
         solver.add(*ctx.param_assum)
@@ -2969,6 +2974,39 @@ def check_proofs(funcs: list[Function], records: list,
         if verdict != z3.unsat:
             raise Unprovable()
 
+    def bound_of(s, env, ctx, changed):
+        """(counter, its last value in the loop, its starting value).
+
+        Only for the simple shape: one Int compared against something the
+        loop does not change, stepping by one.
+        """
+        if not isinstance(s.cond, BinOp) or s.cond.op not in ("<", "<="):
+            return None
+        left, right = s.cond.left, s.cond.right
+        if not isinstance(left, Var) or left.name not in changed:
+            return None
+        start = env.get(left.name)
+        if start is None or not z3.is_int(start) or has_fresh(start):
+            return None
+        try:
+            limit = to_z3(right, env, None)
+        except (Unprovable, KeyError):
+            return None
+        if not z3.is_int(limit) or has_fresh(limit):
+            return None
+        steps = [st for st in s.body
+                 if isinstance(st, Assign) and st.name == left.name]
+        if len(steps) != 1:
+            return None                  # not a plain one-step counter
+        step = steps[0].value
+        if not (isinstance(step, BinOp) and step.op == "+"
+                and isinstance(step.left, Var)
+                and step.left.name == left.name
+                and isinstance(step.right, Num) and step.right.value == 1):
+            return None
+        last = limit - 1 if s.cond.op == "<" else limit
+        return (left.name, last, start)
+
     def infer_invariants(env, changed, s, ctx):
         """Guess the boring invariants so people stop writing them.
 
@@ -2993,6 +3031,62 @@ def check_proofs(funcs: list[Function], records: list,
             cands.append((f"{n} never goes above its starting value",
                           lambda e, n=n, s0=start: e[n] <= s0))
 
+        # A counter walking toward a limit stops AT the limit, not past
+        # it. Without this the state after a loop only says i >= limit,
+        # so 'the loop ran exactly limit times' can never follow - which
+        # is what almost every list-building loop needs.
+        bound = None
+        if isinstance(s.cond, BinOp) and s.cond.op in ("<", "<=", ">", ">="):
+            for side, other, op in ((s.cond.left, s.cond.right, s.cond.op),
+                                    (s.cond.right, s.cond.left,
+                                     {"<": ">", "<=": ">=", ">": "<",
+                                      ">=": "<="}[s.cond.op])):
+                if isinstance(side, Var) and side.name in snap:
+                    try:
+                        limit = to_z3(other, env, None)
+                    except (Unprovable, KeyError):
+                        continue
+                    if not z3.is_int(limit) or has_fresh(limit):
+                        continue
+                    counter = side.name
+                    step = 1 if op in ("<", "<=") else -1
+                    # 'while i < E' exits with i at most E; 'while i <= E'
+                    # exits with i at most E + 1. Off by one here and the
+                    # bound is too weak to pin the counter at exit.
+                    edge = (limit if op == "<" else limit + 1) if step > 0 \
+                        else (limit if op == ">" else limit - 1)
+                    bound = (counter, edge, step)
+                    label = (f"{counter} never passes the limit the loop "
+                             f"tests against")
+                    if step > 0:
+                        cands.append((label,
+                                      lambda e, n=counter, b=edge: e[n] <= b))
+                    else:
+                        cands.append((label,
+                                      lambda e, n=counter, b=edge: e[n] >= b))
+                    break
+
+        # A list built one item per turn has exactly as many items as the
+        # counter has turns. This is the bridge the prover was missing
+        # between a loop and the length of what it produced.
+        if bound is not None:
+            counter, _, _ = bound
+            for n in sorted(changed):
+                v = env.get(n)
+                if not isinstance(v, ListVal) or has_fresh(v.length):
+                    continue
+                start_len = v.length
+                start_counter = snap.get(counter)
+                if start_counter is None:
+                    continue
+                cands.append((
+                    f"'{n}' grows one item for each turn of '{counter}'",
+                    lambda e, n=n, c=counter, l0=start_len,
+                    c0=start_counter: e[n].length == l0 + (e[c] - c0)))
+                cands.append((f"'{n}' never shrinks",
+                              lambda e, n=n, l0=start_len:
+                              e[n].length >= l0))
+
         for _round in range(3):
             env_h, hfacts = havoc_like(env, changed)
             try:
@@ -3007,6 +3101,9 @@ def check_proofs(funcs: list[Function], records: list,
                 paths = explore(list(s.body), dict(env_h), ctx_body)
             except (Unprovable, VelarisError):
                 return []
+            if os.environ.get("VELARIS_DEBUG_INV"):
+                print("  candidates this round:",
+                      [lab for lab, _ in cands], file=sys.stderr)
             keep = []
             for label, c in cands:
                 ok = True
@@ -3161,6 +3258,34 @@ def check_proofs(funcs: list[Function], records: list,
                                             "after one loop step")
                     else:
                         exits.append((pctx, ret, penv))  # return inside loop
+                # 2b. THE LAST TURN. A counter that starts inside the
+                #     loop's limit and steps by exactly one takes every
+                #     value up to the largest the condition allows - so
+                #     that turn really happens, and a read on it is a
+                #     real read. Pinning the counter there turns "might
+                #     be out of range somewhere" into a fact.
+                if bound_of(s, env, ctx, changed) is not None:
+                    counter, last, start = bound_of(s, env, ctx, changed)
+                    reach = z3.Solver()
+                    reach.set("timeout", solver_budget())
+                    reach.add(*ctx.param_assum)
+                    reach.add(*ctx.conds)
+                    reach.add(z3.Not(start <= last))
+                    if reach.check() == z3.unsat:      # the turn happens
+                        env_last, lfacts = havoc_like(env, changed)
+                        env_last[counter] = last
+                        ctx_last = Ctx(
+                            ctx.conds + lfacts,
+                            list(ctx.assum) + lfacts,
+                            list(ctx.param_assum), ctx.caller)
+                        pinned_counter[0] = True
+                        try:
+                            explore(list(s.body), dict(env_last), ctx_last)
+                        except Unprovable:
+                            pass
+                        finally:
+                            pinned_counter[0] = False
+
                 # 3. AFTERWARD: all we know is invariants hold, cond is false
                 env_a, hfacts_a = havoc_like(env, changed)
                 facts_a = list(hfacts_a)

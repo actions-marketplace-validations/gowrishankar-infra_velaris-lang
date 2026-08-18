@@ -1,0 +1,23 @@
+// The off-by-one everyone writes at least once.
+//
+// 'i <= length(xs)' reads one past the end on the final turn. Until
+// v2.43 this compiled and crashed at runtime; now the prover walks the
+// loop's last real turn - a counter stepping by one from inside the
+// limit reaches every value up to it - and reports the read before the
+// program runs.
+
+fn walk(xs: List of Int) -> Int
+    requires length(xs) >= 1
+{
+    let total = 0
+    let i = 0
+    while i <= length(xs) {
+        total = total + get(xs, i)
+        i = i + 1
+    }
+    return total
+}
+
+fn main() uses io {
+    print(walk([1, 2, 3]))
+}

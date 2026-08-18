@@ -1,5 +1,31 @@
 # Velaris changelog
 
+## 2.43 - The prover crosses the loop boundary
+The sharpest finding in the last review was that the prover went blind
+the moment a loop touched a list: a promise like
+`ensures length(result) == length(xs) - 1` would not prove even with a
+hand-written invariant, and the textbook off-by-one
+`while i <= length(xs) { get(xs, i) }` was caught only at runtime. Both
+are fixed.
+
+**Two invariants were missing.** A counter walking toward a limit stops
+*at* the limit - without that, the state after a loop only says
+`i >= limit`, so "the loop ran exactly that many times" could never
+follow. And a list built one item per turn has exactly as many items as
+the counter has turns. Both are inferred automatically now; the
+promises in `examples/loop_lists.vel` prove with no invariant written
+at all. The proven share across the examples went from 60% to 64%.
+
+**The off-by-one is refused before running.** Reporting a bug about a
+loop's index used to be unsound, because the index inside a loop stands
+for *any* state the invariants allow. The sound route is the loop's
+**last real turn**: a counter that starts inside the limit and steps by
+exactly one takes every value up to the largest the condition allows,
+so that turn genuinely happens and a read on it is a genuine read.
+`examples/offbyone_bad.vel` is rejected with the position and the
+length. Correct loops - `i < length(xs)`, guarded reads, and counting
+backwards - are unaffected, which was checked before anything shipped.
+
 ## 2.42 - Findings from a model that installed it and tried to break it
 A third model read `velaris card`, installed the language, wrote a
 30-function calculator that compiled and ran correctly first try, then

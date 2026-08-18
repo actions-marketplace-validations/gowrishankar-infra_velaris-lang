@@ -1,0 +1,53 @@
+// Promises about a list a loop builds - proven before running.
+//
+// A model reported this as the prover's ceiling: "the moment a loop
+// mutates a list, it goes blind". It was right, and the cause was two
+// missing invariants. A counter walking toward a limit stops AT the
+// limit, and a list built one item per turn has exactly as many items
+// as the counter has turns. With those inferred, promises about what a
+// loop produced follow.
+
+fn drop_last(xs: List of Int) -> List of Int
+    requires length(xs) >= 1
+    ensures length(result) == length(xs) - 1
+{
+    let out: List of Int = []
+    let i = 0
+    while i < length(xs) - 1 {
+        out = push(out, get(xs, i))
+        i = i + 1
+    }
+    return out
+}
+
+fn doubled(xs: List of Int) -> List of Int
+    ensures length(result) == length(xs)
+{
+    let out: List of Int = []
+    let i = 0
+    while i < length(xs) {
+        out = push(out, get(xs, i) * 2)
+        i = i + 1
+    }
+    return out
+}
+
+fn first_n(xs: List of Int, n: Int) -> List of Int
+    requires n >= 0
+    requires n <= length(xs)
+    ensures length(result) == n
+{
+    let out: List of Int = []
+    let i = 0
+    while i < n {
+        out = push(out, get(xs, i))
+        i = i + 1
+    }
+    return out
+}
+
+fn main() uses io {
+    print(format("drop_last: {}", drop_last([1, 2, 3])))
+    print(format("doubled:   {}", doubled([1, 2, 3])))
+    print(format("first two: {}", first_n([1, 2, 3], 2)))
+}

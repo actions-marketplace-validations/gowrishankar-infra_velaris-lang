@@ -58,6 +58,8 @@ EXPECT = {
     "rec_push.vel": "RUNS",
     "avg_bad.vel": "REJECTED",
     "stack.vel": "RUNS",
+    "loop_lists.vel": "RUNS",
+    "offbyone_bad.vel": "REJECTED",
     "grid_bad.vel": "REJECTED",
     "lambda_contract_bad.vel": "REJECTED",
     "map_bad.vel": "REJECTED",
