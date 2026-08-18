@@ -1,5 +1,11 @@
 # Velaris changelog
 
+## 2.36.4 - The Action has its own name
+GitHub's Marketplace requires an Action's name to be globally unique,
+and "Velaris" was taken. The Action is now "Velaris Language Check",
+which describes what it does anyway. Nothing else changed - the way
+you use it is identical.
+
 ## 2.36.3 - A picture of the point
 The README now opens with an image of the compiler refuting a promise
 and handing back the input that breaks it. People decide in a few

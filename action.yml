@@ -1,4 +1,4 @@
-name: "Velaris"
+name: "Velaris Language Check"
 description: "Install Velaris and check that a project compiles and its promises hold."
 branding:
   icon: "check-circle"
