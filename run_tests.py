@@ -115,11 +115,13 @@ def main() -> int:
         # Without the prover, proof_catch's bug is only reachable for
         # years > 30, which its main deliberately never calls - that IS
         # the demo's point. It runs clean under runtime checks.
-        expect["proof_catch.vel"] = "RUNS"
-        expect["fail_proof_bad.vel"] = "RUNS"
-        print("note: z3-solver absent - proof_catch.vel and "
-              "fail_proof_bad.vel expected to RUN "
-              "(their bugs are only findable by proof)")
+        proof_only = ["proof_catch.vel", "fail_proof_bad.vel",
+                      "div_bad.vel", "grid_bad.vel"]
+        for name in proof_only:
+            expect[name] = "RUNS"
+        print("note: z3-solver absent - " + ", ".join(proof_only)
+              + " expected to RUN (their bugs are only findable "
+                "by proof)")
     failed = 0
     for name, want in expect.items():
         path = examples / name

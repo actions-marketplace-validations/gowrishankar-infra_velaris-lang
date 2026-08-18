@@ -1,5 +1,14 @@
 # Velaris changelog
 
+## 2.18.2 - Minimal-mode expectations for the newest proofs
+`div_bad.vel` and `grid_bad.vel` demonstrate bugs only the prover can
+see: divide-by-zero on a path that happens not to be taken, and a row
+read that is in range for the example data. Without z3 installed both
+programs simply run, so the test suite expected the wrong verdict and
+every no-dependency leg failed on all three platforms. They are now
+listed with the other proof-only examples, and the suite passes with
+and without the solver.
+
 ## 2.18.1 - Releases stay green
 The PyPI job added in 2.18 cannot succeed until a pending publisher
 exists on pypi.org, and a release should not be reported as broken for
