@@ -1,5 +1,11 @@
 # Velaris changelog
 
+## 2.36.2 - Somewhere to start
+The README points at the open `good first issue` list and spells out
+the four commands a change has to pass before it ships. The tasks
+themselves are now issues rather than a paragraph in a file nobody
+opens.
+
 ## 2.36.1 - Two-part tags publish the extension again
 Tags here are two-part (`v2.36`) but npm requires three
 (`2.36.0`), so the extension publish failed with

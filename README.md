@@ -287,9 +287,24 @@ in [SUPPORT.md](SUPPORT.md).
 
 The entire implementation is one readable file, `velaris.py`, in
 pipeline order — lexer to LSP. Start with
-[CONTRIBUTING.md](CONTRIBUTING.md); 52 example programs in
-[`examples/`](examples) each carry an expected verdict (half are
-*designed* to be rejected — each rejection demonstrates a guarantee).
+[ARCHITECTURE.md](ARCHITECTURE.md) for how it fits together, and
+[MAINTAINERS.md](MAINTAINERS.md) for what review looks like.
+
+**Looking for somewhere to start?** See the
+[good first issues](https://github.com/gowrishankar-infra/velaris-lang/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+— small, self-contained tasks, each with the file to open and what
+"done" means.
+
+The example programs in [`examples/`](examples) each carry an expected
+verdict, and about half are *designed* to be rejected — each rejection
+demonstrates a guarantee. Before any change ships:
+
+```
+python run_tests.py                 # every example, expected verdicts
+velaris test examples/std_test.vel  # the library's own tests
+python fuzz_native.py 60            # both engines must agree
+velaris fmt examples/*.vel stdlib/*.vel --check
+```
 
 ## License
 
