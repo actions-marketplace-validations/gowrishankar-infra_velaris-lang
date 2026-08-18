@@ -1,5 +1,22 @@
 # Velaris changelog
 
+## 2.33 - A number a team can watch, and an image to run it in
+`velaris proofs [path]` reports, for a file or a whole project, how
+many promise-carrying functions are **proven before running** versus
+**checked while running** - with `--json` for tooling and `--min 80`
+to fail a build when the share slips. If a language's claim is proven
+promises, that number should be visible and defended, not assumed.
+The GitHub Action takes `min-proven`, and this project's own CI now
+prints its share on every push.
+
+The language server also completes: functions in scope with their
+signatures and contracts, every builtin with its effects and whether
+it can fail, and the keywords.
+
+A `Dockerfile` builds an image with the prover and native backend
+already installed, so `docker run --rm -v "$PWD:/work" velaris check
+/work/main.vel` needs nothing on the machine but Docker.
+
 ## 2.32 - The editor knows what is proven, and CI is one line
 The language server answers hover (signature, effects and contracts),
 go-to-definition across imported files, an outline of the file, and -

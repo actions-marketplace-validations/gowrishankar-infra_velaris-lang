@@ -21,6 +21,10 @@ inputs:
     description: "Also fail if the code is not canonically formatted (true/false)."
     required: false
     default: "false"
+  min-proven:
+    description: "Fail if fewer than this percent of promise-carrying functions are proven (e.g. 80)."
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -52,6 +56,11 @@ runs:
         fi
         echo "checking $(echo "$files" | wc -w) file(s)"
         velaris check $files
+
+    - name: Proven share
+      if: ${{ inputs.min-proven != '' }}
+      shell: bash
+      run: velaris proofs . --min "${{ inputs.min-proven }}"
 
     - name: Formatting
       if: ${{ inputs.format == 'true' }}

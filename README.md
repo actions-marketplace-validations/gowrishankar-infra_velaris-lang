@@ -242,13 +242,27 @@ on Linux and Windows, Python 3.10 and 3.12, with and without the
 optional dependencies. Errors are stable, numbered, and
 [fully documented](https://gowrishankar-infra.github.io/velaris-lang/errors.html).
 
+## How much is proven
+
+```
+velaris proofs .            # 35 of 58 promise-carrying functions proven (60%)
+velaris proofs . --min 80   # fails the build below 80%
+```
+
 ## Using Velaris in CI
 
 ```yaml
-- uses: gowrishankar-infra/velaris-lang@v2.32
+- uses: gowrishankar-infra/velaris-lang@v2.33
   with:
     files: "src/*.vel"     # optional; default is every .vel file
     format: "true"         # optional; also check formatting
+    min-proven: "80"       # optional; fail below this proven share
+```
+
+Or without installing anything:
+
+```
+docker run --rm -v "$PWD:/work" velaris check /work/main.vel
 ```
 
 Installs Velaris with the prover and fails the build if anything does

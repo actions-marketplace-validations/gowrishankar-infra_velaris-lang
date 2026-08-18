@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Velaris v2.32 — "The language where you can trust code you didn't write."
+Velaris v2.33 — "The language where you can trust code you didn't write."
 
-New in v2.32: the editor shows whether each function's promises are
-    proven, with hover and go-to-definition; Velaris is a GitHub
-    Action; and ROADMAP.md and SUPPORT.md say what is planned and what
-    one maintainer can honestly promise.
+New in v2.33: velaris proofs reports how much of a project is proven
+    rather than checked while running, with --min to hold the line in
+    CI; the editor completes; and a Dockerfile carries the prover.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -143,6 +142,7 @@ Usage:
   velaris repl                             interactive session
   velaris fmt program.vel                  format to the canonical style
   velaris check program.vel                compile only, do not run
+  velaris proofs [path] [--min 80]         how much is proven, not just checked
   velaris clean                            forget remembered proofs
   velaris test program.vel                 run every test_ function
   velaris trace program.vel                show every call as it happens
@@ -247,7 +247,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.32.0"
+VERSION = "2.33.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -4788,6 +4788,31 @@ def editor_answer(method: str, params: dict, text: str, uri: str):
                 "command": {"title": title, "command": ""}})
         return lenses
 
+    if method == "textDocument/completion":
+        items = []
+        for f in funcs:
+            if f.name.startswith("fn#"):
+                continue
+            items.append({"label": f.name, "kind": 3,
+                          "detail": signature(f),
+                          "documentation": " ".join(
+                              [f"requires {expr_str(e)}"
+                               for e, _ in f.requires]
+                              + [f"ensures {expr_str(e)}"
+                                 for e, _ in f.ensures]) or None})
+        for name, info in BUILTINS.items():
+            eff = ", ".join(sorted(info["effects"])) or "pure"
+            fail = " (can fail)" if name in FALLIBLE_BUILTINS else ""
+            items.append({"label": name, "kind": 3,
+                          "detail": f"builtin -> {info['ret']}{fail}",
+                          "documentation": f"effects: {eff}"})
+        for word in ("fn", "let", "return", "if", "else", "while", "for",
+                     "uses", "requires", "ensures", "invariant", "record",
+                     "import", "fail", "check", "try", "or fail",
+                     "for any T"):
+            items.append({"label": word, "kind": 14})
+        return {"isIncomplete": False, "items": items}
+
     if method == "textDocument/documentSymbol":
         return [{"name": f.name, "kind": 12,
                  "range": {"start": {"line": max(f.line - 1, 0),
@@ -4940,12 +4965,14 @@ def lsp_serve() -> int:
                         "openClose": True, "change": 1,
                         "save": {"includeText": True}},
                     "hoverProvider": True,
+                    "completionProvider": {
+                        "triggerCharacters": [".", " "]},
                     "definitionProvider": True,
                     "codeLensProvider": {"resolveProvider": False},
                     "documentSymbolProvider": True},
                 "serverInfo": {"name": "velaris", "version": VERSION}}})
         elif method in ("textDocument/hover", "textDocument/definition",
-                        "textDocument/codeLens",
+                        "textDocument/codeLens", "textDocument/completion",
                         "textDocument/documentSymbol"):
             uri = params["textDocument"]["uri"]
             text = docs.get(uri, "")
@@ -5568,6 +5595,75 @@ def main() -> int:
         return lsp_serve()
     if argv[:1] in (["add"], ["deps"], ["verify"]):
         return packages(argv)
+    if argv[:1] == ["proofs"]:
+        target = argv[1] if len(argv) > 1 and not argv[1].startswith("-") \
+            else "."
+        files = []
+        if os.path.isdir(target):
+            files = sorted(
+                os.path.join(dp, f)
+                for dp, _, fns in os.walk(target) for f in fns
+                if f.endswith(".vel") and ".velaris" not in dp)
+        elif os.path.exists(target):
+            files = [target]
+        if not files:
+            print(f"no .vel files under '{target}'", file=sys.stderr)
+            return 1
+        rows, totals = [], {"proven": 0, "runtime": 0, "plain": 0,
+                            "errors": 0}
+        for path in files:
+            rep_ = inspect_source(path)
+            own = [f for f in rep_["functions"]
+                   if os.path.abspath(f["file"]) == os.path.abspath(path)]
+            counts = {"proven": 0, "runtime": 0, "plain": 0}
+            for f in own:
+                if f["status"] == "proven":
+                    counts["proven"] += 1
+                elif f["status"] == "checked at runtime":
+                    counts["runtime"] += 1
+                else:
+                    counts["plain"] += 1
+            for k in counts:
+                totals[k] += counts[k]
+            totals["errors"] += len(rep_["errors"])
+            rows.append({"file": path, **counts,
+                         "errors": len(rep_["errors"])})
+        promising = totals["proven"] + totals["runtime"]
+        share = (100.0 * totals["proven"] / promising) if promising else 0.0
+        if "--json" in argv:
+            print(json.dumps({"files": rows, "totals": totals,
+                              "proven_share": round(share, 1)}, indent=2))
+        else:
+            print(f"{len(files)} file(s)")
+            print("-" * 62)
+            for r in rows:
+                if not (r["proven"] or r["runtime"] or r["errors"]):
+                    continue
+                mark = "!" if r["errors"] else " "
+                print(f"{mark} {r['file']}")
+                bits = []
+                if r["proven"]:
+                    bits.append(f"{r['proven']} proven")
+                if r["runtime"]:
+                    bits.append(f"{r['runtime']} checked while running")
+                if r["errors"]:
+                    bits.append(f"{r['errors']} problem(s)")
+                print("    " + ", ".join(bits))
+            print("-" * 62)
+            print(f"{totals['proven']} of {promising} promise-carrying "
+                  f"function(s) proven before running "
+                  f"({share:.0f}%)")
+            if totals["plain"]:
+                print(f"{totals['plain']} function(s) make no promises")
+            if totals["errors"]:
+                print(f"{totals['errors']} problem(s) found")
+        if "--min" in argv:
+            want = float(argv[argv.index("--min") + 1])
+            if share < want:
+                print(f"\nproven share {share:.0f}% is below the "
+                      f"required {want:.0f}%", file=sys.stderr)
+                return 1
+        return 1 if totals["errors"] else 0
     if argv[:1] == ["clean"]:
         import shutil
         if os.path.exists(CACHE_DIR):
