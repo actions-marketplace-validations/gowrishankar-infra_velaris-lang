@@ -248,7 +248,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.37.0"
+VERSION = "2.38.0"
 import re
 import sys
 from dataclasses import dataclass, field

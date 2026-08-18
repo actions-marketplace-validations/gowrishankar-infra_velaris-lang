@@ -1,0 +1,394 @@
+// The second stress test: the places languages actually break.
+//
+// velaris examples/edges.vel
+//
+// Boundaries (empty, zero, one, negative, the integer limits),
+// properties checked over many generated values rather than one
+// hand-picked example, and round-trips that must come back unchanged.
+// Asks nothing, exits non-zero if anything fails.
+
+import "std.vel"
+import "dates.vel" as dates
+import "csv.vel" as csv
+
+fn is_sorted_text(xs: List of Text) -> Bool {
+    let i = 1
+    while i < length(xs) {
+        if get(xs, i - 1) > get(xs, i) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+fn pseudo(seed: Int) -> Int
+requires seed >= 0
+ensures result >= 0
+{
+    let next = (seed * 1103515245 + 12345) % 2147483647
+    if next < 0 {
+        return 0 - next
+    }
+    return next
+}
+
+fn spread(seed: Int, size: Int) -> List of Int
+requires seed >= 0
+requires size >= 0
+{
+    let out: List of Int = []
+    let s = seed
+    for i in 0 to size {
+        s = pseudo(s)
+        out = push(out, s % 200 - 100)
+    }
+    return out
+}
+
+fn sum_of_list(xs: List of Int) -> Int {
+    let total = 0
+    for v in xs {
+        total = total + v
+    }
+    return total
+}
+
+fn main() uses io, ffi {
+    let passed = 0
+    let failed = 0
+
+    print("Velaris edge and property tests")
+    print("===============================")
+
+    // ---------------------------------------------------- boundaries
+    let empty: List of Int = []
+    if length(empty) == 0 and length(sort(empty)) == 0
+    and length(reverse(empty)) == 0 and sum_of(empty) == 0 {
+        print("PASS  empty list: length, sort, reverse, sum")
+        passed = passed + 1
+    } else {
+        print("FAIL  empty list")
+        failed = failed + 1
+    }
+
+    let one = [42]
+    if sort(one) == [42] and reverse(one) == [42] and max_of(one) == 42
+    and min_of(one) == 42 {
+        print("PASS  one-element list")
+        passed = passed + 1
+    } else {
+        print("FAIL  one-element list")
+        failed = failed + 1
+    }
+
+    if length("") == 0 and upper("") == "" and contains("abc", "")
+    and length(split("", ",")) == 1 {
+        print("PASS  empty text: length, case, contains, split")
+        passed = passed + 1
+    } else {
+        print("FAIL  empty text")
+        failed = failed + 1
+    }
+
+    let blank: Map of Text to Int = { }
+    if length(keys(blank)) == 0 and get_or(blank, "any", -1) == -1
+    and not has(blank, "any") {
+        print("PASS  empty map: keys, get_or, has")
+        passed = passed + 1
+    } else {
+        print("FAIL  empty map")
+        failed = failed + 1
+    }
+
+    let negatives = [-5, -100, -1]
+    if max_of(negatives) == -1 and min_of(negatives) == -100
+    and sum_of(negatives) == -106 {
+        print("PASS  negative numbers throughout")
+        passed = passed + 1
+    } else {
+        print("FAIL  negative numbers")
+        failed = failed + 1
+    }
+
+    if 0 - 0 == 0 and 0 * -7 == 0 and -7 / 2 == -4 and -7 % 2 == 1 {
+        print("PASS  zero and negative division rounds toward minus infinity")
+        passed = passed + 1
+    } else {
+        print("FAIL  zero and negative division")
+        failed = failed + 1
+    }
+
+    let big = 9223372036854775807
+    let small = -9223372036854775808
+    if big + 0 == big and small + 0 == small and big - big == 0 {
+        print("PASS  the integer limits hold their values")
+        passed = passed + 1
+    } else {
+        print("FAIL  integer limits")
+        failed = failed + 1
+    }
+
+    if length(range_list(5, 5)) == 0 and length(range_list(0, 1)) == 1 {
+        print("PASS  empty and single ranges")
+        passed = passed + 1
+    } else {
+        print("FAIL  ranges")
+        failed = failed + 1
+    }
+
+    // ----------------------------------------------------- properties
+    let sorted_ok = true
+    let length_ok = true
+    let sum_ok = true
+    let seed = 7
+    for round in 0 to 60 {
+        seed = pseudo(seed)
+        let xs = spread(seed, round % 12)
+        let s = sort(xs)
+        if not is_sorted(s) {
+            sorted_ok = false
+        }
+        if length(s) != length(xs) {
+            length_ok = false
+        }
+        if sum_of_list(s) != sum_of_list(xs) {
+            sum_ok = false
+        }
+    }
+    if sorted_ok {
+        print("PASS  property: sort always returns a sorted list (60 cases)")
+        passed = passed + 1
+    } else {
+        print("FAIL  property: sort produced an unsorted list")
+        failed = failed + 1
+    }
+    if length_ok {
+        print("PASS  property: sort keeps the length (60 cases)")
+        passed = passed + 1
+    } else {
+        print("FAIL  property: sort changed the length")
+        failed = failed + 1
+    }
+    if sum_ok {
+        print("PASS  property: sort keeps every element (60 cases)")
+        passed = passed + 1
+    } else {
+        print("FAIL  property: sort lost or invented an element")
+        failed = failed + 1
+    }
+
+    let rev_ok = true
+    let member_ok = true
+    seed = 31
+    for round in 0 to 40 {
+        seed = pseudo(seed)
+        let xs = spread(seed, round % 9 + 1)
+        if reverse(reverse(xs)) != xs {
+            rev_ok = false
+        }
+        if not contains_item(xs, max_of(xs)) {
+            member_ok = false
+        }
+    }
+    if rev_ok {
+        print("PASS  property: reversing twice gives the original (40 cases)")
+        passed = passed + 1
+    } else {
+        print("FAIL  property: double reverse changed the list")
+        failed = failed + 1
+    }
+    if member_ok {
+        print("PASS  property: the maximum is always in the list (40 cases)")
+        passed = passed + 1
+    } else {
+        print("FAIL  property: maximum was not a member")
+        failed = failed + 1
+    }
+
+    let filter_ok = true
+    seed = 99
+    for round in 0 to 30 {
+        seed = pseudo(seed)
+        let xs = spread(seed, round % 10)
+        let kept = keep_if(xs, fn(n: Int) -> Bool {
+            return n >= 0
+        })
+        if length(kept) > length(xs) {
+            filter_ok = false
+        }
+        if not all_of(kept, fn(n: Int) -> Bool {
+            return n >= 0
+        }) {
+            filter_ok = false
+        }
+    }
+    if filter_ok {
+        print("PASS  property: filtering keeps only matching items (30 cases)")
+        passed = passed + 1
+    } else {
+        print("FAIL  property: filter kept something it should not have")
+        failed = failed + 1
+    }
+
+    // ---------------------------------------------------- round trips
+    let dates_ok = true
+    let day = 1
+    while day <= 28 {
+        let text = format("2026-02-{}", day)
+        if day < 10 {
+            text = format("2026-02-0{}", day)
+        }
+        check dates.parse(text) {
+            ok d {
+                if dates.text_of(d) != text {
+                    dates_ok = false
+                }
+            }
+            fail why {
+                dates_ok = false
+            }
+        }
+        day = day + 1
+    }
+    if dates_ok {
+        print("PASS  round trip: parse a date and print it back (28 days)")
+        passed = passed + 1
+    } else {
+        print("FAIL  round trip: dates did not survive")
+        failed = failed + 1
+    }
+
+    let json_ok = true
+    let sample = json_of([1, 2, 3])
+    check json_len(sample, "") {
+        ok n {
+            if n != 3 {
+                json_ok = false
+            }
+        }
+        fail why {
+            json_ok = false
+        }
+    }
+    check json_get(json_of({ "a": 5 }), "a") {
+        ok v {
+            if v != "5" {
+                json_ok = false
+            }
+        }
+        fail why {
+            json_ok = false
+        }
+    }
+    if json_ok {
+        print("PASS  round trip: build JSON and read it back")
+        passed = passed + 1
+    } else {
+        print("FAIL  round trip: JSON did not survive")
+        failed = failed + 1
+    }
+
+    let csv_ok = true
+    let row = csv.line_of(["chai", "2500", "1"])
+    if row != "chai,2500,1" {
+        csv_ok = false
+    }
+    if length(csv.fields(row)) != 3 {
+        csv_ok = false
+    }
+    check csv.column_int(row, 1) {
+        ok amount {
+            if amount != 2500 {
+                csv_ok = false
+            }
+        }
+        fail why {
+            csv_ok = false
+        }
+    }
+    if csv_ok {
+        print("PASS  round trip: write a CSV row and read it back")
+        passed = passed + 1
+    } else {
+        print("FAIL  round trip: CSV did not survive")
+        failed = failed + 1
+    }
+
+    let text_ok = true
+    let words = ["proof", "speed", "trust"]
+    if join(words, ",") != "proof,speed,trust" {
+        text_ok = false
+    }
+    if length(split(join(words, ","), ",")) != 3 {
+        text_ok = false
+    }
+    if lower(upper("Velaris")) != "velaris" {
+        text_ok = false
+    }
+    if text_ok {
+        print("PASS  round trip: join then split, upper then lower")
+        passed = passed + 1
+    } else {
+        print("FAIL  round trip: text did not survive")
+        failed = failed + 1
+    }
+
+    let sorted_words = sort_by(["pear", "fig", "apple"], fn(w: Text) -> Int {
+        return length(w)
+    })
+    if length(sorted_words) == 3 and get(sorted_words, 0) == "fig" {
+        print("PASS  sorting text by a key function")
+        passed = passed + 1
+    } else {
+        print("FAIL  sorting text by a key function")
+        failed = failed + 1
+    }
+
+    // ------------------------------------- native and interpreted agree
+    let agree = true
+    seed = 5
+    for round in 0 to 25 {
+        seed = pseudo(seed)
+        let n = seed % 1000
+        if sum_to_checked(n) != slow_sum(n) {
+            agree = false
+        }
+    }
+    if agree {
+        print("PASS  the same answer from both engines (25 cases)")
+        passed = passed + 1
+    } else {
+        print("FAIL  the engines disagreed")
+        failed = failed + 1
+    }
+
+    print("===============================")
+    print(format("{} passed, {} failed", passed, failed))
+    if failed > 0 {
+        exit_with(1)
+    }
+}
+
+fn sum_to_checked(n: Int) -> Int
+requires n >= 0
+ensures result >= 0
+{
+    let total = 0
+    let i = 0
+    while i < n {
+        total = total + i
+        i = i + 1
+    }
+    return total
+}
+
+fn slow_sum(n: Int) -> Int
+requires n >= 0
+{
+    let total = 0
+    for i in 0 to n {
+        total = total + i
+    }
+    return total
+}

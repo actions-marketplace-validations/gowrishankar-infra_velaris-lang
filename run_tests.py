@@ -53,6 +53,7 @@ EXPECT = {
     "database.vel": "RUNS",
     "stdlib_tools.vel": "RUNS",
     "pipeline.vel": "RUNS",
+    "edges.vel": "RUNS",
     "grid_bad.vel": "REJECTED",
     "lambda_contract_bad.vel": "REJECTED",
     "map_bad.vel": "REJECTED",

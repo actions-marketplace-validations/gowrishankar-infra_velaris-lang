@@ -98,7 +98,9 @@ variables — the compiler tells you to pass them in instead.
 ## Checking everything at once
 
 ```
-velaris examples/stress.vel     # 33 checks, exits non-zero on failure
+velaris examples/stress.vel     # 33 checks across the whole language
+velaris examples/edges.vel      # 20 boundary, property and round-trip checks
+python check_refusals.py        # 20 wrong programs, each refused correctly
 ```
 
 One command that exercises the language, the standard library, the

@@ -1,0 +1,247 @@
+#!/usr/bin/env python3
+"""Every wrong program must be refused, and for the right reason.
+
+The example suite checks that bad programs are rejected. This checks
+something stricter: that each one is rejected with the *specific* error
+the language promises, so a guarantee cannot quietly degrade into a
+different guarantee.
+
+    python check_refusals.py
+"""
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+HERE = Path(__file__).parent
+VELARIS = HERE / "velaris.py"
+
+CASES = [
+    ("a promise that is false", "E700", '''
+fn discount(price: Int) -> Int
+    requires price >= 0
+    ensures result >= 0
+{
+    return price - 10
+}
+
+fn main() uses io {
+    print(discount(50))
+}
+'''),
+    ("an effect that was not declared", "E300", '''
+fn sneaky(price: Int) -> Int {
+    print("leaking " + price)
+    return price
+}
+
+fn main() uses io {
+    print(sneaky(10))
+}
+'''),
+    ("reaching the network without saying so", "E300", '''
+fn quiet(url: Text) -> Text or fail {
+    return try fetch(url)
+}
+
+fn main() uses io, net {
+    print("hi")
+}
+'''),
+    ("calling Python without the ffi effect", "E300", '''
+fn quiet(x: Text) -> Text or fail {
+    return try py("os", "getcwd", [x])
+}
+
+fn main() uses io {
+    print("hi")
+}
+'''),
+    ("ignoring a failure", "E520", '''
+fn main() uses io {
+    let answer = ask("a number:")
+    print(to_int(answer) * 2)
+}
+'''),
+    ("ignoring a map lookup that can fail", "E520", '''
+fn main() uses io {
+    let ages = {"a": 1}
+    print(get(ages, "b"))
+}
+'''),
+    ("dividing by something that can be zero", "E706", '''
+fn share(total: Int, people: Int) -> Int
+    requires people >= 0
+{
+    return total / people
+}
+
+fn main() uses io {
+    print(share(10, 2))
+}
+'''),
+    ("reading past the end of a list", "E705", '''
+fn second(xs: List of Int) -> Int
+    requires length(xs) >= 1
+{
+    return get(xs, 1)
+}
+
+fn main() uses io {
+    print(second([1, 2]))
+}
+'''),
+    ("breaking a promise about a record's list", "E700", '''
+record Basket {
+    owner: Text
+    items: List of Int
+}
+
+fn add(b: Basket, price: Int) -> Basket
+    ensures length(result.items) == length(b.items) + 2
+{
+    return Basket(owner: b.owner, items: push(b.items, price))
+}
+
+fn main() uses io {
+    print(add(Basket(owner: "g", items: [1]), 2))
+}
+'''),
+    ("breaking a promise about a map", "E700", '''
+fn bump(m: Map of Text to Int, k: Text) -> Map of Text to Int
+    ensures get_or(result, k, 0) == get_or(m, k, 0) + 2
+{
+    return put(m, k, get_or(m, k, 0) + 1)
+}
+
+fn main() uses io {
+    print(get_or(bump({"a": 1}, "a"), "a", 0))
+}
+'''),
+    ("a real-number identity that floats do not obey", "E700", '''
+fn add_twice(x: Float) -> Float
+    ensures result == x + 0.2
+{
+    return x + 0.1 + 0.1
+}
+
+fn main() uses io {
+    print(add_twice(1.0))
+}
+'''),
+    ("mixing whole numbers and decimals", "E501", '''
+fn main() uses io {
+    print(1 + 1.5)
+}
+'''),
+    ("calling a library function that needs more", "E701", '''
+import "std.vel"
+
+fn main() uses io {
+    let empty: List of Int = []
+    print(max_of(empty))
+}
+'''),
+    ("an inline function reaching outside itself", "E402", '''
+import "std.vel"
+
+fn main() uses io {
+    let limit = 4
+    print(keep_if([1, 5], fn(n: Int) -> Bool { return n > limit }))
+}
+'''),
+    ("asking a namespace for something it lacks", "E200", '''
+import "examples/lib/geo.vel" as geo
+
+fn main() uses io {
+    print(geo.area(3, 4))
+}
+'''),
+    ("a local name colliding with an import", "E514", '''
+import "std.vel" as std
+
+fn main() uses io {
+    let std = 5
+    print(std)
+}
+'''),
+    ("the wrong number of values for the text holes", "E406", '''
+fn main() uses io {
+    print(format("{} and {}", 1))
+}
+'''),
+    ("a promise on an inline function that is false", "E700", '''
+import "std.vel"
+
+fn main() uses io {
+    print(apply_to_each([1, 2], fn(n: Int) -> Int
+        ensures result >= n
+    {
+        return n - 1
+    }))
+}
+'''),
+    ("a loop invariant that does not hold", "E703", '''
+fn count(n: Int) -> Int
+    requires n >= 0
+{
+    let i = 0
+    while i < n
+    invariant i > 0
+    {
+        i = i + 1
+    }
+    return i
+}
+
+fn main() uses io {
+    print(count(3))
+}
+'''),
+    ("returning the wrong type", "E503", '''
+fn broken(x: Int) -> Int {
+    return "text"
+}
+
+fn main() uses io {
+    print(broken(1))
+}
+'''),
+]
+
+
+def main() -> int:
+    work = Path(tempfile.mkdtemp(prefix="velaris-refusals-"))
+    # a couple of cases import from the repo, so run in the repo itself
+    passed = failed = 0
+    print(f"{len(CASES)} programs that must be refused")
+    print("-" * 62)
+    for name, want, source in CASES:
+        path = HERE / "_refusal_check.vel"
+        path.write_text(source.lstrip(), encoding="utf-8")
+        run = subprocess.run(
+            [sys.executable, str(VELARIS), str(path), "--no-cache"],
+            capture_output=True, text=True, timeout=300, cwd=HERE)
+        output = (run.stderr or "") + (run.stdout or "")
+        if run.returncode == 0:
+            print(f"  NOT REFUSED  {name}")
+            print(f"               expected {want}, the program ran")
+            failed += 1
+        elif want in output:
+            print(f"  ok {want:<5}    {name}")
+            passed += 1
+        else:
+            first = next((ln for ln in output.splitlines()
+                          if "error[" in ln), output.strip()[:70])
+            print(f"  WRONG REASON {name}")
+            print(f"               expected {want}, got: {first[:90]}")
+            failed += 1
+        path.unlink(missing_ok=True)
+    print("-" * 62)
+    print(f"{passed} refused correctly, {failed} not")
+    work.rmdir()
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

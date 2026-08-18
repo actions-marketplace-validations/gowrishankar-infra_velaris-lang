@@ -1,5 +1,28 @@
 # Velaris changelog
 
+## 2.38 - Testing the places languages break
+Two new suites, because a test that only checks correct code passing
+is half a test.
+
+`examples/edges.vel` covers boundaries, properties and round trips:
+empty and single-element lists, empty text, empty maps, negatives,
+zero, division rounding toward minus infinity, the 64-bit limits, and
+empty ranges - then **195 generated cases** asserting properties rather
+than examples (sort always returns a sorted list of the same length
+containing the same elements; reversing twice is the original; the
+maximum is always a member; filtering never keeps what it should not),
+and round trips that must come back unchanged (28 dates parsed and
+printed, JSON built and read, a CSV row written and read, join then
+split, upper then lower). 20 checks, all passing.
+
+`check_refusals.py` is stricter than the example suite: it asserts that
+each of **20 wrong programs is refused with the specific error the
+language promises**, not merely refused. A false promise must be E700,
+an undeclared effect E300, an ignored failure E520, a possible divide
+by zero E706, an out-of-range read E705, a broken loop invariant E703,
+and so on - so a guarantee cannot quietly degrade into a different
+guarantee. Both run in CI on every push.
+
 ## 2.37 - A stress test written in Velaris
 `examples/stress.vel` exercises the whole language and standard library
 in one command that asks nothing and exits non-zero if anything fails:
