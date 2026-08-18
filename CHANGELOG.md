@@ -1,5 +1,20 @@
 # Velaris changelog
 
+## 2.37 - A stress test written in Velaris
+`examples/stress.vel` exercises the whole language and standard library
+in one command that asks nothing and exits non-zero if anything fails:
+contracts and proofs, inferred loop invariants, division proofs,
+records with list fields, map proofs, nested lists, generics, function
+values inline and by name, text case and containment, native list and
+text scanning, failure through `try` and `check`, JSON reading and
+building, dates, CSV, the host language including a real SQLite handle,
+the environment, the clock, and a network request that reports itself
+as skipped when offline.
+
+33 checks. Two failed on the first run and both were the test's
+arithmetic being wrong rather than the language - which is the right
+way round, and is why the corrected expectations are in the file.
+
 ## 2.36.4 - The Action has its own name
 GitHub's Marketplace requires an Action's name to be globally unique,
 and "Velaris" was taken. The Action is now "Velaris Language Check",

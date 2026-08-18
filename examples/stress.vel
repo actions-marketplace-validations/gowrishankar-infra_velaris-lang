@@ -1,0 +1,517 @@
+// A stress test for the whole language, written in Velaris.
+//
+// velaris examples/stress.vel
+//
+// It asks nothing, exercises every part of the language and the
+// standard library, prints one line per check, and exits non-zero if
+// any check fails. Network checks report themselves as skipped when
+// the machine is offline rather than failing.
+
+import "std.vel"
+import "dates.vel" as dates
+import "csv.vel" as csv
+import "log.vel" as log
+
+record Point {
+    x: Int
+    y: Int
+}
+
+record Basket {
+    owner: Text
+    items: List of Int
+}
+
+// ---------------------------------------------------------------- proofs
+
+fn discount(price: Int) -> Int
+requires price >= 0
+ensures result >= 0
+{
+    if price < 10 {
+        return 0
+    }
+    return price - 10
+}
+
+fn sum_to(n: Int) -> Int
+requires n >= 0
+ensures result >= 0
+{
+    let total = 0
+    for i in 0 to n {
+        total = total + i
+    }
+    return total
+}
+
+fn average(total: Int, count: Int) -> Int
+requires count > 0
+requires total >= 0
+ensures result * count <= total
+{
+    return total / count
+}
+
+fn shift(p: Point, dx: Int) -> Point
+ensures result.x == p.x + dx
+ensures result.y == p.y
+{
+    return Point(x: p.x + dx, y: p.y)
+}
+
+fn add_item(b: Basket, price: Int) -> Basket
+ensures length(result.items) == length(b.items) + 1
+ensures result.owner == b.owner
+{
+    return Basket(owner: b.owner, items: push(b.items, price))
+}
+
+fn bump(counts: Map of Text to Int, word: Text) -> Map of Text to Int
+ensures get_or(result, word, 0) == get_or(counts, word, 0) + 1
+ensures has(result, word)
+{
+    return put(counts, word, get_or(counts, word, 0) + 1)
+}
+
+fn shout(word: Text) -> Text
+ensures length(result) == length(word)
+{
+    return upper(word)
+}
+
+fn tag_it(word: Text) -> Text
+ensures contains(result, word)
+{
+    return "[" + word + "]"
+}
+
+fn rows_of(grid: List of List of Int) -> Int
+ensures result == length(grid)
+{
+    return length(grid)
+}
+
+// ------------------------------------------------------------- failure
+
+fn halve(n: Int) -> Int or fail {
+    if n % 2 != 0 {
+        fail format("{} is odd", n)
+    }
+    return n / 2
+}
+
+fn quarter(n: Int) -> Int or fail {
+    let once = try halve(n)
+    return try halve(once)
+}
+
+// -------------------------------------------------------------- native
+
+fn count_letters(word: Text) -> Int
+ensures result >= 0
+{
+    let n = 0
+    let i = 0
+    while i < length(word) {
+        let c = code_at(word, i)
+        if c >= 97 and c <= 122 {
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return n
+}
+
+fn scan_list(xs: List of Int) -> Int {
+    let total = 0
+    let i = 0
+    while i < length(xs) {
+        total = total + get(xs, i) * 2
+        i = i + 1
+    }
+    return total
+}
+
+fn is_even(n: Int) -> Bool {
+    return n % 2 == 0
+}
+
+fn negated(n: Int) -> Int {
+    return -n
+}
+
+fn main() uses io, ffi, net, clock {
+    let passed = 0
+    let failed = 0
+    let skipped = 0
+
+    print("Velaris stress test")
+    print("===================")
+
+    // --- proofs and contracts
+    if discount(50) == 40 and discount(5) == 0 {
+        print("PASS  contracts: discount")
+        passed = passed + 1
+    } else {
+        print("FAIL  contracts: discount")
+        failed = failed + 1
+    }
+    if sum_to(10) == 45 {
+        print("PASS  inferred loop invariants: sum_to")
+        passed = passed + 1
+    } else {
+        print("FAIL  inferred loop invariants: sum_to")
+        failed = failed + 1
+    }
+    if average(47, 5) == 9 {
+        print("PASS  division proofs: average")
+        passed = passed + 1
+    } else {
+        print("FAIL  division proofs: average")
+        failed = failed + 1
+    }
+
+    // --- records
+    let p = shift(Point(x: 3, y: 4), 10)
+    if p.x == 13 and p.y == 4 {
+        print("PASS  records: field promises")
+        passed = passed + 1
+    } else {
+        print("FAIL  records: field promises")
+        failed = failed + 1
+    }
+    let basket = add_item(Basket(owner: "gowri", items: [250, 400]), 125)
+    if length(basket.items) == 3 and basket.owner == "gowri" {
+        print("PASS  records holding lists")
+        passed = passed + 1
+    } else {
+        print("FAIL  records holding lists")
+        failed = failed + 1
+    }
+
+    // --- maps
+    let counts = bump(bump({ "fox": 1 }, "fox"), "dog")
+    if get_or(counts, "fox", 0) == 2 and get_or(counts, "dog", 0) == 1
+    and get_or(counts, "cat", 0) == 0 {
+        print("PASS  map proofs and get_or")
+        passed = passed + 1
+    } else {
+        print("FAIL  map proofs and get_or")
+        failed = failed + 1
+    }
+    check get(counts, "missing") {
+        ok found {
+            print("FAIL  map get should have failed")
+            failed = failed + 1
+        }
+        fail why {
+            print("PASS  fallible map lookup")
+            passed = passed + 1
+        }
+    }
+
+    // --- lists, nested lists, stdlib
+    let xs = [5, 3, 9, 1]
+    if sort(xs) == [1, 3, 5, 9] and max_of(xs) == 9 and min_of(xs) == 1 {
+        print("PASS  standard library: sort, max, min")
+        passed = passed + 1
+    } else {
+        print("FAIL  standard library: sort, max, min")
+        failed = failed + 1
+    }
+    if rows_of([[1, 2], [3], [4, 5, 6]]) == 3 {
+        print("PASS  nested lists")
+        passed = passed + 1
+    } else {
+        print("FAIL  nested lists")
+        failed = failed + 1
+    }
+    let no_evens: List of Int = []
+    if keep_if(xs, is_even) == no_evens
+    and length(keep_if([2, 4], is_even)) == 2 {
+        print("PASS  function values as arguments")
+        passed = passed + 1
+    } else {
+        print("FAIL  function values as arguments")
+        failed = failed + 1
+    }
+    if sort_by(xs, negated) == [9, 5, 3, 1] {
+        print("PASS  generic sort_by")
+        passed = passed + 1
+    } else {
+        print("FAIL  generic sort_by")
+        failed = failed + 1
+    }
+    if length(keep_if(xs, fn(n: Int) -> Bool { return n > 3 })) == 2 {
+        print("PASS  inline function values")
+        passed = passed + 1
+    } else {
+        print("FAIL  inline function values")
+        failed = failed + 1
+    }
+
+    // --- text
+    if shout("velaris") == "VELARIS" and length(shout("héllo")) == 5 {
+        print("PASS  text: case preserves length, unicode safe")
+        passed = passed + 1
+    } else {
+        print("FAIL  text: case preserves length, unicode safe")
+        failed = failed + 1
+    }
+    if contains(tag_it("proof"), "proof") and "a" < "b" {
+        print("PASS  text: contains proof and ordering")
+        passed = passed + 1
+    } else {
+        print("FAIL  text: contains proof and ordering")
+        failed = failed + 1
+    }
+    if count_letters("hello, World 123") == 9 {
+        print("PASS  native text scanning")
+        passed = passed + 1
+    } else {
+        print("FAIL  native text scanning")
+        failed = failed + 1
+    }
+    if scan_list([1, 2, 3, 4]) == 20 {
+        print("PASS  native list reads")
+        passed = passed + 1
+    } else {
+        print("FAIL  native list reads")
+        failed = failed + 1
+    }
+
+    // --- failure paths
+    check quarter(8) {
+        ok q {
+            if q == 2 {
+                print("PASS  failure: try through two calls")
+                passed = passed + 1
+            } else {
+                print("FAIL  failure: wrong answer")
+                failed = failed + 1
+            }
+        }
+        fail why {
+            print("FAIL  failure: should have succeeded")
+            failed = failed + 1
+        }
+    }
+    check quarter(6) {
+        ok q {
+            print("FAIL  failure: should have failed")
+            failed = failed + 1
+        }
+        fail why {
+            print(format("PASS  failure caught: {}", why))
+            passed = passed + 1
+        }
+    }
+    check to_int("not a number") {
+        ok n {
+            print("FAIL  to_int should have failed")
+            failed = failed + 1
+        }
+        fail why {
+            print("PASS  fallible builtin: to_int")
+            passed = passed + 1
+        }
+    }
+
+    // --- json
+    let doc = "{\"user\": {\"name\": \"gowri\", \"age\": 30}, \"tags\": [\"a\", \"b\"]}"
+    check json_get(doc, "user.name") {
+        ok n {
+            if n == "gowri" {
+                print("PASS  json: path lookup")
+                passed = passed + 1
+            } else {
+                print("FAIL  json: wrong value")
+                failed = failed + 1
+            }
+        }
+        fail why {
+            print("FAIL  json: path lookup")
+            failed = failed + 1
+        }
+    }
+    check json_int(doc, "user.age") {
+        ok a {
+            if a == 30 {
+                print("PASS  json: typed read")
+                passed = passed + 1
+            } else {
+                print("FAIL  json: typed read")
+                failed = failed + 1
+            }
+        }
+        fail why {
+            print("FAIL  json: typed read")
+            failed = failed + 1
+        }
+    }
+    check json_get(doc, "user.email") {
+        ok e {
+            print("FAIL  json: missing field should fail")
+            failed = failed + 1
+        }
+        fail why {
+            print("PASS  json: missing field reports the path")
+            passed = passed + 1
+        }
+    }
+    if json_of(Point(x: 1, y: 2)) == "{\"x\": 1, \"y\": 2}" {
+        print("PASS  json: building from a record")
+        passed = passed + 1
+    } else {
+        print("FAIL  json: building from a record")
+        failed = failed + 1
+    }
+
+    // --- dates
+    check dates.parse("2026-08-18") {
+        ok d {
+            if dates.text_of(d) == "2026-08-18" and d.year == 2026 {
+                print("PASS  dates: parse and format")
+                passed = passed + 1
+            } else {
+                print("FAIL  dates: parse and format")
+                failed = failed + 1
+            }
+        }
+        fail why {
+            print("FAIL  dates: parse")
+            failed = failed + 1
+        }
+    }
+    check dates.parse("2025-02-29") {
+        ok d {
+            print("FAIL  dates: impossible date accepted")
+            failed = failed + 1
+        }
+        fail why {
+            print("PASS  dates: impossible date refused")
+            passed = passed + 1
+        }
+    }
+
+    // --- csv
+    if length(csv.fields("a,b,c")) == 3 {
+        print("PASS  csv: fields")
+        passed = passed + 1
+    } else {
+        print("FAIL  csv: fields")
+        failed = failed + 1
+    }
+    check csv.column_int("chai,2500", 1) {
+        ok amount {
+            if amount == 2500 {
+                print("PASS  csv: typed column")
+                passed = passed + 1
+            } else {
+                print("FAIL  csv: typed column")
+                failed = failed + 1
+            }
+        }
+        fail why {
+            print("FAIL  csv: typed column")
+            failed = failed + 1
+        }
+    }
+    check csv.column("a,b", 9) {
+        ok v {
+            print("FAIL  csv: out of range accepted")
+            failed = failed + 1
+        }
+        fail why {
+            print("PASS  csv: out of range refused")
+            passed = passed + 1
+        }
+    }
+
+    // --- the host language
+    check py_json("math", "sqrt", "[16]") {
+        ok answer {
+            check json_float(answer, "") {
+                ok root {
+                    if root == 4.0 {
+                        print("PASS  ffi: numbers survive the trip")
+                        passed = passed + 1
+                    } else {
+                        print("FAIL  ffi: wrong number back")
+                        failed = failed + 1
+                    }
+                }
+                fail why {
+                    print("FAIL  ffi: could not read the answer")
+                    failed = failed + 1
+                }
+            }
+        }
+        fail why {
+            print(format("FAIL  ffi: {}", why))
+            failed = failed + 1
+        }
+    }
+    check py_new("sqlite3", "connect", "[\":memory:\"]") {
+        ok conn {
+            check py_do(conn, "execute", "[\"create table t (a int)\"]") {
+                ok made {
+                    print("PASS  ffi: handles hold a real database")
+                    passed = passed + 1
+                }
+                fail why {
+                    print(format("FAIL  ffi handles: {}", why))
+                    failed = failed + 1
+                }
+            }
+            py_close(conn)
+        }
+        fail why {
+            print(format("FAIL  ffi: could not open a database: {}", why))
+            failed = failed + 1
+        }
+    }
+
+    // --- the process
+    if length(env("PATH", "")) > 0 {
+        print("PASS  environment: PATH is readable")
+        passed = passed + 1
+    } else {
+        print("FAIL  environment: PATH is readable")
+        failed = failed + 1
+    }
+    if now() > 0 {
+        print("PASS  clock: time moves")
+        passed = passed + 1
+    } else {
+        print("FAIL  clock: time moves")
+        failed = failed + 1
+    }
+
+    // --- the network, skipped when offline
+    check fetch_status("https://raw.githubusercontent.com/octocat/Hello-World/master/README") {
+        ok code {
+            if code == 200 {
+                print("PASS  network: a real request")
+                passed = passed + 1
+            } else {
+                print(format("SKIP  network: status {}", code))
+                skipped = skipped + 1
+            }
+        }
+        fail why {
+            print(format("SKIP  network: {}", why))
+            skipped = skipped + 1
+        }
+    }
+
+    print("===================")
+    print(format("{} passed, {} failed, {} skipped", passed, failed,
+    skipped))
+    log.info(format("stress test finished: {} passed, {} failed",
+    passed, failed))
+    if failed > 0 {
+        exit_with(1)
+    }
+}

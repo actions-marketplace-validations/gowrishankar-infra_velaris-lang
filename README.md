@@ -95,6 +95,16 @@ compilation apply to them unchanged — and they can carry their own
 `requires` / `ensures`, proven like any other function's. They can't capture surrounding
 variables — the compiler tells you to pass them in instead.
 
+## Checking everything at once
+
+```
+velaris examples/stress.vel     # 33 checks, exits non-zero on failure
+```
+
+One command that exercises the language, the standard library, the
+prover, native compilation, JSON, dates, CSV, the host language and the
+network.
+
 ## Two real programs
 
 `examples/ledger.vel` — an expense tracker: records, integer cents,
