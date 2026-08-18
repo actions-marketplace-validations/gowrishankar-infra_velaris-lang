@@ -1,5 +1,47 @@
 # Velaris changelog
 
+## 2.44 - Everything the adversarial report found
+A model ran 86 adversarial artifacts against 2.43 - one production
+program, 34 broken fragments, 52 single-point mutations - and scored
+the language 76/100 with a list of defects. All of them are fixed.
+
+**The soundness hole (critical).** `pop`, `slice` and `set_at` were
+documented fallible but the checker never demanded handling, so a
+clean `velaris check` could be followed by a raw Python traceback at
+runtime. The list-operations type check returned before the
+fallibility check ran. They now require `check` or `try` like every
+other fallible call (E520).
+
+**The checker cannot crash.** An unknown parameter type escaped as a
+Python traceback instead of E500, breaking `--json` consumers and any
+automated fix loop. Every checker pass now reports instead of raising.
+
+**`main` is validated at check time.** No `main` at all (E400), a
+`main` with parameters (E401), and a `main` marked `or fail` (E523,
+new) are all compile-time findings now, not runtime surprises.
+
+**The typed FFI carries numbers.** `py_float("math", "sqrt", ["16"])`
+sent Python the string "16" and failed. Arguments that read as numbers
+are now passed as numbers, with an all-strings retry so functions
+genuinely wanting text still get it.
+
+**Conjunctions stop masking.** `requires divisor > 0 and
+length(items) > 0` over a record list dropped the WHOLE clause when
+one conjunct could not translate - the checkable `divisor > 0`
+included. Conjunctions are now split and each part checked on its own,
+and record lists carry a modelled length even where their contents
+cannot be seen. The report's exact shape is rejected at the call site
+with a counterexample.
+
+**The card grew fifteen truths** the reviewer had to discover by
+experiment: `%` exists, `random(n)` is 0..n-1, `random(0)` is E405,
+record fields go one per line, oversized literals are accepted but
+arithmetic is checked, unused effects are viral, `time` needs ffi and
+can fail, `apply_to_each` maps T to T only, the `--allow`/`--deny`
+budget flags, `velaris proofs --detail`, and codes E400 E405 E509 E513
+E521 E523 E542 E602 E704 - plus the E506/E507 correction (E507 is
+about duplicate records, not empty maps).
+
 ## 2.43 - The prover crosses the loop boundary
 The sharpest finding in the last review was that the prover went blind
 the moment a loop touched a list: a promise like

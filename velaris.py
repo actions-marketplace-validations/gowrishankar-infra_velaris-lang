@@ -252,7 +252,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.43.0"
+VERSION = "2.44.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1463,6 +1463,29 @@ def check_effects(funcs: list[Function], errors: list) -> None:
 #     Types: Int, Text, Bool.  "Unit" means "returns nothing".
 # ---------------------------------------------------------------------------
 
+def check_main(funcs: list, errors: list) -> None:
+    """main must exist, take nothing, and declare no failure -
+    checked before running, not discovered by running."""
+    mains = [f for f in funcs if f.name == "main"]
+    if not mains:
+        errors.append(VelarisError("E400",
+            "there is no 'main' - a program needs somewhere to start",
+            1, fixes=["add one: fn main() uses io { ... }"]))
+        return
+    m = mains[0]
+    if m.params:
+        errors.append(VelarisError("E401",
+            f"'main' takes no parameters, but this one asks for "
+            f"{len(m.params)}", m.line,
+            fixes=["read the command line with args() instead"]))
+    if getattr(m, "can_fail", False):
+        errors.append(VelarisError("E523",
+            "'main' cannot fail - there is nobody above it to catch",
+            m.line,
+            fixes=["handle failures inside main with check",
+                   "or exit_with(1) when something goes wrong"]))
+
+
 def check_types(funcs: list[Function], records: list, errors: list) -> None:
     table = {f.name: f for f in funcs}
     rec = {}
@@ -1771,6 +1794,15 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                 if is_map:
                     key_t, _, val_t = t0[len("Map of "):].partition(" to ")
                 if node.name in ("pop", "slice", "set_at"):
+                    if not allow_fail:
+                        raise VelarisError("E520",
+                            f"'{node.name}' can fail - that cannot be "
+                            f"ignored", node.line,
+                            fixes=[f"handle it: check {node.name}(...) "
+                                   f"{{ ok v {{ ... }} fail why "
+                                   f"{{ ... }} }}",
+                                   f"or pass it up (inside a fallible "
+                                   f"function): try {node.name}(...)"])
                     if not t0.startswith("List of "):
                         raise VelarisError("E501",
                             f"'{node.name}' works on a list, not {t0}",
@@ -2480,6 +2512,8 @@ def check_proofs(funcs: list[Function], records: list,
             return any(has_fresh(v) for v in e.fields.values())
         if isinstance(e, ListVal):
             return has_fresh(e.arr) or has_fresh(e.length)
+        if isinstance(e, OpaqueList):
+            return has_fresh(e.length)
         if isinstance(e, MapVal):
             return has_fresh(e.vals) or has_fresh(e.present)
         if isinstance(e, GridVal):
@@ -2516,12 +2550,45 @@ def check_proofs(funcs: list[Function], records: list,
 
     def check_requires_at(fnB, args_z3, ctx, line):
         """Prove the caller always satisfies fnB's requires here (E701)."""
-        for r_expr, _ in fnB.requires:
+        def names_in(e, out=None):
+            if out is None:
+                out = set()
+            if isinstance(e, Var):
+                out.add(e.name)
+            import dataclasses as _dc
+            if _dc.is_dataclass(e):
+                for f in _dc.fields(e):
+                    v = getattr(e, f.name)
+                    if isinstance(v, (list, tuple)):
+                        for x in v:
+                            names_in(x, out)
+                    else:
+                        names_in(v, out)
+            return out
+
+        def conjuncts(e):
+            """a and b and c -> [a, b, c], so one untranslatable part
+            does not throw away the checkable ones. A single length()
+            over a record list used to mask a divisor > 0 sitting right
+            next to it."""
+            if isinstance(e, BinOp) and e.op == "and":
+                return conjuncts(e.left) + conjuncts(e.right)
+            return [e]
+
+        parts = [p for r_expr, _ in fnB.requires
+                 for p in conjuncts(r_expr)]
+        bound = bind_params(fnB, [a for a in args_z3])
+        for r_expr in parts:
+            names = names_in(r_expr)
+            involved = [a for (pname, _), a in zip(fnB.params, args_z3)
+                        if pname in names]
+            if any(a is None for a in involved):
+                continue        # this conjunct mentions an unknown
             try:
-                need = to_z3(r_expr, bind_params(fnB, args_z3), None)
+                need = to_z3(r_expr, bound, None)
             except Unprovable:
                 continue
-            if any(has_fresh(a) for a in args_z3) or \
+            if any(a is not None and has_fresh(a) for a in involved) or \
                     any(has_fresh(c) for c in ctx.conds):
                 continue        # could be a false alarm; runtime will guard
             solver = z3.Solver()
@@ -2739,6 +2806,10 @@ def check_proofs(funcs: list[Function], records: list,
                     g0.length + 1)
         if isinstance(node, Call) and node.name in ("length", "get", "push"):
             a0 = to_z3(node.args[0], env, ctx)
+            if isinstance(a0, OpaqueList):
+                if node.name == "length":
+                    return a0.length
+                raise Unprovable()      # contents are invisible
             if not isinstance(a0, ListVal):
                 if z3.is_string(a0):
                     return z3.Length(a0)        # characters in the text
@@ -2906,15 +2977,23 @@ def check_proofs(funcs: list[Function], records: list,
                     pass
             fnB = table.get(node.name)
             if (fnB is not None and fnB.requires
-                    and len(fnB.params) == len(node.args)
-                    and all(pt in ("Int", "Bool", "Float", "List of Int",
-                                   "List of List of Int")
-                            or (pt in rec_fields and provable_rec(pt))
-                            for _, pt in fnB.params)):
-                try:
-                    args_z3 = [to_z3(a, env, ctx) for a in node.args]
-                except Unprovable:
-                    return
+                    and len(fnB.params) == len(node.args)):
+                # translate what translates; an argument the prover
+                # cannot see becomes an unknown rather than cancelling
+                # the whole check - so 'divisor > 0' is still enforced
+                # when it sits beside a record list
+                args_z3 = []
+                for a, (_, pt) in zip(node.args, fnB.params):
+                    try:
+                        v = to_z3(a, env, ctx)
+                    except Unprovable:
+                        if pt.startswith("List of "):
+                            counter[0] += 1
+                            ln = z3.Int(f"__arg_len_{counter[0]}")
+                            v = OpaqueList(ln)
+                        else:
+                            v = None
+                    args_z3.append(v)
                 check_requires_at(fnB, args_z3, ctx, node.line)
         elif isinstance(node, BinOp):
             scan_calls(node.left, env, ctx)
@@ -3160,6 +3239,11 @@ def check_proofs(funcs: list[Function], records: list,
                                  z3.Array(base + "__lens", z3.IntSort(),
                                           z3.IntSort()), gl)
                 facts.append(gl >= 0)
+            elif old is not None and isinstance(old, OpaqueList):
+                counter[0] += 1
+                ln = z3.Int(f"__{n}_olen_{counter[0]}")
+                out[n] = OpaqueList(ln)
+                facts.append(ln >= 0)
             elif old is not None and isinstance(old, MapVal):
                 counter[0] += 1
                 out[n] = mk_map(f"__{n}_havoc_{counter[0]}",
@@ -3358,6 +3442,14 @@ def check_proofs(funcs: list[Function], records: list,
                     [k0], z3.Select(lens, k0) >= 0))
             elif ptype in rec_fields and provable_rec(ptype):
                 env[pname] = mk_rec(pname, ptype)
+            elif ptype.startswith("List of "):
+                # the contents cannot be modelled, but the LENGTH can -
+                # and length is what contracts about lists usually say.
+                # Without this, one length(items) in a conjunction threw
+                # the whole requires away, checkable parts included.
+                ln = z3.Int(pname + "__n")
+                env[pname] = OpaqueList(ln)
+                list_facts.append(ln >= 0)
             elif ptype.startswith("Map of "):
                 mv = mk_map(pname, ptype)
                 if mv is not None:
@@ -4172,6 +4264,17 @@ class ReturnSignal(Exception):
     def __init__(self, value): self.value = value
 
 
+class OpaqueList:
+    """A list whose contents the prover cannot see - only its length.
+
+    Enough for the contracts people actually write about lists of
+    records: length(items) > 0, length(result) == length(items), and
+    for a divisor to be provably nonzero.
+    """
+    def __init__(self, length):
+        self.length = length
+
+
 class FailSignal(Exception):
     def __init__(self, reason): self.reason = reason
 
@@ -4560,18 +4663,41 @@ def run_builtin(name: str, args: list, line: int):
             target = getattr(target, part, None)
             if target is None:
                 raise FailSignal(f"'{module}' has no '{func}'")
-        try:
-            out = target(*[str(a) for a in call_args])
-        except TypeError as e:
-            if "byte" not in str(e).lower() and "encode" not in str(e).lower():
+        def as_number_if_it_is(text):
+            """'16' -> 16 and '2.5' -> 2.5, so numeric functions work.
+
+            The arguments arrive as Text (that is the declared type),
+            but math.sqrt("16") is a TypeError in Python. A string that
+            reads as a number is passed as one; anything else stays
+            text. Functions genuinely wanting the text "16" still get
+            it via the all-strings retry below.
+            """
+            s = str(text)
+            try:
+                return int(s)
+            except ValueError:
+                pass
+            try:
+                return float(s)
+            except ValueError:
+                return s
+
+        attempts = ([as_number_if_it_is(a) for a in call_args],
+                    [str(a) for a in call_args],
+                    [str(a).encode("utf-8") for a in call_args])
+        out, last_err = None, None
+        for formed in attempts:
+            try:
+                out = target(*formed)
+                last_err = None
+                break
+            except TypeError as e:
+                last_err = e
+                continue                 # the next shape may fit
+            except Exception as e:
                 raise FailSignal(f"{module}.{func} failed: {e}")
-            try:                                  # it wanted bytes: the
-                out = target(*[str(a).encode("utf-8")  # text, as UTF-8
-                               for a in call_args])
-            except Exception as e2:
-                raise FailSignal(f"{module}.{func} failed: {e2}")
-        except Exception as e:
-            raise FailSignal(f"{module}.{func} failed: {e}")
+        if last_err is not None:
+            raise FailSignal(f"{module}.{func} failed: {last_err}")
         if isinstance(out, (bytes, bytearray)):
             out = out.decode("utf-8", errors="replace")
         try:
@@ -4970,12 +5096,20 @@ def inspect_source(path: str, source: str | None = None) -> dict:
         report["errors"].append(json.loads(e.machine(path)))
         return report
     errors: list = []
-    check_effects(funcs, errors)
-    check_types(funcs, records, errors)
+    try:
+        check_main(funcs, errors)
+        check_effects(funcs, errors)
+        if not errors:
+            check_types(funcs, records, errors)
+    except VelarisError as e:          # a raise instead of an append is
+        errors.append(e)               # still one problem, not a crash
     proved: set = set()
     if not errors:
-        check_proofs(funcs, records, errors, proved,
-                     use_cache="--no-cache" not in sys.argv)
+        try:
+            check_proofs(funcs, records, errors, proved,
+                         use_cache="--no-cache" not in sys.argv)
+        except VelarisError as e:
+            errors.append(e)
     seen_e = set()
     for e in errors:                # one problem, one message, everywhere
         key = (e.code, e.file or path, e.line, e.message)

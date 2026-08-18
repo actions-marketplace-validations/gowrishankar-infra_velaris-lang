@@ -122,6 +122,24 @@ These are the mistakes that actually happen. Read them twice.
     for anything more, and the number of `{}` must match the number of
     values exactly.
 
+11. **Record fields go one per line.** Commas between fields on one
+    line are a parse error.
+
+12. **`%` is remainder** and `/` is whole-number division rounding
+    toward minus infinity: `-7 / 2` is `-4` and `-7 % 2` is `1`. Both
+    are checked for zero divisors like division.
+
+13. **`random(n)` draws from 0 to n-1** and needs `uses rand`;
+    `random(0)` is a runtime error (E405). `now()` gives seconds and
+    needs `uses clock`.
+
+14. **Number literals larger than 64 bits are accepted as text-like
+    values;** only *arithmetic* is range-checked (E407). Do not rely
+    on oversized literals.
+
+15. **Declaring an unused effect is legal but viral** - every caller
+    must then declare it too. Declare only what a function does.
+
 ## Contracts
 
 ```
@@ -174,7 +192,9 @@ function; an unprovable promise is worse than none.
 `import "std.vel"` then call directly:
 
 ```
-first last reverse index_of contains_item apply_to_each keep_if
+first last reverse index_of contains_item keep_if
+apply_to_each (maps T -> T, SAME type only - use a loop to project
+a record to one of its fields)
 count_where sum_of max_of min_of is_sorted insert_sorted sort
 insert_by sort_by join range_list
 ```
@@ -194,6 +214,8 @@ import "csv.vel" as csv       fields line_of column column_int rows_of
 import "log.vel" as log       info warn error event fail_with
 import "env_tools.vel" as sys setting number_setting succeed give_up
 import "time.vel" as time     today clock_text seconds year_of month_of
+                              (time needs 'uses ffi' and its functions
+                              CAN FAIL - handle or pass up)
 ```
 
 ## Builtins
@@ -235,6 +257,21 @@ py_field(handle, name) CAN FAIL uses ffi     py_close(handle) uses ffi
 now() uses clock                   random(n) uses rand
 ```
 
+## Running and inspecting
+
+```
+velaris program.vel                      run it
+velaris program.vel --allow io           refuse every other effect (E310)
+velaris program.vel --deny net,ffi       allow everything but these
+velaris check program.vel [--json]       every problem, as data
+velaris audit program.vel                what it touches, before running
+velaris proofs program.vel --detail      which promises proved, one by one
+velaris explain program.vel              functions, effects, proof status
+```
+
+The effect budget (`--allow`/`--deny`) is enforced while the program
+runs, whatever the source declares; a refusal (E310) cannot be caught.
+
 ## Errors, and what to do about them
 
 Every error has a stable code. `velaris check program.vel --json` emits
@@ -253,7 +290,8 @@ them as structured data for a fix loop.
 | E500 | unknown type | check the spelling of the type |
 | E501 | types do not match | convert on purpose |
 | E503 | returns the wrong type | fix the return or the signature |
-| E506/E507 | empty `[]`/`{}` with no type | annotate the `let` |
+| E506 | empty `[]` or `{}` with no type | annotate the `let` |
+| E507 | a record defined twice, or a duplicate field | rename one |
 | E514 | local name collides with an import | rename one |
 | E520 | a failure was ignored | wrap in `check`, or `try` inside `or fail` |
 | E522 | `try` on something that cannot fail | remove the `try` |
@@ -263,6 +301,15 @@ them as structured data for a fix loop.
 | E703/E704 | a loop invariant does not hold | weaken it or fix the loop |
 | E705 | a list read can go out of range | add a `requires` about the length |
 | E706 | a divisor can be zero | add `requires n != 0` or guard it |
+| E400 | no `main` | add fn main() |
+| E405 | random(0) | pass n >= 1 |
+| E509 | unknown record field | check the field name |
+| E513 | redefining an imported function | rename yours |
+| E521 | `try` outside an `or fail` function | add `or fail`, or use check |
+| E523 | `main` declares `or fail` | handle failures inside main |
+| E542 | function value of the wrong shape | match the parameter's fn type |
+| E602 | a list read went out of range while running | fix the index |
+| E704 | a loop invariant broke while running | fix the loop or invariant |
 
 ## A complete program to imitate
 

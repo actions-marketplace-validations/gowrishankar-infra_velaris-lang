@@ -1,0 +1,48 @@
+// Every fix from the 86-artifact adversarial report, demonstrated.
+//
+// 1. pop/slice/set_at demand handling (the soundness hole)
+// 2. the typed FFI carries numbers
+// 3. a conjunction with an untranslatable part keeps its checkable part
+// (see the REJECTED sibling: conj_bad.vel)
+// 4. main is validated at check time (E400/E401/E523 - see broken files)
+
+record Item {
+    amount: Int
+}
+
+fn weighted(items: List of Item, divisor: Int) -> Int
+    requires divisor > 0 and length(items) > 0
+{
+    return length(items) / divisor
+}
+
+fn main() uses io, ffi {
+    let xs = [1, 2, 3, 4]
+    check pop(xs) {
+        ok shorter {
+            print(format("pop: {}", shorter))
+        }
+        fail why {
+            print(why)
+        }
+    }
+    check slice(xs, 1, 3) {
+        ok mid {
+            print(format("slice: {}", mid))
+        }
+        fail why {
+            print(why)
+        }
+    }
+    check py_float("math", "sqrt", ["16"]) {
+        ok root {
+            print(format("sqrt 16 = {}", root))
+        }
+        fail why {
+            print(format("ffi: {}", why))
+        }
+    }
+    let items: List of Item = []
+    let one = push(items, Item(amount: 5))
+    print(format("weighted: {}", weighted(one, 2)))
+}

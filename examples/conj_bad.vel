@@ -1,0 +1,19 @@
+// A conjunction where one part cannot be translated (a record-list
+// length) must not mask the part that can (the divisor). Until v2.44
+// the whole requires was silently dropped; a model's adversarial
+// report caught it. Rejected at the call site, with a counterexample.
+
+record Item {
+    amount: Int
+}
+
+fn weighted(items: List of Item, divisor: Int) -> Int
+    requires divisor > 0 and length(items) > 0
+{
+    return length(items) / divisor
+}
+
+fn main() uses io {
+    let items: List of Item = []
+    print(weighted(items, 0))
+}
