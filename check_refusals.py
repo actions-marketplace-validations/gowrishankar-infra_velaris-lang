@@ -16,8 +16,15 @@ from pathlib import Path
 HERE = Path(__file__).parent
 VELARIS = HERE / "velaris.py"
 
+try:                       # proof-only refusals cannot be checked without
+    import z3              # the prover: those programs simply run
+    HAVE_Z3 = True
+    del z3
+except ImportError:
+    HAVE_Z3 = False
+
 CASES = [
-    ("a promise that is false", "E700", '''
+    ("a promise that is false", "E700", True, '''
 fn discount(price: Int) -> Int
     requires price >= 0
     ensures result >= 0
@@ -29,7 +36,7 @@ fn main() uses io {
     print(discount(50))
 }
 '''),
-    ("an effect that was not declared", "E300", '''
+    ("an effect that was not declared", "E300", False, '''
 fn sneaky(price: Int) -> Int {
     print("leaking " + price)
     return price
@@ -39,7 +46,7 @@ fn main() uses io {
     print(sneaky(10))
 }
 '''),
-    ("reaching the network without saying so", "E300", '''
+    ("reaching the network without saying so", "E300", False, '''
 fn quiet(url: Text) -> Text or fail {
     return try fetch(url)
 }
@@ -48,7 +55,7 @@ fn main() uses io, net {
     print("hi")
 }
 '''),
-    ("calling Python without the ffi effect", "E300", '''
+    ("calling Python without the ffi effect", "E300", False, '''
 fn quiet(x: Text) -> Text or fail {
     return try py("os", "getcwd", [x])
 }
@@ -57,19 +64,19 @@ fn main() uses io {
     print("hi")
 }
 '''),
-    ("ignoring a failure", "E520", '''
+    ("ignoring a failure", "E520", False, '''
 fn main() uses io {
     let answer = ask("a number:")
     print(to_int(answer) * 2)
 }
 '''),
-    ("ignoring a map lookup that can fail", "E520", '''
+    ("ignoring a map lookup that can fail", "E520", False, '''
 fn main() uses io {
     let ages = {"a": 1}
     print(get(ages, "b"))
 }
 '''),
-    ("dividing by something that can be zero", "E706", '''
+    ("dividing by something that can be zero", "E706", True, '''
 fn share(total: Int, people: Int) -> Int
     requires people >= 0
 {
@@ -80,7 +87,7 @@ fn main() uses io {
     print(share(10, 2))
 }
 '''),
-    ("reading past the end of a list", "E705", '''
+    ("reading past the end of a list", "E705", True, '''
 fn second(xs: List of Int) -> Int
     requires length(xs) >= 1
 {
@@ -91,7 +98,7 @@ fn main() uses io {
     print(second([1, 2]))
 }
 '''),
-    ("breaking a promise about a record's list", "E700", '''
+    ("breaking a promise about a record's list", "E700", True, '''
 record Basket {
     owner: Text
     items: List of Int
@@ -107,7 +114,7 @@ fn main() uses io {
     print(add(Basket(owner: "g", items: [1]), 2))
 }
 '''),
-    ("breaking a promise about a map", "E700", '''
+    ("breaking a promise about a map", "E700", True, '''
 fn bump(m: Map of Text to Int, k: Text) -> Map of Text to Int
     ensures get_or(result, k, 0) == get_or(m, k, 0) + 2
 {
@@ -118,7 +125,7 @@ fn main() uses io {
     print(get_or(bump({"a": 1}, "a"), "a", 0))
 }
 '''),
-    ("a real-number identity that floats do not obey", "E700", '''
+    ("a real-number identity that floats do not obey", "E700", True, '''
 fn add_twice(x: Float) -> Float
     ensures result == x + 0.2
 {
@@ -129,12 +136,12 @@ fn main() uses io {
     print(add_twice(1.0))
 }
 '''),
-    ("mixing whole numbers and decimals", "E501", '''
+    ("mixing whole numbers and decimals", "E501", False, '''
 fn main() uses io {
     print(1 + 1.5)
 }
 '''),
-    ("calling a library function that needs more", "E701", '''
+    ("calling a library function that needs more", "E701", True, '''
 import "std.vel"
 
 fn main() uses io {
@@ -142,7 +149,7 @@ fn main() uses io {
     print(max_of(empty))
 }
 '''),
-    ("an inline function reaching outside itself", "E402", '''
+    ("an inline function reaching outside itself", "E402", False, '''
 import "std.vel"
 
 fn main() uses io {
@@ -150,14 +157,14 @@ fn main() uses io {
     print(keep_if([1, 5], fn(n: Int) -> Bool { return n > limit }))
 }
 '''),
-    ("asking a namespace for something it lacks", "E200", '''
+    ("asking a namespace for something it lacks", "E200", False, '''
 import "examples/lib/geo.vel" as geo
 
 fn main() uses io {
     print(geo.area(3, 4))
 }
 '''),
-    ("a local name colliding with an import", "E514", '''
+    ("a local name colliding with an import", "E514", False, '''
 import "std.vel" as std
 
 fn main() uses io {
@@ -165,12 +172,12 @@ fn main() uses io {
     print(std)
 }
 '''),
-    ("the wrong number of values for the text holes", "E406", '''
+    ("the wrong number of values for the text holes", "E406", False, '''
 fn main() uses io {
     print(format("{} and {}", 1))
 }
 '''),
-    ("a promise on an inline function that is false", "E700", '''
+    ("a promise on an inline function that is false", "E700", True, '''
 import "std.vel"
 
 fn main() uses io {
@@ -181,7 +188,7 @@ fn main() uses io {
     }))
 }
 '''),
-    ("a loop invariant that does not hold", "E703", '''
+    ("a loop invariant that does not hold", "E703", True, '''
 fn count(n: Int) -> Int
     requires n >= 0
 {
@@ -198,7 +205,7 @@ fn main() uses io {
     print(count(3))
 }
 '''),
-    ("returning the wrong type", "E503", '''
+    ("returning the wrong type", "E503", False, '''
 fn broken(x: Int) -> Int {
     return "text"
 }
@@ -212,11 +219,16 @@ fn main() uses io {
 
 def main() -> int:
     work = Path(tempfile.mkdtemp(prefix="velaris-refusals-"))
+    skipped = 0
     # a couple of cases import from the repo, so run in the repo itself
     passed = failed = 0
     print(f"{len(CASES)} programs that must be refused")
     print("-" * 62)
-    for name, want, source in CASES:
+    for name, want, needs_prover, source in CASES:
+        if needs_prover and not HAVE_Z3:
+            print("  skip %-5s    %s (needs the prover)" % (want, name))
+            skipped += 1
+            continue
         path = HERE / "_refusal_check.vel"
         path.write_text(source.lstrip(), encoding="utf-8")
         run = subprocess.run(
@@ -238,7 +250,8 @@ def main() -> int:
             failed += 1
         path.unlink(missing_ok=True)
     print("-" * 62)
-    print(f"{passed} refused correctly, {failed} not")
+    note = f", {skipped} skipped (no prover installed)" if skipped else ""
+    print(f"{passed} refused correctly, {failed} not{note}")
     work.rmdir()
     return 1 if failed else 0
 

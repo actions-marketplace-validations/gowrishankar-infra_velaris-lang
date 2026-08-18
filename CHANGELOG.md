@@ -1,5 +1,16 @@
 # Velaris changelog
 
+## 2.39.1 - The refusal harness knows what needs the prover
+Nine of the twenty refusals in `check_refusals.py` are proof results -
+a false promise, a possible divide by zero, an out-of-range read, a
+broken invariant. Without z3 installed those programs simply run, so
+every no-solver leg in CI failed the moment the harness joined it.
+The harness now skips those cases when the prover is absent and says
+so, exactly as the example suite already did.
+
+Verified both ways: 20 refused correctly with the prover, 11 refused
+and 9 skipped without it.
+
 ## 2.39 - The editor asks for what the compiler already knew
 The language server has answered hover, completion, go-to-definition,
 rename, an outline and proof-status lenses since 2.32 - but the
