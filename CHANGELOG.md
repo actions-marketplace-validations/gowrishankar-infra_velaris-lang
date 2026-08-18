@@ -1,5 +1,24 @@
 # Velaris changelog
 
+## 2.26 - JSON, and calling Python with real data
+The FFI shipped in 2.25 could only pass text and receive a scalar,
+which is not "call any Python library" - it is "call the ones that
+happen to take strings". `py_json(module, function, args_json)` sends
+arguments and receives the answer as JSON, so numbers, lists and
+nested data survive the trip: `py_json("math", "sqrt", "[16]")` now
+gives back 4.0 rather than failing on a string.
+
+JSON is first class and **pure** - reading a document is not an effect:
+
+    json_get(doc, "user.name")     json_int(doc, "user.age")
+    json_float(doc, "price")       json_len(doc, "tags")
+    json_has(doc, "user.email")    json_of(anything)
+
+Paths walk objects and lists (`tags[1]`, `items[0].price`), records
+serialise straight to JSON, and every read can fail - a missing field
+is a real possibility, not a crash, and the message says exactly which
+step of the path was missing.
+
 ## 2.25 - Reaching the outside world, visibly
 Velaris can call Python now, which means it can reach every library
 Python has - JSON, dates, hashing, databases, anything - through three

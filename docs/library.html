@@ -105,7 +105,7 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 </style></head><body>
 <nav><div class="in"><a class="brand" href="index.html">
 <span class="dot"></span>Velaris</a><a href="index.html" class="">Home</a><a href="tutorial.html" class="">Tutorial</a><a href="library.html" class="here">Library</a><a href="errors.html" class="">Errors</a><a href="floats.html" class="">Floats</a><a href="playground.html" class="">Playground</a>
-<span class="ver">v2.25.0</span></div></nav>
+<span class="ver">v2.26.0</span></div></nav>
 <main class=""><h1>Standard library</h1>
 <p class="lead">Every function below is written in Velaris and parsed onto this page by the real compiler &mdash; contracts included. A violated <code>requires</code> is a compile error at your call site.</p>
 <div class="fnrow">
@@ -186,6 +186,12 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 <tr><td><code>get</code></td><td>pure</td><td>Any, Any</td><td>Any</td></tr>
 <tr><td><code>get_or</code></td><td>pure</td><td>Any, Any, Any</td><td>Any</td></tr>
 <tr><td><code>has</code></td><td>pure</td><td>Any, Any</td><td>Bool</td></tr>
+<tr><td><code>json_float</code> <span class="ecode">or fail</span></td><td>pure</td><td>Text, Text</td><td>Float</td></tr>
+<tr><td><code>json_get</code> <span class="ecode">or fail</span></td><td>pure</td><td>Text, Text</td><td>Text</td></tr>
+<tr><td><code>json_has</code></td><td>pure</td><td>Text, Text</td><td>Bool</td></tr>
+<tr><td><code>json_int</code> <span class="ecode">or fail</span></td><td>pure</td><td>Text, Text</td><td>Int</td></tr>
+<tr><td><code>json_len</code> <span class="ecode">or fail</span></td><td>pure</td><td>Text, Text</td><td>Int</td></tr>
+<tr><td><code>json_of</code></td><td>pure</td><td>Any</td><td>Text</td></tr>
 <tr><td><code>keys</code></td><td>pure</td><td>Any</td><td>Any</td></tr>
 <tr><td><code>length</code></td><td>pure</td><td>Any</td><td>Int</td></tr>
 <tr><td><code>lower</code></td><td>pure</td><td>Text</td><td>Text</td></tr>
@@ -197,6 +203,7 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 <tr><td><code>py</code> <span class="ecode">or fail</span></td><td>ffi</td><td>Text, Text, List of Text</td><td>Text</td></tr>
 <tr><td><code>py_float</code> <span class="ecode">or fail</span></td><td>ffi</td><td>Text, Text, List of Text</td><td>Float</td></tr>
 <tr><td><code>py_int</code> <span class="ecode">or fail</span></td><td>ffi</td><td>Text, Text, List of Text</td><td>Int</td></tr>
+<tr><td><code>py_json</code> <span class="ecode">or fail</span></td><td>ffi</td><td>Text, Text, Text</td><td>Text</td></tr>
 <tr><td><code>random</code></td><td>rand</td><td>Int</td><td>Int</td></tr>
 <tr><td><code>read_file</code> <span class="ecode">or fail</span></td><td>fs</td><td>Text</td><td>Text</td></tr>
 <tr><td><code>round</code></td><td>pure</td><td>Float</td><td>Int</td></tr>

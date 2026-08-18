@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Velaris v2.25 — "The language where you can trust code you didn't write."
+Velaris v2.26 — "The language where you can trust code you didn't write."
 
-New in v2.25: Velaris can call Python - py, py_int, py_float - so
-    every library Python has is reachable. It needs 'uses ffi', so
-    reaching outside is visible in the signature like every other
-    power, and a pure function still cannot do it.
+New in v2.26: JSON is first class and pure (json_get, json_int,
+    json_len, json_of, paths like "items[0].price"), and py_json sends
+    and receives JSON so real data - numbers, lists, nested objects -
+    survives a call into Python.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -245,7 +245,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.25.0"
+VERSION = "2.26.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1165,7 +1165,9 @@ def blame(fn_or_rec, err: VelarisError) -> VelarisError:
 # ---------------------------------------------------------------------------
 
 FALLIBLE_BUILTINS = {"to_int", "read_file", "fetch", "post",
-                     "fetch_status", "py", "py_int", "py_float"}   # + get on maps
+                     "fetch_status", "py", "py_int", "py_float",
+                     "py_json", "json_get", "json_int", "json_float",
+                     "json_len"}   # + get on maps
 
 PROGRAM_ARGS: list = []    # filled by the CLI: velaris prog.vel a b c
 
@@ -1243,6 +1245,13 @@ BUILTINS = {
     "py":         {"effects": {"ffi"},    "types": ["Text", "Text", "List of Text"], "ret": "Text"},
     "py_int":     {"effects": {"ffi"},    "types": ["Text", "Text", "List of Text"], "ret": "Int"},
     "py_float":   {"effects": {"ffi"},    "types": ["Text", "Text", "List of Text"], "ret": "Float"},
+    "py_json":    {"effects": {"ffi"},    "types": ["Text", "Text", "Text"], "ret": "Text"},
+    "json_get":   {"effects": set(),      "types": ["Text", "Text"], "ret": "Text"},
+    "json_int":   {"effects": set(),      "types": ["Text", "Text"], "ret": "Int"},
+    "json_float": {"effects": set(),      "types": ["Text", "Text"], "ret": "Float"},
+    "json_len":   {"effects": set(),      "types": ["Text", "Text"], "ret": "Int"},
+    "json_has":   {"effects": set(),      "types": ["Text", "Text"], "ret": "Bool"},
+    "json_of":    {"effects": set(),      "types": ["Any"],          "ret": "Text"},
     "args":       {"effects": {"io"},     "types": [],              "ret": "List of Text"},
     "post":       {"effects": {"net"},    "types": ["Text", "Text"], "ret": "Text"},
     "fetch_status": {"effects": {"net"},  "types": ["Text"],        "ret": "Int"},
@@ -3920,6 +3929,122 @@ def run_builtin(name: str, args: list, line: int):
         return args[1] in args[0]
     if name == "keys":
         return list(args[0].keys())
+    if name.startswith("json_") or name == "py_json":
+        import json as _json
+
+        def walk(doc_text, path_text, what):
+            try:
+                cur = _json.loads(str(doc_text))
+            except Exception as e:
+                raise FailSignal(f"this is not valid JSON: {e}")
+            if str(path_text) == "":
+                return cur
+            for step in str(path_text).replace("[", ".").replace(
+                    "]", "").split("."):
+                if step == "":
+                    continue
+                if isinstance(cur, list):
+                    try:
+                        idx = int(step)
+                    except ValueError:
+                        raise FailSignal(
+                            f"'{step}' is not a position in a list "
+                            f"(while looking for '{path_text}')")
+                    if not -len(cur) <= idx < len(cur):
+                        raise FailSignal(
+                            f"position {idx} is outside this list of "
+                            f"{len(cur)} (while looking for "
+                            f"'{path_text}')")
+                    cur = cur[idx]
+                elif isinstance(cur, dict):
+                    if step not in cur:
+                        raise FailSignal(
+                            f"there is no '{step}' here (while looking "
+                            f"for '{path_text}')")
+                    cur = cur[step]
+                else:
+                    raise FailSignal(
+                        f"cannot look inside {type(cur).__name__} "
+                        f"(while looking for '{path_text}')")
+            return cur
+
+        if name == "json_of":
+            def plain(v):
+                if isinstance(v, dict):
+                    return {str(k): plain(x) for k, x in v.items()}
+                if isinstance(v, list):
+                    return [plain(x) for x in v]
+                if isinstance(v, RecordValue):
+                    return {f: plain(x) for f, x in v.fields.items()}
+                return v
+            return _json.dumps(plain(args[0]), ensure_ascii=False)
+
+        if name == "json_has":
+            try:
+                walk(args[0], args[1], "has")
+                return True
+            except FailSignal:
+                return False
+
+        if name == "json_len":
+            got = walk(args[0], args[1], "len")
+            if isinstance(got, (list, dict, str)):
+                return len(got)
+            raise FailSignal("this value has no length")
+
+        if name in ("json_get", "json_int", "json_float"):
+            got = walk(args[0], args[1], name)
+            if name == "json_get":
+                if isinstance(got, bool):
+                    return "true" if got else "false"
+                if isinstance(got, (dict, list)):
+                    return _json.dumps(got, ensure_ascii=False)
+                return "" if got is None else str(got)
+            try:
+                return int(got) if name == "json_int" else float(got)
+            except (TypeError, ValueError):
+                raise FailSignal(
+                    f"'{args[1]}' is not a "
+                    f"{'whole number' if name == 'json_int' else 'decimal'}")
+
+        # py_json: arguments and answer both travel as JSON, so numbers,
+        # lists and nested data survive the trip intact
+        module, func, args_json = args[0], args[1], args[2]
+        try:
+            call_args = _json.loads(str(args_json))
+        except Exception as e:
+            raise FailSignal(f"the arguments are not valid JSON: {e}")
+        if not isinstance(call_args, list):
+            raise FailSignal("the arguments must be a JSON list, "
+                             'like [1, "two", [3]]')
+        import importlib
+        mod, rest = None, ""
+        parts = str(module).split(".")
+        for cut in range(len(parts), 0, -1):
+            try:
+                mod = importlib.import_module(".".join(parts[:cut]))
+                rest = ".".join(parts[cut:])
+                break
+            except ImportError:
+                continue
+        if mod is None:
+            raise FailSignal(f"cannot import '{module}'")
+        target = mod
+        for part in ([p for p in rest.split(".") if p]
+                     + [p for p in str(func).split(".") if p]):
+            target = getattr(target, part, None)
+            if target is None:
+                raise FailSignal(f"'{module}' has no '{func}'")
+        try:
+            out = target(*call_args)
+        except Exception as e:
+            raise FailSignal(f"{module}.{func} failed: {e}")
+        if isinstance(out, (bytes, bytearray)):
+            out = out.decode("utf-8", errors="replace")
+        try:
+            return _json.dumps(out, ensure_ascii=False, default=str)
+        except Exception:
+            return _json.dumps(str(out))
     if name in ("py", "py_int", "py_float"):
         module, func, call_args = args[0], args[1], args[2]
         import importlib

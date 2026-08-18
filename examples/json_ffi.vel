@@ -1,0 +1,71 @@
+// v2.26: JSON, and calling Python with real data.
+//
+// json_get / json_int / json_float / json_len / json_has read a
+// document by path ("user.name", "tags[1]"), and json_of turns your
+// own values into JSON. All of it is pure - parsing text is not an
+// effect - and every read can fail, because a field that is not
+// there is a real possibility rather than a crash.
+//
+// py_json sends arguments and receives the answer as JSON, so numbers,
+// lists and nested data survive the trip intact. It needs 'uses ffi'.
+
+record Person {
+    name: Text
+    age: Int
+}
+
+fn name_in(doc: Text) -> Text or fail {
+    return try json_get(doc, "user.name")
+}
+
+fn age_in(doc: Text) -> Int or fail
+ensures result >= 0
+{
+    let years = try json_int(doc, "user.age")
+    if years < 0 {
+        fail "an age cannot be negative"
+    }
+    return years
+}
+
+fn root_of(n: Float) -> Float uses ffi or fail {
+    let answer = try py_json("math", "sqrt", format("[{}]", n))
+    return try json_float(answer, "")
+}
+
+fn main() uses io, ffi {
+    let doc = "{\"user\": {\"name\": \"gowri\", \"age\": 30}, \"tags\": [\"proof\", \"speed\"]}"
+    check name_in(doc) {
+        ok n {
+            print(format("name: {}", n))
+        }
+        fail why {
+            print(format("no name: {}", why))
+        }
+    }
+    check age_in(doc) {
+        ok a {
+            print(format("age: {}", a))
+        }
+        fail why {
+            print(format("no age: {}", why))
+        }
+    }
+    check json_get(doc, "tags[0]") {
+        ok t {
+            print(format("first tag: {}", t))
+        }
+        fail why {
+            print(format("no tag: {}", why))
+        }
+    }
+    print(format("built json: {}", json_of(Person(name: "gowri", age: 30))))
+    check root_of(16.0) {
+        ok r {
+            print(format("sqrt(16) from python: {}", r))
+        }
+        fail why {
+            print(format("sqrt failed: {}", why))
+        }
+    }
+}

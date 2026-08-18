@@ -116,6 +116,17 @@ file persistence, sorted reports.
 `examples/fetcher.vel` — an HTTP tool: checks a status, then summarises
 a page, with every network call declared and every failure handled.
 
+## JSON
+
+```
+json_get(doc, "user.name")    json_int(doc, "user.age")
+json_len(doc, "tags")         json_of(Person(name: "gowri", age: 30))
+```
+
+Paths walk objects and lists, every read can fail (a missing field is
+a possibility, not a crash), and none of it is an effect — parsing text
+is pure.
+
 ## Reaching other languages
 
 ```
