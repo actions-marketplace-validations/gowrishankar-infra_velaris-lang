@@ -206,6 +206,13 @@ error, not a silent wrap — and the same error whether your code is
 interpreted or running as machine code. Floats are IEEE-754 doubles,
 proven as such.
 
+## Remembered proofs
+
+Proofs are cached in `.velaris/` and keyed by the function's text *and*
+the contracts it depends on, so changing a promise re-proves everything
+that relied on it. `--no-cache` proves from scratch; `velaris clean`
+forgets.
+
 ## Stability
 
 Semantic versioning: breaking changes **only at major versions** (v2.0

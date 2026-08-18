@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Velaris v2.28 — "The language where you can trust code you didn't write."
+Velaris v2.29 — "The language where you can trust code you didn't write."
 
-New in v2.28: velaris build program.vel makes one executable holding
-    your program, its imports, the standard library and the compiler -
-    the person you give it to installs nothing.
+New in v2.29: proofs are remembered between runs, keyed by what they
+    actually depend on - the function's text and the contracts it
+    calls - so a slow proof is paid for once.
 
 New in v2.2: out-of-the-box readiness.
     velaris doctor          check your setup, with exact fixes
@@ -142,6 +142,7 @@ Usage:
   velaris repl                             interactive session
   velaris fmt program.vel                  format to the canonical style
   velaris check program.vel                compile only, do not run
+  velaris clean                            forget remembered proofs
   velaris test program.vel                 run every test_ function
   velaris trace program.vel                show every call as it happens
   velaris explain program.vel              walk through what it does
@@ -245,7 +246,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.28.0"
+VERSION = "2.29.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -2179,8 +2180,91 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
 #       to runtime promise checks.
 # ---------------------------------------------------------------------------
 
+CACHE_DIR = ".velaris"
+CACHE_FILE = os.path.join(CACHE_DIR, "proofs.json")
+
+
+def proof_key(fn: Function, table: dict, records: list) -> str:
+    """What this function's proof actually depends on.
+
+    Its own text, and the *contracts* of everything it calls - because
+    a modular proof assumes those. Change a callee's promise and this
+    function must be proven again, or the cache would be telling you
+    something that is no longer true.
+    """
+    import hashlib
+
+    def contract_of(f: Function) -> str:
+        return "|".join([
+            f.name, str(f.params), str(f.return_type),
+            ",".join(sorted(f.effects)), str(f.can_fail),
+            ";".join(expr_str(e) for e, _ in f.requires),
+            ";".join(expr_str(e) for e, _ in f.ensures)])
+
+    called: set = set()
+
+    def walk(node):
+        import dataclasses as _dc
+        if isinstance(node, (list, tuple)):
+            for x in node:
+                walk(x)
+            return
+        if not _dc.is_dataclass(node):
+            return
+        if isinstance(node, Call):
+            called.add(node.name)
+        for f in _dc.fields(node):
+            walk(getattr(node, f.name))
+    walk(fn.body)
+    walk([e for e, _ in fn.requires])
+    walk([e for e, _ in fn.ensures])
+
+    parts = [VERSION, contract_of(fn), stmt_key(fn.body)]
+    for name in sorted(called):
+        callee = table.get(name)
+        if callee is not None:
+            parts.append(contract_of(callee))
+    for r in records:
+        parts.append(f"{r.name}:{r.fields}")
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+
+
+def stmt_key(stmts) -> str:
+    """A stable text for a function body."""
+    import dataclasses as _dc
+
+    def show(node) -> str:
+        if isinstance(node, (list, tuple)):
+            return "[" + ",".join(show(x) for x in node) + "]"
+        if not _dc.is_dataclass(node):
+            return repr(node)
+        inner = ",".join(f"{f.name}={show(getattr(node, f.name))}"
+                         for f in _dc.fields(node) if f.name != "line")
+        return f"{type(node).__name__}({inner})"
+    return show(stmts)
+
+
+def _cache_load() -> dict:
+    try:
+        with open(CACHE_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _cache_save(data: dict) -> None:
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        with open(CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except OSError:
+        pass                            # a cache that cannot be written
+                                        # is a slowdown, never an error
+
+
 def check_proofs(funcs: list[Function], records: list,
-                 errors: list, proven_out: set | None = None) -> None:
+                 errors: list, proven_out: set | None = None,
+                 use_cache: bool = False) -> None:
     try:
         import z3
     except ImportError:
@@ -3027,7 +3111,21 @@ def check_proofs(funcs: list[Function], records: list,
             i += 1
         return [(ctx, FELL_OFF, dict(env))]
 
+    cache = _cache_load() if use_cache else {}
+    settled: dict = {}          # what this run confirmed
     for fn in funcs:
+        key = proof_key(fn, table, records) if use_cache else None
+        if key is not None and key in cache:
+            remembered = cache[key]
+            settled[key] = remembered
+            if remembered.get("proven") and proven_out is not None:
+                proven_out.add(fn.name)
+            for e in remembered.get("errors", []):
+                errors.append(VelarisError(
+                    e["code"], e["message"], e["line"],
+                    fixes=e.get("fixes", []), file=e.get("file")))
+            continue
+        before_errors = len(errors)
         saw_fp[0] = False              # FP budget only when FP appears
         env = {}
         list_facts = []
@@ -3150,13 +3248,33 @@ def check_proofs(funcs: list[Function], records: list,
                         raise Unprovable()
             if proven_out is not None and (fn.ensures or fn.requires):
                 proven_out.add(fn.name)   # every obligation discharged
+            if key is not None:
+                settled[key] = {
+                    "proven": bool(fn.ensures or fn.requires),
+                    "errors": [{"code": e.code, "message": e.message,
+                                "line": e.line, "fixes": e.fixes,
+                                "file": e.file}
+                               for e in errors[before_errors:]]}
         except Unprovable:
+            if key is not None:
+                settled[key] = {"proven": False, "errors": [
+                    {"code": e.code, "message": e.message, "line": e.line,
+                     "fixes": e.fixes, "file": e.file}
+                    for e in errors[before_errors:]]}
             continue                    # runtime promise checks still guard
         except z3.Z3Exception:
             continue                    # solver hiccup: runtime still guards
         except VelarisError as e:
             errors.append(blame(fn, e))
+            if key is not None:         # a refutation is worth remembering
+                settled[key] = {"proven": False, "errors": [
+                    {"code": x.code, "message": x.message, "line": x.line,
+                     "fixes": x.fixes, "file": x.file}
+                    for x in errors[before_errors:]]}
             continue
+
+    if use_cache:
+        _cache_save(settled)
 
 
 # ---------------------------------------------------------------------------
@@ -4559,7 +4677,8 @@ def inspect_source(path: str, source: str | None = None) -> dict:
     check_types(funcs, records, errors)
     proved: set = set()
     if not errors:
-        check_proofs(funcs, records, errors, proved)
+        check_proofs(funcs, records, errors, proved,
+                     use_cache="--no-cache" not in sys.argv)
     seen_e = set()
     for e in errors:                # one problem, one message, everywhere
         key = (e.code, e.file or path, e.line, e.message)
@@ -5289,6 +5408,15 @@ def main() -> int:
         return lsp_serve()
     if argv[:1] in (["add"], ["deps"], ["verify"]):
         return packages(argv)
+    if argv[:1] == ["clean"]:
+        import shutil
+        if os.path.exists(CACHE_DIR):
+            shutil.rmtree(CACHE_DIR, ignore_errors=True)
+            print(f"removed {CACHE_DIR}/ - the next run proves everything "
+                  f"again")
+        else:
+            print("nothing to clean")
+        return 0
     if argv[:1] == ["build"]:
         return build_program(argv[1:])
     if argv[:1] == ["trace"]:
@@ -5483,7 +5611,8 @@ def main() -> int:
         check_types(funcs, records, errors)  # superpower 2: no type surprises
         proven: set = set()
         if not errors:                # proofs assume well-formed code
-            check_proofs(funcs, records, errors, proven)
+            check_proofs(funcs, records, errors, proven,
+                         use_cache="--no-cache" not in sys.argv)
         if errors:
             seen_err, unique = set(), []
             for e in errors:            # two checkers can spot one problem

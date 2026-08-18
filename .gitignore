@@ -5,3 +5,6 @@ dist/
 build/
 *.egg-info/
 ledger.txt
+
+# remembered proofs - safe to delete, rebuilt on demand
+.velaris/

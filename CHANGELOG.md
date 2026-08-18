@@ -1,5 +1,17 @@
 # Velaris changelog
 
+## 2.29 - Remembered proofs
+A proof that has already been done is not done again. Results are kept
+in `.velaris/proofs.json`, keyed by what the proof actually depends on:
+the function's own text **and the contracts of everything it calls** -
+because a modular proof assumes those, and a cache that ignored them
+would keep telling you something that is no longer true. Weakening a
+callee's promise re-proves its callers, as it must.
+
+The float refutation in `examples/fp_proof_bad.vel` takes 16.6 seconds
+the first time and 0.10 seconds after, with the same message. Use
+`--no-cache` to prove everything again, or `velaris clean` to forget.
+
 ## 2.28 - velaris build: hand someone your program
 `velaris build program.vel` produces a single executable containing
 your program, everything it imports, the standard library, and the
