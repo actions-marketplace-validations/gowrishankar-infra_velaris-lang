@@ -108,9 +108,13 @@ These are the mistakes that actually happen. Read them twice.
 6. **Whole numbers are 64-bit.** Arithmetic that outgrows that range is
    an error, not a wraparound.
 
-7. **Inline functions cannot capture.** `fn(n: Int) -> Bool { ... }`
-   may only use its own parameters and global functions — never a
-   local from the surrounding function. Pass it as a parameter instead.
+7. **Inline functions capture by value.** `fn(n: Int) -> Bool { ... }`
+   may read locals from the surrounding function; their values are
+   copied when the function value is made, so later changes to those
+   locals do not affect it. Effects still apply: an inline function
+   that prints needs the surrounding function to allow it, and a
+   function value passed to a library must still be pure. A name that
+   exists nowhere is E402 as before.
 
 8. **`main` cannot fail** and takes no parameters.
 

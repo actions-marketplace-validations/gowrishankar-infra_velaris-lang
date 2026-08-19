@@ -105,7 +105,7 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 </style></head><body>
 <nav><div class="in"><a class="brand" href="index.html">
 <span class="dot"></span>Velaris</a><a href="index.html" class="">Home</a><a href="tutorial.html" class="">Tutorial</a><a href="spec.html" class="here">Reference</a><a href="library.html" class="">Library</a><a href="errors.html" class="">Errors</a><a href="floats.html" class="">Floats</a><a href="playground.html" class="">Playground</a>
-<span class="ver">v2.49.0</span></div></nav>
+<span class="ver">v2.50.0</span></div></nav>
 <main class="wide"><h1>The Velaris language reference</h1>
 <br>
 <p>This is the specification: what Velaris means, precisely. It is not a</p>
@@ -400,6 +400,24 @@ footer { border-top:1px solid var(--line); color:var(--mut);
 <p>here first. Until then, a Velaris program that needs parallelism should</p>
 <p>get it outside the program: run several, or reach the host language</p>
 <p>through <code>uses ffi</code> and accept that what happens there is unverified.</p>
+<br>
+<h2>12a. Function values and capture</h2>
+<br>
+<p>An inline function may read locals from the code around it. Those</p>
+<p>values are <b>copied when the function value is made</b>: the function</p>
+<p>carries the numbers, text or records that were there at that moment,</p>
+<p>and later assignment to those locals cannot change what it sees. There</p>
+<p>are no reference cells, so a function value can never observe a change</p>
+<p>it did not receive as an argument.</p>
+<br>
+<p>Effects are unaffected. A function value is still pure - it may not</p>
+<p>perform effects, and one that tries is rejected before running - so</p>
+<p>capture cannot smuggle behaviour past a signature.</p>
+<br>
+<p>The prover treats captured values as unknown: promises on a capturing</p>
+<p>function value fall back to runtime checks rather than being proven.</p>
+<p>That is the conservative direction, and a false promise on such a</p>
+<p>function is still caught while running.</p>
 <br>
 <h2>13a. Early loop exit: considered, and answered</h2>
 <br>

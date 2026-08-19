@@ -70,7 +70,7 @@ EXPECT = {
     "div_bad.vel": "REJECTED",
     "ns_bad.vel": "REJECTED",
     "tools.vel": "RUNS",
-    "lambda_bad.vel": "REJECTED",
+    "lambda_capture.vel": "RUNS",
     "builtin_unhandled.vel": "REJECTED",
     "std_bad.vel": "REJECTED",
     "fp_proof_bad.vel": "REJECTED",

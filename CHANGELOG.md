@@ -1,5 +1,27 @@
 # Velaris changelog
 
+## 2.50 - Function values carry their surroundings
+Two reviewing models named the no-capture rule as a real expressiveness
+cost, and they were right: writing `fn(n: Int) -> Bool { return n >
+limit }` meant hand-writing a loop instead. Inline functions now
+capture **by value**.
+
+The values are copied when the function value is made, so later
+assignment to those locals cannot change what the function sees -
+`examples/lambda_capture.vel` demonstrates a captured `cutoff` staying
+2 after the local is set to 99. There are no reference cells, so a
+function value can never observe a change it was not handed.
+
+What did not change, verified: a capturing inline function that tries
+to print is still rejected (E300 - effects cannot be smuggled past a
+signature); a false promise on one is still caught while running
+(E601); a name that exists nowhere is still E402. The prover treats
+captured values as unknown, which is the conservative direction.
+
+`examples/lambda_bad.vel` was the test asserting capture is an error.
+It is now `examples/lambda_capture.vel` and asserts the opposite - the
+right way for a language to record a change of mind.
+
 ## 2.49 - The card's gaps were hiding three real bugs
 A model reviewed `LLM.md` without a compiler and reported five things
 the card never explained. Writing them down meant testing them first,

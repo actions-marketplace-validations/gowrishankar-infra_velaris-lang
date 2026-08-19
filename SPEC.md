@@ -293,6 +293,24 @@ here first. Until then, a Velaris program that needs parallelism should
 get it outside the program: run several, or reach the host language
 through `uses ffi` and accept that what happens there is unverified.
 
+## 12a. Function values and capture
+
+An inline function may read locals from the code around it. Those
+values are **copied when the function value is made**: the function
+carries the numbers, text or records that were there at that moment,
+and later assignment to those locals cannot change what it sees. There
+are no reference cells, so a function value can never observe a change
+it did not receive as an argument.
+
+Effects are unaffected. A function value is still pure - it may not
+perform effects, and one that tries is rejected before running - so
+capture cannot smuggle behaviour past a signature.
+
+The prover treats captured values as unknown: promises on a capturing
+function value fall back to runtime checks rather than being proven.
+That is the conservative direction, and a false promise on such a
+function is still caught while running.
+
 ## 13a. Early loop exit: considered, and answered
 
 Velaris has no `break` or `continue`. An adversarial review argued the

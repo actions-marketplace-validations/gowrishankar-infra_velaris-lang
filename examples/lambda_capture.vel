@@ -1,0 +1,33 @@
+// A function value carries the values around it - read once, when the
+// value is made.
+//
+// Until v2.50 this was an error: "a function value cannot use 'limit'
+// from the code around it". Two reviewing models called the absence a
+// real expressiveness cost, and they were right. Capture is by VALUE:
+// the number that 'limit' held at this moment travels with the
+// function, so nothing can change underneath it and effects stay
+// visible in signatures.
+
+import "std.vel"
+
+fn main() uses io {
+    let limit = 4
+    print(keep_if([1, 5, 9], fn(n: Int) -> Bool {
+        return n > limit
+    }))
+
+    // captured values are frozen at the moment of creation
+    let cutoff = 2
+    let small = keep_if([1, 3, 5], fn(n: Int) -> Bool {
+        return n < cutoff
+    })
+    cutoff = 99
+    print(format("still uses 2, not 99: {}", small))
+
+    // several captures, and a record field among them
+    let base = 10
+    let step = 5
+    print(map_to([1, 2, 3], fn(n: Int) -> Int {
+        return base + n * step
+    }))
+}

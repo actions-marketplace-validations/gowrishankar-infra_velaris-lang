@@ -149,12 +149,11 @@ fn main() uses io {
     print(max_of(empty))
 }
 '''),
-    ("an inline function reaching outside itself", "E402", False, '''
+    ("an inline function using a name that exists nowhere", "E402", False, '''
 import "std.vel"
 
 fn main() uses io {
-    let limit = 4
-    print(keep_if([1, 5], fn(n: Int) -> Bool { return n > limit }))
+    print(keep_if([1, 5], fn(n: Int) -> Bool { return n > nothing_here }))
 }
 '''),
     ("asking a namespace for something it lacks", "E200", False, '''

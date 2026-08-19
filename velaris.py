@@ -252,7 +252,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.49.0"
+VERSION = "2.50.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -397,6 +397,19 @@ class Str:      value: str
 @dataclass
 class Bool:     value: bool
 @dataclass
+class Closure:
+    """A function value that may carry values from around it.
+
+    The function itself was lifted to the top level; this node is what
+    the surrounding code evaluates to, and it is where the captured
+    values are read - once, at the moment the value is made.
+    """
+    name: str
+    free: list
+    line: int
+
+
+@dataclass
 class Var:      name: str; line: int
 @dataclass
 class BinOp:    op: str; left: object; right: object; line: int
@@ -458,6 +471,7 @@ class Function:
     can_fail: bool = False
     type_vars: list = field(default_factory=list)
     is_lambda: bool = False
+    captures: list = field(default_factory=list)   # [(name, type)]
 
 
 # ---------------------------------------------------------------------------
@@ -638,8 +652,39 @@ class Parser:
         f.can_fail = False
         f.type_vars = []
         f.is_lambda = True
+        # names the body reads that it did not bind itself: candidates
+        # for capture. Which are really locals is known only once the
+        # surrounding function is type checked, so decide there.
+        bound = {p for p, _ in params}
+        free = []
+
+        def look(node):
+            if isinstance(node, Let) or isinstance(node, Assign):
+                bound.add(node.name)
+            if isinstance(node, Var) and node.name not in bound \
+                    and node.name not in free:
+                free.append(node.name)
+            if isinstance(node, Check):
+                bound.add(node.ok_name)
+                bound.add(node.fail_name)
+
+        import dataclasses as _dc
+
+        def visit(n):
+            if isinstance(n, (list, tuple)):
+                for x in n:
+                    visit(x)
+                return
+            if not _dc.is_dataclass(n):
+                return
+            look(n)
+            for fl in _dc.fields(n):
+                visit(getattr(n, fl.name))
+
+        visit(body)
+        f.free_names = free
         self.lifted.append(f)
-        return Var(name, start.line)
+        return Closure(name, free, start.line)
 
     @staticmethod
     def flatten(stmts: list) -> list:
@@ -1603,10 +1648,14 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                 fixes=[f"rename the variable",
                        f"or give the import another name: as {name}_lib"])
 
+    lambda_of = {f.name: f for f in funcs if getattr(f, "is_lambda", False)}
+
     def check_fn(fn: Function) -> None:
         for _pname, _ in fn.params:
             no_shadow(_pname, fn.line)
         env = dict(fn.params)                       # variable -> type
+        for cname, ctype in getattr(fn, "captures", []):
+            env.setdefault(cname, ctype)            # values carried in
         declared_ret = fn.return_type or "Unit"
 
         def infer(node, allow_fail: bool = False) -> str:
@@ -1638,6 +1687,22 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
                 return t
             if isinstance(node, Str):  return "Text"
             if isinstance(node, Bool): return "Bool"
+            if isinstance(node, Closure):
+                lam = lambda_of.get(node.name)
+                if lam is None:
+                    raise VelarisError("E402",
+                        f"unknown function value '{node.name}'", node.line)
+                # a name is captured when the surrounding code has it as
+                # a local; anything else is a global function or builtin
+                caught = []
+                for n in node.free:
+                    if n in env:
+                        caught.append((n, env[n]))
+                lam.captures = caught
+                check_fn(lam)              # check it where its names mean
+                                           # something
+                return fmt_fn_type([t for _, t in lam.params],
+                                   lam.return_type)
             if isinstance(node, Var):
                 if node.name in env:
                     return env[node.name]
@@ -2279,6 +2344,9 @@ def check_types(funcs: list[Function], records: list, errors: list) -> None:
             "handle the failure", m.line,
             fixes=["handle failures inside main with check blocks"])))
     for fn in funcs:
+        if getattr(fn, "is_lambda", False) and getattr(fn, "free_names", []):
+            continue      # checked at its creation site, where the names
+                          # it carries actually mean something
         try:
             check_fn(fn)
         except VelarisError as e:
@@ -5135,7 +5203,10 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
         except Exception:
             pass
 
-    def call_function(fn: Function, args: list, line: int):
+    def call_function(fn, args: list, line: int):
+        caught = None
+        if isinstance(fn, Bound):
+            caught, fn = fn.caught, fn.fn
         name = fn.name
         if depth[0] >= DEPTH_LIMIT:
             raise VelarisError("E609",
@@ -5149,6 +5220,10 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
                 f"'{name}' expects {len(fn.params)} argument(s) but got {len(args)}",
                 line, fixes=[f"pass exactly {len(fn.params)} argument(s)"])
         env = {p[0]: a for p, a in zip(fn.params, args)}
+        if caught:
+            for cn, cv in caught.items():
+                env.setdefault(cn, cv)     # values carried in, read once
+                                           # when the value was made
         entry = dict(env)                  # snapshot: promises see entry values
 
         def vals(expr, extra=None):
@@ -5251,8 +5326,20 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
 
     _hot = (Num, FloatNum, Str, Bool)
 
+    class Bound:
+        """A function value carrying the values it was made with."""
+        __slots__ = ("fn", "caught")
+
+        def __init__(self, fn, caught):
+            self.fn = fn
+            self.caught = caught
+
     def eval_(node, env):
         cls = node.__class__
+        if cls is Closure:
+            fn = table[node.name]
+            caught = {n: env[n] for n in node.free if n in env}
+            return Bound(fn, caught) if caught else fn
         if cls is Var:                  # the commonest node by far
             name = node.name
             if name in env:
@@ -5279,7 +5366,8 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
             raise VelarisError("E402", f"unknown variable '{node.name}'", node.line,
                               fixes=[f"declare it first: let {node.name} = ..."])
         if isinstance(node, Call):
-            if node.name in env and isinstance(env[node.name], Function):
+            if node.name in env and isinstance(env[node.name],
+                                               (Function, Bound)):
                 return call_function(env[node.name],
                                      [eval_(a, env) for a in node.args],
                                      node.line)
