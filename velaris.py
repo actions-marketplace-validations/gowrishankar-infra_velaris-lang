@@ -252,7 +252,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.50.0"
+VERSION = "2.51.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -5224,7 +5224,10 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
             for cn, cv in caught.items():
                 env.setdefault(cn, cv)     # values carried in, read once
                                            # when the value was made
-        entry = dict(env)                  # snapshot: promises see entry values
+        # the snapshot exists so promises can see entry values; a
+        # function with no promises was copying its whole scope on
+        # every single call for nothing
+        entry = dict(env) if (fn.requires or fn.ensures) else env
 
         def vals(expr, extra=None):
             scope = dict(entry)
@@ -5278,15 +5281,15 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
         if cls is Let:
             env[node.name] = eval_(node.value, env)
             return
-        if isinstance(node, Let):
+        if cls is Let:
             env[node.name] = eval_(node.value, env)
-        elif isinstance(node, Return):
+        elif cls is Return:
             raise ReturnSignal(None if node.value is None else eval_(node.value, env))
-        elif isinstance(node, ExprStmt):
+        elif cls is ExprStmt:
             eval_(node.expr, env)
-        elif isinstance(node, FailStmt):
+        elif cls is FailStmt:
             raise FailSignal(eval_(node.value, env))
-        elif isinstance(node, Check):
+        elif cls is Check:
             try:
                 val = eval_(node.subject, env)
             except FailSignal as f:
@@ -5298,11 +5301,11 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
                     env[node.ok_name] = val
                 for s in node.ok_body:
                     run(s, env)
-        elif isinstance(node, If):
+        elif cls is If:
             branch = node.then if eval_(node.cond, env) else node.other
             for s in branch:
                 run(s, env)
-        elif isinstance(node, While):
+        elif cls is While:
             def check_invariants():
                 for inv_expr, iline in node.invariants:
                     if not eval_(inv_expr, env):
@@ -5321,7 +5324,7 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
                 for s in node.body:
                     run(s, env)
                 check_invariants()
-        elif isinstance(node, Assign):
+        elif cls is Assign:
             env[node.name] = eval_(node.value, env)
 
     _hot = (Num, FloatNum, Str, Bool)
@@ -5351,39 +5354,39 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
                                fixes=[f"declare it first: let {name} = ..."])
         if cls in _hot:                 # literals: the value is the node
             return node.value
-        if isinstance(node, Num):  return node.value
-        if isinstance(node, FloatNum): return node.value
-        if isinstance(node, Neg):  return -eval_(node.value, env)
-        if isinstance(node, TryExpr):
+        if cls is Num:  return node.value
+        if cls is FloatNum: return node.value
+        if cls is Neg:  return -eval_(node.value, env)
+        if cls is TryExpr:
             return eval_(node.value, env)   # a failure keeps rising
-        if isinstance(node, Str):  return node.value
-        if isinstance(node, Bool): return node.value
-        if isinstance(node, Var):
+        if cls is Str:  return node.value
+        if cls is Bool: return node.value
+        if cls is Var:
             if node.name in env:
                 return env[node.name]
             if node.name in table:
                 return table[node.name]        # a function, as a value
             raise VelarisError("E402", f"unknown variable '{node.name}'", node.line,
                               fixes=[f"declare it first: let {node.name} = ..."])
-        if isinstance(node, Call):
+        if cls is Call:
             if node.name in env and isinstance(env[node.name],
                                                (Function, Bound)):
                 return call_function(env[node.name],
                                      [eval_(a, env) for a in node.args],
                                      node.line)
             return call(node.name, [eval_(a, env) for a in node.args], node.line)
-        if isinstance(node, Not):
+        if cls is Not:
             return not eval_(node.value, env)
-        if isinstance(node, RecordLit):
+        if cls is RecordLit:
             return RecordValue(node.name,
                                {f: eval_(v, env) for f, v in node.fields})
-        if isinstance(node, FieldGet):
+        if cls is FieldGet:
             return eval_(node.obj, env).fields[node.field]
-        if isinstance(node, ListLit):
+        if cls is ListLit:
             return [eval_(i, env) for i in node.items]
-        if isinstance(node, MapLit):
+        if cls is MapLit:
             return {eval_(k, env): eval_(v, env) for k, v in node.entries}
-        if isinstance(node, BinOp):
+        if cls is BinOp:
             if node.op == "and":
                 return eval_(node.left, env) and eval_(node.right, env)
             if node.op == "or":

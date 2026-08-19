@@ -1,5 +1,27 @@
 # Velaris changelog
 
+## 2.51 - Smaller per-call costs, and an honest note about the ceiling
+Two more measured savings on the interpreted path, both verified
+against every suite and the fuzzer.
+
+The evaluator and statement runner compared node types with
+`isinstance`, which walks a class hierarchy; the AST dataclasses have
+no subclasses, so 22 of those became pointer comparisons. And a
+function with no `requires` or `ensures` was copying its entire scope
+on every call to snapshot values for promises it does not have.
+
+Interpreted record work is now 1073ms where it was 1314ms at the start
+of this run - about 18% - on top of startup halving in 2.48.
+
+**The honest ceiling**: the remaining cost is the sheer number of
+evaluator calls, roughly 580,000 for that benchmark. Removing it needs
+the AST compiled to closures or bytecode, which is a rewrite of the
+execution core rather than an optimisation of it. Native compilation
+for records has the same character - it is the LLVM struct ABI work
+that already caused a Windows-only bug once. Both are worth doing and
+neither is worth starting at the end of a long session; they need a
+plan, a branch, and the fuzzer running between every step.
+
 ## 2.50 - Function values carry their surroundings
 Two reviewing models named the no-capture rule as a real expressiveness
 cost, and they were right: writing `fn(n: Int) -> Bool { return n >
