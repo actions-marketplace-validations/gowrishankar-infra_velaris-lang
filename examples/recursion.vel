@@ -1,0 +1,46 @@
+// Recursion carries contracts, and runaway recursion reports itself.
+//
+// The card never mentioned recursion, so a reviewing model refused to
+// use it rather than invent semantics - a documentation gap that read
+// as a missing feature. It works, call sites are checked against the
+// callee's requires like any other call, and depth past 2000 frames
+// stops with E609 instead of a crash.
+
+fn count_down(n: Int) -> Int
+    requires n >= 0
+    ensures result >= 0
+{
+    if n == 0 {
+        return 0
+    }
+    return count_down(n - 1)
+}
+
+fn triangle(n: Int) -> Int
+    requires n >= 0
+    ensures result >= 0
+{
+    if n == 0 {
+        return 0
+    }
+    return n + triangle(n - 1)
+}
+
+fn total_with_invariant(n: Int) -> Int
+    requires n >= 0
+    ensures result >= 0
+{
+    let sum = 0
+    for i in 0 to n
+        invariant sum >= 0
+    {
+        sum = sum + i
+    }
+    return sum
+}
+
+fn main() uses io {
+    print(format("count_down(5):  {}", count_down(5)))
+    print(format("triangle(10):   {}", triangle(10)))
+    print(format("for-invariant:  {}", total_with_invariant(11)))
+}

@@ -252,7 +252,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.48.0"
+VERSION = "2.49.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -4973,9 +4973,16 @@ def run_builtin(name: str, args: list, line: int):
         except OSError:
             raise FailSignal(f"cannot read file '{args[0]}'")
     if name == "write_file":
-        with open(args[0], "w", encoding="utf-8") as f:
-            f.write(str(args[1]))
-        return None
+        try:
+            with open(str(args[0]), "w", encoding="utf-8") as fh:
+                fh.write(to_text(args[1]))
+            return None
+        except OSError as e:
+            raise VelarisError("E608",
+                f"could not write '{args[0]}': {e.strerror or e}", line,
+                fixes=["check the folder exists and is writable",
+                       "or write somewhere else"])
+
     if name == "request":
         import json as _json
         import urllib.request
@@ -5116,8 +5123,27 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
             raise unknown_function(name, line, table)
         return call_function(fn, args, line)
 
+    depth = [0]
+    DEPTH_LIMIT = 2000        # deep enough for real recursion, shallow
+                              # enough to report before Python's own
+                              # stack gives out with a traceback
+    # each Velaris frame costs several Python frames, so lift Python's
+    # ceiling high enough that OUR limit is the one that fires
+    if sys.getrecursionlimit() < DEPTH_LIMIT * 12:
+        try:
+            sys.setrecursionlimit(DEPTH_LIMIT * 12)
+        except Exception:
+            pass
+
     def call_function(fn: Function, args: list, line: int):
         name = fn.name
+        if depth[0] >= DEPTH_LIMIT:
+            raise VelarisError("E609",
+                f"'{name}' called itself {DEPTH_LIMIT} deep - this looks "
+                f"like recursion that never stops", line,
+                fixes=["make sure the recursive case moves toward the "
+                       "base case",
+                       "or rewrite it as a loop"])
         if len(args) != len(fn.params):
             raise VelarisError("E401",
                 f"'{name}' expects {len(fn.params)} argument(s) but got {len(args)}",
@@ -5142,6 +5168,7 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
 
         retval = None
         trace_enter(name, fn.params, args)
+        depth[0] += 1
         try:
             for stmt in fn.body:
                 run(stmt, env)
@@ -5153,6 +5180,8 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
         except VelarisError as e:
             trace_leave(name, None, failed=f"[{e.code}] {e.message}")
             raise blame(fn, e)
+        finally:
+            depth[0] -= 1
         trace_leave(name, retval)
 
         for expr, cline in fn.ensures:

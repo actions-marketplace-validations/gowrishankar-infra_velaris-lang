@@ -1,5 +1,37 @@
 # Velaris changelog
 
+## 2.49 - The card's gaps were hiding three real bugs
+A model reviewed `LLM.md` without a compiler and reported five things
+the card never explained. Writing them down meant testing them first,
+and three turned out to be defects rather than omissions.
+
+**Deep recursion crashed.** Past about 300 frames a program died with a
+Python `RecursionError` traceback. Velaris now stops at 2000 frames
+with E609 and says the recursion looks like it never ends - and
+Python's own ceiling is lifted so that ours is the one that fires.
+
+**`write_file` crashed on any OS failure.** An unwritable path threw a
+raw traceback. It is now E608 with the reason from the operating
+system. It stays non-catchable by design - a program that cannot write
+where it was told to should stop - but it stops as a Velaris error.
+
+**A dead `write_file` branch** sat unreachable in the interpreter,
+left from an earlier edit.
+
+**Two card claims were simply wrong.** Recursion works, carries
+contracts, and is checked at call sites - the card never mentioned it,
+so a reviewing model refused to use it. And `invariant` works on `for`
+loops as well as `while`; the card documented only `while`.
+`examples/recursion.vel` proves three contracts across both.
+
+**Handle lifecycle, tested and written down**: double close is a
+no-op, use after close fails catchably, handles copy by reference.
+
+**Full module signatures** for http, db, dates, csv, log and
+env_tools - every parameter type, every return type, which functions
+can fail, which carry proven contracts. Guessing these was the
+commonest source of wasted attempts for a model with no compiler.
+
 ## 2.48 - Speed, without touching a single guarantee
 Three measured wins, none of which changes what the language promises.
 

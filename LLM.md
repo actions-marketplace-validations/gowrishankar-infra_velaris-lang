@@ -143,6 +143,40 @@ These are the mistakes that actually happen. Read them twice.
 15. **Declaring an unused effect is legal but viral** - every caller
     must then declare it too. Declare only what a function does.
 
+## Recursion, loops, and depth
+
+Recursion works and carries contracts like any function:
+
+```
+fn count_down(n: Int) -> Int
+    requires n >= 0
+    ensures result >= 0
+{
+    if n == 0 {
+        return 0
+    }
+    return count_down(n - 1)
+}
+```
+
+A recursive call site is checked against the callee's `requires` like
+any other call. Depth is limited to 2000 frames: past that the program
+stops with E609 rather than crashing, so runaway recursion reports
+itself.
+
+`invariant` works on **both** `while` and `for`:
+
+```
+for i in 0 to n
+invariant sum >= 0
+{
+    sum = sum + i
+}
+```
+
+`for i in 0 to n` is **exclusive** - it runs n times, and the last
+value of i is n - 1.
+
 ## Contracts
 
 ```
@@ -207,7 +241,8 @@ insert_by sort_by (keys must be Int) join range_list
 `max_of` and `min_of` require a non-empty list. `sort` promises
 `is_sorted(result)`.
 
-Other modules, imported under a name:
+Other modules, imported under a name. **Full signatures**, since
+guessing them is the commonest source of wasted attempts:
 
 ```
 import "http.vel" as http     get status ok send get_with post_json
@@ -224,6 +259,62 @@ import "env_tools.vel" as sys setting number_setting succeed give_up
 import "time.vel" as time     today clock_text seconds year_of month_of
                               (time needs 'uses ffi' and its functions
                               CAN FAIL - handle or pass up)
+
+```
+http  (uses net, every function CAN FAIL unless noted)
+  get(url: Text) -> Text                      the raw body
+  get_with(url: Text, headers: Text) -> Text  headers as a JSON object
+  send(url: Text, body: Text) -> Text         POST; non-2xx is a failure
+  post_json(url: Text, body: Text) -> Text
+  status(url: Text) -> Int                    ensures result >= 0
+  ok(url: Text) -> Bool                       true for 200..299
+  call(method, url, body, headers) -> Answer  the full envelope
+  code_of(a: Answer) -> Int                   cannot fail
+  body_of(a: Answer) -> Text                  cannot fail
+  header_of(a: Answer, name: Text) -> Text    CAN FAIL
+  record Answer { status: Int  body: Text  raw: Text }
+
+db  (uses ffi, every function CAN FAIL unless noted)
+  open(path: Text) -> Handle                  ":memory:" for a temp one
+  run(conn: Handle, sql: Text) -> Text
+  rows_json(conn: Handle, sql: Text) -> Text  read with the json builtins
+  count(conn: Handle, table: Text) -> Int     ensures result >= 0
+  commit(conn: Handle)
+  close(conn: Handle)                         cannot fail
+
+dates  (pure unless noted)
+  record Date { year: Int  month: Int  day: Int }
+  make(y: Int, m: Int, d: Int) -> Date        CAN FAIL; refuses fake dates
+  parse(text: Text) -> Date                   CAN FAIL; "2026-08-18"
+  text_of(d: Date) -> Text                    zero-padded
+  before(a: Date, b: Date) -> Bool
+  same(a: Date, b: Date) -> Bool
+  next_day(d: Date) -> Date                   CAN FAIL
+    requires d.month >= 1 and d.month <= 12
+  days_in(year: Int, month: Int) -> Int
+    requires month >= 1 and month <= 12
+    ensures result >= 28 and result <= 31     (proven)
+  today() -> Date                             uses ffi, CAN FAIL
+
+csv  (pure)
+  fields(line: Text) -> List of Text          ensures length >= 1
+  line_of(values: List of Text) -> Text
+  column(line: Text, at: Int) -> Text         CAN FAIL
+  column_int(line: Text, at: Int) -> Int      CAN FAIL
+  rows_of(text: Text) -> List of Text         splits on newlines
+
+log  (uses io)
+  info / warn / error (message: Text)
+  event(name: Text, details: Text)
+  field(name: Text, value: Text) -> Text      pure
+  die(message: Text)                          logs and STOPS, exit 1
+
+env_tools  (uses io)
+  setting(name: Text, fallback: Text) -> Text
+  number_setting(name: Text, fallback: Int) -> Int
+  succeed()                                   exits 0
+  give_up(why: Text)                          prints and exits 1
+```
 ```
 
 ## Builtins
@@ -248,7 +339,9 @@ to_int(t) CAN FAIL   to_text(x)   to_float(x)   round(f)
 upper(t) lower(t) split(t, sep) contains(t, s) chars(t) code_at(t, i)
 format(template, ...)
 
-read_file(p) CAN FAIL uses fs      write_file(p, body) uses fs
+read_file(p) CAN FAIL uses fs
+write_file(p, body) uses fs - does NOT fail catchably; an
+  unwritable path or full disk stops the program with E608
 file_exists(p) uses fs
 fetch(url) CAN FAIL uses net       post(url, body) CAN FAIL uses net
 fetch_status(url) CAN FAIL uses net
@@ -264,6 +357,11 @@ py_json(module, fn, args_json) CAN FAIL uses ffi   JSON in, JSON out
 py_new(module, fn, args_json) -> Handle CAN FAIL uses ffi
 py_do(handle, method, args_json) CAN FAIL uses ffi
 py_field(handle, name) CAN FAIL uses ffi     py_close(handle) uses ffi
+
+Handle lifecycle: py_close is safe to call twice (the second is a
+no-op). Any use after close - py_do, py_field - FAILS catchably with
+"that handle is closed". Handles are values; copying one copies the
+reference, and closing through either closes both.
 
 now() uses clock                   random(n) uses rand
 ```
@@ -319,6 +417,8 @@ them as structured data for a fix loop.
 | E521 | `try` outside an `or fail` function | add `or fail`, or use check |
 | E523 | `main` declares `or fail` | handle failures inside main |
 | E525 | binding the result of a void fallible call | use check without ok-binding |
+| E608 | a file could not be written | check the folder exists and is writable |
+| E609 | recursion 2000 deep | move toward the base case, or use a loop |
 | E542 | function value of the wrong shape | match the parameter's fn type |
 | E602 | a list read went out of range while running | fix the index |
 | E704 | a loop invariant broke while running | fix the loop or invariant |
