@@ -164,6 +164,54 @@ runs programs**. Do not expose it to a network you do not control, and
 prefer `--max-allow io,fs` over granting `ffi` on a shared machine -
 the server warns about both.
 
+## From JavaScript
+
+```
+npm install velaris-lang        # or: npx velaris-lang script.vel --allow io
+```
+
+```javascript
+import { audit, run } from "velaris-lang";
+
+const report = await audit(source);
+const result = await run(source, { allow: ["io"] });
+console.log(result.ok, result.output, result.refusedEffect);
+```
+
+The compiler is a Python package, so `pip install velaris-lang` once;
+the npm package says so plainly if it is missing. Types ship with it.
+
+## In a notebook
+
+```
+%pip install velaris-lang
+%load_ext velaris_magic
+```
+
+```
+%%velaris --audit --allow io
+fn main() uses io {
+    print("proven before it ran")
+}
+```
+
+`--audit` prints what the cell can touch and how much of its promises
+are proven before running - useful when the code in the cell came from
+a model. Effects outside `--allow` are refused, and the cell says which
+flag would permit them.
+
+## As a commit hook
+
+```yaml
+repos:
+  - repo: https://github.com/gowrishankar-infra/velaris-lang
+    rev: v2.55
+    hooks:
+      - id: velaris-check      # it compiles, and the promises hold
+      - id: velaris-fmt        # canonically formatted
+      - id: velaris-proofs     # at least 80% proven, not just checked
+```
+
 ## Trying it with nothing installed
 
 ```

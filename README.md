@@ -135,6 +135,9 @@ velaris mcp-install                   tools inside your assistant
 velaris.mcpb                          double-click install for Claude Desktop
 uses: gowrishankar-infra/velaris-lang a GitHub Action
 velaris serve                         an HTTP door for any language
+npx velaris-lang script.vel           npm, for the JavaScript world
+%%velaris --audit --allow io          a Jupyter cell
+- repo: velaris-lang (pre-commit)     a commit hook
 docker run ... velaris check          a container
 velaris build --for-everyone          standalone executables
 ```

@@ -1,0 +1,21 @@
+{
+  "name": "velaris-lang",
+  "version": "2.55.0",
+  "description": "Run code you did not write. A language where a signature declares its effects and promises, and the runtime refuses anything you did not allow.",
+  "keywords": ["velaris", "sandbox", "effects", "verification",
+               "ai-generated-code", "agent", "mcp", "prover"],
+  "homepage": "https://gowrishankar-infra.github.io/velaris-lang/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gowrishankar-infra/velaris-lang.git"
+  },
+  "bugs": "https://github.com/gowrishankar-infra/velaris-lang/issues",
+  "license": "MIT",
+  "author": "Gowri Shankar <gowrishankar@gowrishankar.dev>",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "bin": { "velaris": "bin/velaris.js" },
+  "files": ["index.js", "index.d.ts", "bin/", "README.md"],
+  "engines": { "node": ">=18" }
+}

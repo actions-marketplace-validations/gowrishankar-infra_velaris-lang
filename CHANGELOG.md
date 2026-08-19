@@ -1,5 +1,36 @@
 # Velaris changelog
 
+## 2.55 - Four more doors
+Velaris was reachable from a terminal, Python, MCP, CI, Docker and
+HTTP. Four populations were still locked out.
+
+**npm.** `npx velaris-lang script.vel --allow io`, plus a real library
+with TypeScript types: `audit(source)` and `run(source, {allow:
+["io"]})` from Node. Verified through Node that a program granted only
+`io` is still refused `fs` - the same guarantee, one process further
+away. The compiler stays a Python package; the wrapper says so plainly
+when it is missing instead of failing with a spawn error.
+
+**Jupyter.** `%%velaris --audit --allow io` runs a cell in a box and
+prints what it can touch and how much is proven first. When an effect
+is refused it names the flag that would permit it. The natural home for
+the finance and measurement work where proven contracts earn their
+keep.
+
+**pre-commit.** Three hooks - `velaris-check`, `velaris-fmt`,
+`velaris-proofs` - so a repository can require that its Velaris
+compiles, is formatted, and keeps its proven share above a threshold.
+
+**Homebrew and winget** manifests in `packaging/`, both with tests
+that assert the effect budget still holds in a packaged build. They
+need a tap and a pull request respectively, which is paperwork rather
+than code, and the files say exactly what to do.
+
+Building the Jupyter magic surfaced a wart in the library: `audit()`
+returns problems as dicts while `run()` returns them as objects. The
+magic handles both; the API should not need it, and that is worth
+straightening when the format version next moves.
+
 ## 2.54 - A door for languages that are not Python
 Velaris was reachable from a terminal, from Python, from an MCP client
 and from CI. Everything else - a Node service, a Go tool, a Rust

@@ -1,0 +1,26 @@
+- id: velaris-check
+  name: velaris check
+  description: Compile every Velaris file, and prove the promises it makes.
+  entry: velaris check
+  language: python
+  additional_dependencies: ["velaris-lang", "z3-solver"]
+  files: \.vel$
+  pass_filenames: true
+
+- id: velaris-fmt
+  name: velaris fmt
+  description: Check that every Velaris file is canonically formatted.
+  entry: velaris fmt --check
+  language: python
+  additional_dependencies: ["velaris-lang"]
+  files: \.vel$
+  pass_filenames: true
+
+- id: velaris-proofs
+  name: velaris proofs
+  description: Fail when too few promises are proven rather than checked at runtime.
+  entry: velaris proofs . --min 80
+  language: python
+  additional_dependencies: ["velaris-lang", "z3-solver"]
+  files: \.vel$
+  pass_filenames: false
