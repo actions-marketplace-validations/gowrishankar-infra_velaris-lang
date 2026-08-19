@@ -252,7 +252,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.47.0"
+VERSION = "2.48.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1243,12 +1243,21 @@ def checked_int(value: int, op: str, line: int) -> int:
                    "rupees"])
     return value
 
-try:                        # proofs are optional; the language is not
-    import z3 as _z3_probe
-    HAVE_Z3 = True
-    del _z3_probe
-except ImportError:
-    HAVE_Z3 = False
+def _z3_installed() -> bool:
+    """Is the prover available, without paying ~350ms to import it?
+
+    importlib.util.find_spec only locates the package; z3 itself is
+    imported when a proof actually starts. Programs with no contracts
+    - and every run of a cached-proof program - never pay for it.
+    """
+    try:
+        import importlib.util
+        return importlib.util.find_spec("z3") is not None
+    except Exception:
+        return False
+
+
+HAVE_Z3 = _z3_installed()
 
 BUILTINS = {
     # name          effects needed      argument types        returns
@@ -2372,6 +2381,50 @@ def _cache_save(data: dict) -> None:
 def check_proofs(funcs: list[Function], records: list,
                  errors: list, proven_out: set | None = None,
                  use_cache: bool = False) -> None:
+    # Nothing to prove means nothing to import. Loading z3 costs about
+    # 350ms, and most programs - every hello world, every script whose
+    # functions carry no promises - were paying it for no work at all.
+    # Division, list reads and calls into contracted functions still
+    # create obligations, so this asks about those too.
+    def needs_proving(fn) -> bool:
+        if fn.requires or fn.ensures:
+            return True
+        found = [False]
+
+        def look(node):
+            if isinstance(node, BinOp) and node.op in ("/", "%"):
+                found[0] = True
+            if isinstance(node, While) and node.invariants:
+                found[0] = True
+            if isinstance(node, Call):
+                if node.name in ("get", "pop", "slice", "set_at"):
+                    found[0] = True
+                callee = table_all.get(node.name)
+                if callee is not None and (callee.requires or callee.ensures):
+                    found[0] = True
+
+        import dataclasses as _dc
+
+        def visit(node):
+            if isinstance(node, (list, tuple)):
+                for x in node:
+                    visit(x)
+                return
+            if not _dc.is_dataclass(node):
+                return
+            look(node)
+            for f in _dc.fields(node):
+                visit(getattr(node, f.name))
+
+        visit(fn.body)
+        return found[0]
+
+    table_all = {f.name: f for f in funcs}
+    if not any(needs_proving(f) for f in funcs):
+        if proven_out is not None:
+            proven_out.clear()
+        return
+
     try:
         import z3
     except ImportError:
@@ -4469,11 +4522,36 @@ def to_text(v) -> str:
     return str(v)
 
 
+# effects per builtin, sorted once instead of on every call
+BUILTIN_EFFECTS = {n: tuple(sorted(d.get("effects", ())))
+                   for n, d in BUILTINS.items() if d.get("effects")}
+
+
 def run_builtin(name: str, args: list, line: int):
+    # The hot three, before anything else: these are most of the builtin
+    # calls in any program and used to sit behind thirty string
+    # comparisons and two module imports. None of them has effects, so
+    # the budget check does not apply.
+    if name == "length":
+        a0 = args[0]
+        return len(a0) if not isinstance(a0, str) else len(a0)
+    if name == "get" and isinstance(args[0], list):
+        xs, at = args[0], args[1]
+        if not isinstance(at, int) or at < 0 or at >= len(xs):
+            raise VelarisError("E602",
+                f"this list has {len(xs)} item(s), so there is no "
+                f"position {at}", line,
+                fixes=["check the length before reading",
+                       "or add a 'requires' about the length"])
+        return xs[at]
+    if name == "push" and isinstance(args[0], list):
+        return args[0] + [args[1]]
+
     import time as _time
     import random as _rand
-    for effect in sorted(BUILTINS.get(name, {}).get("effects", set())):
-        spend(effect, name, line)
+    for effect in BUILTIN_EFFECTS.get(name, ()):   # precomputed; this
+        spend(effect, name, line)                  # ran sorted() on
+                                                   # every single call
     if name == "print":
         print(to_text(args[0]))
         return None
@@ -5089,6 +5167,13 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
         return retval
 
     def run(node, env):
+        cls = node.__class__
+        if cls is Assign:               # the body of every loop
+            env[node.name] = eval_(node.value, env)
+            return
+        if cls is Let:
+            env[node.name] = eval_(node.value, env)
+            return
         if isinstance(node, Let):
             env[node.name] = eval_(node.value, env)
         elif isinstance(node, Return):
@@ -5135,7 +5220,21 @@ def build_runtime(funcs: list[Function], native: dict | None = None):
         elif isinstance(node, Assign):
             env[node.name] = eval_(node.value, env)
 
+    _hot = (Num, FloatNum, Str, Bool)
+
     def eval_(node, env):
+        cls = node.__class__
+        if cls is Var:                  # the commonest node by far
+            name = node.name
+            if name in env:
+                return env[name]
+            if name in table:
+                return table[name]
+            raise VelarisError("E402", f"unknown variable '{name}'",
+                               node.line,
+                               fixes=[f"declare it first: let {name} = ..."])
+        if cls in _hot:                 # literals: the value is the node
+            return node.value
         if isinstance(node, Num):  return node.value
         if isinstance(node, FloatNum): return node.value
         if isinstance(node, Neg):  return -eval_(node.value, env)
