@@ -201,7 +201,7 @@ first last reverse index_of contains_item keep_if
 map_to(xs, f) - projection that CAN change type: fn(T) -> R
 apply_to_each (maps T -> T, same type only)
 count_where sum_of max_of min_of is_sorted insert_sorted sort
-insert_by sort_by join range_list
+insert_by sort_by (keys must be Int) join range_list
 ```
 
 `max_of` and `min_of` require a non-empty list. `sort` promises
@@ -211,12 +211,15 @@ Other modules, imported under a name:
 
 ```
 import "http.vel" as http     get status ok send get_with post_json
-                              call code_of body_of header_of
+                              call -> Answer record (status, body, raw)
+                              code_of/body_of read it; header_of CAN FAIL
 import "db.vel" as db         open run rows_json count close commit
 import "dates.vel" as dates   make parse text_of before same next_day
                               days_in today  (Date is a record)
 import "csv.vel" as csv       fields line_of column column_int rows_of
-import "log.vel" as log       info warn error event fail_with
+import "log.vel" as log       info warn error event die
+                              (die logs and STOPS the program, exit 1 -
+                              it is not a catchable failure)
 import "env_tools.vel" as sys setting number_setting succeed give_up
 import "time.vel" as time     today clock_text seconds year_of month_of
                               (time needs 'uses ffi' and its functions
@@ -235,6 +238,9 @@ length(x)     get(list, i)    push(list, v)    get(map, k) CAN FAIL
 pop(list) CAN FAIL            slice(list, from, to) CAN FAIL
 set_at(list, i, v) CAN FAIL   (lists are values; these return new ones)
 add_or_fail(a, b) CAN FAIL    sub_or_fail / mul_or_fail CAN FAIL
+div_or_fail(a, b) CAN FAIL    mod_or_fail CAN FAIL
+(plain / and % on a zero divisor are E403 and STOP the program -
+use the _or_fail forms when the divisor comes from input)
 put(map, k, v)  get_or(map, k, default)  has(map, k)  keys(map)
 all_of(xs, p)   any_of(xs, p)
 
@@ -312,6 +318,7 @@ them as structured data for a fix loop.
 | E513 | redefining an imported function | rename yours |
 | E521 | `try` outside an `or fail` function | add `or fail`, or use check |
 | E523 | `main` declares `or fail` | handle failures inside main |
+| E525 | binding the result of a void fallible call | use check without ok-binding |
 | E542 | function value of the wrong shape | match the parameter's fn type |
 | E602 | a list read went out of range while running | fix the index |
 | E704 | a loop invariant broke while running | fix the loop or invariant |

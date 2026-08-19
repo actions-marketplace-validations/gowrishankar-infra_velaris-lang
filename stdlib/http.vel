@@ -31,22 +31,31 @@ fn get_json(url: Text, path: Text) -> Text uses net or fail {
     return try json_get(body, path)
 }
 
-fn call(method: Text, url: Text, body: Text, headers: Text) -> Text
+record Answer {
+    status: Int
+    body: Text
+    raw: Text
+}
+
+fn call(method: Text, url: Text, body: Text, headers: Text) -> Answer
 uses net or fail
 {
-    return try request(method, url, body, headers)
+    let raw = try request(method, url, body, headers)
+    let code = try json_int(raw, "status")
+    let got = try json_get(raw, "body")
+    return Answer(status: code, body: got, raw: raw)
 }
 
-fn body_of(answer: Text) -> Text or fail {
-    return try json_get(answer, "body")
+fn body_of(answer: Answer) -> Text {
+    return answer.body
 }
 
-fn code_of(answer: Text) -> Int or fail {
-    return try json_int(answer, "status")
+fn code_of(answer: Answer) -> Int {
+    return answer.status
 }
 
-fn header_of(answer: Text, name: Text) -> Text or fail {
-    return try json_get(answer, format("headers.{}", name))
+fn header_of(answer: Answer, name: Text) -> Text or fail {
+    return try json_get(answer.raw, format("headers.{}", name))
 }
 
 fn get_with(url: Text, headers: Text) -> Text uses net or fail {

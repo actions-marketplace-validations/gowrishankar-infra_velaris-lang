@@ -43,6 +43,8 @@ CALLS = {
     "add_or_fail": "add_or_fail(9223372036854775807, 1)",
     "sub_or_fail": "sub_or_fail(-9223372036854775807, 2)",
     "mul_or_fail": "mul_or_fail(4000000000, 4000000000)",
+    "div_or_fail": "div_or_fail(10, 0)",
+    "mod_or_fail": "mod_or_fail(10, 0)",
     "py":          'py("nosuchmodule", "f", xs_t)',
     "py_int":      'py_int("nosuchmodule", "f", xs_t)',
     "py_float":    'py_float("nosuchmodule", "f", xs_t)',

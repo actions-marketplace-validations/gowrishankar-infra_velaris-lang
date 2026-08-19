@@ -25,7 +25,15 @@ fn event(name: Text, details: Text) uses io {
     log(format("EVENT {} {}", name, details))
 }
 
-fn fail_with(message: Text) uses io {
+// Logs the message and STOPS THE PROGRAM with exit 1. This is not a
+// catchable failure - nothing after it runs. Named 'die' because that
+// is what it does; 'fail_with' remains as an alias but new code should
+// say what it means.
+fn die(message: Text) uses io {
     log("ERROR " + message)
     exit_with(1)
+}
+
+fn fail_with(message: Text) uses io {
+    die(message)
 }

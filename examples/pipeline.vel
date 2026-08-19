@@ -36,7 +36,7 @@ fn main() uses io {
             log.event("run_finished", log.field("status", "ok"))
         }
         fail why {
-            log.fail_with(why)
+            log.die(why)
         }
     }
 }

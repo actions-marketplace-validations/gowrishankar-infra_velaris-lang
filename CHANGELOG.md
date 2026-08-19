@@ -1,5 +1,41 @@
 # Velaris changelog
 
+## 2.47 - The periphery round
+A third adversarial pass executed everything the card mentions - every
+builtin, all seven modules against live systems, every error code -
+and held the score at 88 while finding the roughness had moved from
+the core to the edges. All five findings, fixed:
+
+**Division joins the catchable family.** A zero divisor from user
+input was the one remaining way to kill a checked program: E403 stops
+the process and no `check` sees it. `div_or_fail` and `mod_or_fail`
+fail the normal way, for exactly the input-driven case; plain `/` and
+`%` stay strict for divisors the code controls. The card says which to
+use when.
+
+**The http envelope is a record.** `call` returned Text and `get`
+returned Text, so feeding a raw body to `code_of` compiled and died at
+runtime with a misleading JSON error. `call` now returns an `Answer`
+record (status, body, raw); `code_of` and `body_of` read fields and
+cannot fail; the wrong pairing is a type error. `linkcheck` got
+simpler for it. Writing this found a genuine language subtlety: a
+local named `status` shadowed the module's `status` *function* and
+produced a confusing E530 - renamed, and worth remembering.
+
+**`log.die` says what it does.** `fail_with` logged and killed the
+process - correct behaviour, wrong name in a language where "fail"
+means catchable. `die` is the new name; `fail_with` remains as an
+alias so nothing breaks.
+
+**`velaris check` treats a library as a library.** Requiring `main` at
+check time (v2.44) was too broad: `velaris check stdlib/http.vel` is a
+legitimate thing to do. A missing main is now only an error for the
+file being run - which the runtime already enforced.
+
+**The card grew the last empirical truths**: E525 (binding a
+void-returning fallible call), sort_by keys are Int, the _or_fail
+guidance, the Answer record, and log.die's semantics.
+
 ## 2.46 - Contents, not just lengths
 Two additions, both from the adversarial rubric's remaining points.
 

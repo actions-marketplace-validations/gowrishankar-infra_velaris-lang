@@ -252,7 +252,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.46.0"
+VERSION = "2.47.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -1174,6 +1174,7 @@ def blame(fn_or_rec, err: VelarisError) -> VelarisError:
 FALLIBLE_BUILTINS = {"to_int", "read_file", "fetch", "post",
                      "pop", "slice", "set_at",
                      "add_or_fail", "sub_or_fail", "mul_or_fail",
+                     "div_or_fail", "mod_or_fail",
                      "fetch_status", "request", "py", "py_int", "py_float",
                      "py_json", "json_get", "json_int", "json_float",
                      "json_len", "py_new", "py_do", "py_field"}   # + get on maps
@@ -1305,6 +1306,8 @@ BUILTINS = {
     "slice":      {"effects": set(),      "types": ["Any", "Int", "Int"], "ret": "Any"},
     "set_at":     {"effects": set(),      "types": ["Any", "Int", "Any"], "ret": "Any"},
     "add_or_fail": {"effects": set(),     "types": ["Int", "Int"],  "ret": "Int"},
+    "div_or_fail": {"effects": set(),     "types": ["Int", "Int"],  "ret": "Int"},
+    "mod_or_fail": {"effects": set(),     "types": ["Int", "Int"],  "ret": "Int"},
     "sub_or_fail": {"effects": set(),     "types": ["Int", "Int"],  "ret": "Int"},
     "mul_or_fail": {"effects": set(),     "types": ["Int", "Int"],  "ret": "Int"},
     "get":        {"effects": set(),      "types": ["Any", "Any"],  "ret": "Any"},
@@ -1463,14 +1466,17 @@ def check_effects(funcs: list[Function], errors: list) -> None:
 #     Types: Int, Text, Bool.  "Unit" means "returns nothing".
 # ---------------------------------------------------------------------------
 
-def check_main(funcs: list, errors: list) -> None:
-    """main must exist, take nothing, and declare no failure -
-    checked before running, not discovered by running."""
+def check_main(funcs: list, errors: list, *, running: bool = True) -> None:
+    """main must exist (when running), take nothing, declare no failure.
+
+    `velaris check library.vel` checks a library as a library - a
+    missing main is only an error for the file being run."""
     mains = [f for f in funcs if f.name == "main"]
     if not mains:
-        errors.append(VelarisError("E400",
-            "there is no 'main' - a program needs somewhere to start",
-            1, fixes=["add one: fn main() uses io { ... }"]))
+        if running:
+            errors.append(VelarisError("E400",
+                "there is no 'main' - a program needs somewhere to start",
+                1, fixes=["add one: fn main() uses io { ... }"]))
         return
     m = mains[0]
     if m.params:
@@ -4527,6 +4533,12 @@ def run_builtin(name: str, args: list, line: int):
         out = list(xs)
         out[at] = args[2]
         return out
+    if name in ("div_or_fail", "mod_or_fail"):
+        a, b = int(args[0]), int(args[1])
+        if b == 0:
+            word = "divide" if name == "div_or_fail" else "take a remainder"
+            raise FailSignal(f"cannot {word} by zero")
+        return a // b if name == "div_or_fail" else a % b
     if name in ("add_or_fail", "sub_or_fail", "mul_or_fail"):
         a, b = int(args[0]), int(args[1])
         answer = (a + b if name == "add_or_fail" else
@@ -5222,13 +5234,14 @@ def lsp_analyze(path: str, text: str, deep: bool) -> list:
     return errors
 
 
-def inspect_source(path: str, source: str | None = None) -> dict:
+def inspect_source(path: str, source: str | None = None, require_main: bool = False) -> dict:
     """Everything a reader wants to know about a program, as data.
 
     Used by 'velaris explain' and the browser inspector: for each
     function, what it may do (effects), what it promises, whether the
     promises are proven or left to runtime, and every error in place.
     """
+    running = require_main
     report: dict = {"file": path, "functions": [], "errors": [],
                     "proofs": bool(HAVE_Z3), "version": VERSION}
     try:
@@ -5238,7 +5251,7 @@ def inspect_source(path: str, source: str | None = None) -> dict:
         return report
     errors: list = []
     try:
-        check_main(funcs, errors)
+        check_main(funcs, errors, running=running)
         check_effects(funcs, errors)
         if not errors:
             check_types(funcs, records, errors)

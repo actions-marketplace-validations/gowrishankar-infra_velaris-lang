@@ -44,15 +44,8 @@ fn check_one(url: Text) -> Result uses io, net {
     log.info(format("checking {}", url))
     check http.call("GET", url, "", "{}") {
         ok answer {
-            check http.code_of(answer) {
-                ok code {
-                    return Result(url: url, status: code,
-                    note: verdict(code))
-                }
-                fail why {
-                    return Result(url: url, status: 0, note: why)
-                }
-            }
+            let code = http.code_of(answer)
+            return Result(url: url, status: code, note: verdict(code))
         }
         fail why {
             return Result(url: url, status: 0, note: why)
