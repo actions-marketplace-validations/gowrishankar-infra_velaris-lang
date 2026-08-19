@@ -1,5 +1,19 @@
 # Velaris changelog
 
+## 2.53.1 - The library suite knows what needs the prover
+Three of the 25 checks in `check_library.py` are about proofs - what
+was proven, a refuted promise, a 100% proven share - and the no-solver
+CI legs have no prover, so every minimal leg failed the moment the
+suite joined CI. The same mistake as 2.39.1, in a new suite.
+
+They are now conditional, and without the prover the suite asserts the
+**fallback** instead: that a false promise breaks while running (E600
+or E601) and that the audit reports nothing proven. That is a stronger
+test than skipping, because it checks the degraded path rather than
+ignoring it.
+
+25 with the prover, 24 with the fallback. Both green.
+
 ## 2.53 - Setting it up should not be a chore
 The MCP server worked; getting it into an assistant meant finding a
 Python path and editing JSON. Two ways to skip that.

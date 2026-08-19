@@ -18,6 +18,12 @@ HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 import velaris  # noqa: E402
 
+# three checks below are about PROOFS, so they can only be made when the
+# prover is installed. Without it those promises are checked while the
+# program runs, which is correct behaviour, not a failure - the same
+# rule the example suite and the refusal harness already follow.
+HAVE_PROVER = velaris.HAVE_Z3
+
 PURE = '''
 fn double(n: Int) -> Int
     requires n >= 0
@@ -72,6 +78,9 @@ fn main() {
 def main() -> int:
     passed = failed = 0
 
+    def skip(label):
+        print(f"  skip     {label} (needs the prover)")
+
     def ok(label, condition, detail=""):
         nonlocal passed, failed
         if condition:
@@ -88,8 +97,11 @@ def main() -> int:
 
     r = velaris.check(PURE)
     ok("check accepts a good program", r.ok, str(r.problems))
-    ok("check reports what was proven", "double" in r.proven,
-       str(r.proven))
+    if HAVE_PROVER:
+        ok("check reports what was proven", "double" in r.proven,
+           str(r.proven))
+    else:
+        skip("check reports what was proven")
 
     r = velaris.check(WONT_COMPILE)
     ok("check reports an undeclared effect",
@@ -98,10 +110,17 @@ def main() -> int:
     ok("problems carry fixes",
        bool(r.problems and r.problems[0].fixes))
 
-    r = velaris.check(BROKEN)
-    ok("check refutes a false promise",
-       not r.ok and any(p.code == "E700" for p in r.problems),
-       str(r.problems))
+    if HAVE_PROVER:
+        r = velaris.check(BROKEN)
+        ok("check refutes a false promise",
+           not r.ok and any(p.code == "E700" for p in r.problems),
+           str(r.problems))
+    else:
+        skip("check refutes a false promise")
+        r = velaris.run(BROKEN, allow={"io"})
+        ok("without the prover, the promise breaks while running",
+           not r.ok and any(p.code in ("E600", "E601")
+                            for p in r.problems), str(r.problems))
 
     a = velaris.audit(READS_A_FILE)
     ok("audit names every effect", a.effects == ["fs", "io"],
@@ -112,8 +131,12 @@ def main() -> int:
        a.safe_command, a.safe_command)
 
     a = velaris.audit(PURE)
-    ok("audit reports the proven share", a.proven_share == 100.0,
-       str(a.proven_share))
+    if HAVE_PROVER:
+        ok("audit reports the proven share", a.proven_share == 100.0,
+           str(a.proven_share))
+    else:
+        ok("audit reports a share of nothing proven without the prover",
+           a.proven_share == 0.0, str(a.proven_share))
 
     ffi_src = ('fn main() uses io, ffi {\n'
                '    check py("os", "getcwd", []) {\n'
