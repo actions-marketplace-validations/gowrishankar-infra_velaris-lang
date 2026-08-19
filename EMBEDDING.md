@@ -1,0 +1,114 @@
+# Velaris from inside your program
+
+Velaris is a library as well as a command. An agent framework, an MCP
+server, a CI dashboard or an internal tool can check, audit and run
+Velaris without shelling out - and the effect budget is enforced the
+same way it is on the command line, whatever a program's source claims
+about itself.
+
+```
+pip install velaris-lang
+```
+
+## Three calls
+
+```python
+import velaris
+
+source = open("agent_output.vel").read()
+
+result = velaris.check(source)
+if not result.ok:
+    for p in result.problems:
+        print(p.code, p.line, p.message, p.fixes)
+
+report = velaris.audit(source)
+print(report.effects)        # ['fs', 'net'] - what it can touch
+print(report.proven_share)   # 66.7 - how much is proven, not just checked
+print(report.warnings)       # ffi cannot be contained by a budget
+
+run = velaris.run(source, allow={"io"})
+print(run.ok, run.output, run.refused_effect)
+```
+
+`velaris.card()` returns the language in about 2,300 words - paste it
+into a model before asking for Velaris.
+
+## What `run` guarantees
+
+`allow={"io"}` means the program cannot read a file, reach the
+network, call Python, ask the clock or use randomness. Not "should
+not" - the runtime refuses, and a refusal **cannot be caught** by the
+program, so it cannot swallow the refusal and carry on.
+
+It is not a security boundary. `allow={"ffi"}` grants everything
+Python can do, and nothing here limits memory, time, or what a program
+prints. It is a real guard against accident and casual misbehaviour -
+the situation you are in when a model hands you a script.
+
+`run` captures stdout as `output` and stderr as `logs`, accepts
+`stdin=` and `args=`, and restores the previous budget afterwards, so
+several audits and runs can share a process.
+
+## The audit format
+
+`audit().as_dict()` is a stable, versioned shape. Tools can depend on
+it; the `schema` field names the version.
+
+```json
+{
+  "schema": "velaris.audit/1",
+  "velaris_version": "2.52.0",
+  "ok": true,
+  "problems": [],
+  "effects": ["fs", "io"],
+  "functions": [
+    {"name": "parse_row", "effects": [], "can_fail": true,
+     "requires": [], "ensures": ["length(result) >= 1"],
+     "status": "proven"}
+  ],
+  "proven_share": 66.7,
+  "safe_command": "velaris <file> --allow fs,io",
+  "warnings": []
+}
+```
+
+Field meanings, all stable within `velaris.audit/1`:
+
+| Field | Meaning |
+|---|---|
+| `schema` | the format's name and version |
+| `velaris_version` | the compiler that produced this |
+| `ok` | did it compile |
+| `problems` | code, message, line, file, fixes |
+| `effects` | everything the program may perform, transitively |
+| `functions` | per function: effects, can_fail, contracts, and whether each contract is `proven` before running or `checked at runtime` |
+| `proven_share` | percent of promise-carrying functions proven, or null when there are no promises |
+| `safe_command` | the command that grants exactly what it declared |
+| `warnings` | human-readable cautions, currently the ffi cliff |
+
+A new field may be added within version 1; a field will not change
+meaning or disappear without the schema name changing.
+
+## As an MCP server
+
+`velaris_mcp.py` speaks the Model Context Protocol over stdin/stdout,
+so an assistant can write Velaris, check it, audit it and run it in a
+box without leaving the conversation.
+
+```json
+{"mcpServers": {"velaris": {"command": "python",
+                            "args": ["-m", "velaris_mcp"]}}}
+```
+
+Four tools: `velaris_card`, `velaris_check`, `velaris_audit` and
+`velaris_run` (which takes `allow`, defaulting to `["io"]`).
+
+## Trying it with nothing installed
+
+```
+pipx run --spec velaris-lang velaris hello.vel
+```
+
+Or open the [playground](https://gowrishankar-infra.github.io/velaris-lang/playground.html) -
+the real compiler, in a browser, nothing to install.

@@ -1,5 +1,37 @@
 # Velaris changelog
 
+## 2.52 - Velaris from inside other programs
+The effect budget is the idea most easily copied out of this project.
+The way to make copying pointless is to make importing cheaper - so
+Velaris is now a library, a documented format, and an MCP server, as
+well as a command.
+
+**The library.** `velaris.check(source)`, `velaris.audit(source)`,
+`velaris.run(source, allow={"io"})` and `velaris.card()`. `run`
+captures stdout and stderr, accepts stdin and args, reports which
+effect was refused, and restores the previous budget afterwards so a
+process can audit and run many programs. The guarantee is identical to
+the command line: a refused effect stops the program and cannot be
+caught by it.
+
+**A versioned format.** `audit().as_dict()` is `velaris.audit/1`:
+effects, per-function contracts with proven-or-runtime status, the
+proven share, the safe command, and warnings - including that ffi
+cannot be contained by a budget. Documented field by field in
+EMBEDDING.md, with a stated compatibility rule. Formats outlive the
+tools that produce them.
+
+**An MCP server.** `velaris_mcp.py` offers `velaris_card`,
+`velaris_check`, `velaris_audit` and `velaris_run` over the Model
+Context Protocol, so an assistant can write Velaris, check it, see
+what it touches and run it in a box without leaving the conversation.
+`velaris_run` defaults to `allow: ["io"]` - the least that is useful.
+
+**`check_library.py`** proves the library and the server keep the same
+promises as the command: 25 checks, including that a program refused
+`fs` does not carry on, that budgets are restored between runs, and
+that a refusal through MCP is reported as such. In CI on every push.
+
 ## 2.51 - Smaller per-call costs, and an honest note about the ceiling
 Two more measured savings on the interpreted path, both verified
 against every suite and the fuzzer.

@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""Velaris as an MCP server: write, audit, run - inside the assistant.
+
+An assistant that writes code should be able to check it, see what it
+can touch, and run it in a box, without leaving the conversation. This
+speaks the Model Context Protocol over stdin/stdout, so any MCP client
+can offer:
+
+    velaris_card    the whole language, ~2,300 words, for writing it
+    velaris_check   compile without running; problems as data
+    velaris_audit   what a program touches, promises and can fail at
+    velaris_run     run it under an effect budget you choose
+
+Add to an MCP client's config:
+
+    {"mcpServers": {"velaris": {"command": "python",
+                                "args": ["-m", "velaris_mcp"]}}}
+
+Nothing here trusts the program's own claims: velaris_run enforces the
+budget while the program runs, and a refused effect stops it.
+"""
+import json
+import sys
+
+try:
+    import velaris
+except ImportError:                       # running from the repo
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import velaris
+
+PROTOCOL = "2024-11-05"
+
+TOOLS = [
+    {
+        "name": "velaris_card",
+        "description": (
+            "The Velaris language in about 2,300 words: syntax, the "
+            "rules models get wrong, every builtin with its effects and "
+            "whether it can fail, full standard-library signatures, and "
+            "the error table. Read this before writing Velaris."),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "velaris_check",
+        "description": (
+            "Compile a Velaris program without running it. Returns every "
+            "problem with a code, line and suggested fixes, plus which "
+            "promises were proven before running and which fall back to "
+            "runtime checks. Use this to iterate until a program "
+            "compiles."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"source": {"type": "string",
+                                      "description": "the program"}},
+            "required": ["source"],
+        },
+    },
+    {
+        "name": "velaris_audit",
+        "description": (
+            "What a program can touch (io, fs, net, clock, rand, ffi), "
+            "what each function promises, how much of that is proven "
+            "rather than checked while running, what can fail, and the "
+            "command to run it safely. Use this before running code you "
+            "did not write."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"source": {"type": "string"}},
+            "required": ["source"],
+        },
+    },
+    {
+        "name": "velaris_run",
+        "description": (
+            "Run a Velaris program under an effect budget. Anything "
+            "outside the budget is refused while the program runs, "
+            "whatever the source claims about itself, and a refusal "
+            "cannot be caught by the program. Grant the least you can: "
+            "['io'] lets it print and nothing else."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string"},
+                "allow": {
+                    "type": "array", "items": {"type": "string"},
+                    "description": ("effects to permit: io, fs, net, "
+                                    "clock, rand, ffi. Default ['io']. "
+                                    "Granting ffi grants everything "
+                                    "Python can do."),
+                },
+                "stdin": {"type": "string"},
+                "args": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["source"],
+        },
+    },
+]
+
+
+def as_text(payload) -> dict:
+    body = payload if isinstance(payload, str) else json.dumps(payload,
+                                                               indent=2)
+    return {"content": [{"type": "text", "text": body}]}
+
+
+def handle_tool(name: str, args: dict) -> dict:
+    if name == "velaris_card":
+        return as_text(velaris.card())
+
+    source = args.get("source", "")
+    if name == "velaris_check":
+        return as_text(velaris.check(source).as_dict())
+
+    if name == "velaris_audit":
+        return as_text(velaris.audit(source).as_dict())
+
+    if name == "velaris_run":
+        allow = set(args.get("allow") or ["io"])
+        try:
+            result = velaris.run(source, allow=allow,
+                                 stdin=args.get("stdin", ""),
+                                 args=args.get("args") or [])
+        except ValueError as e:
+            return as_text({"ok": False, "error": str(e)})
+        payload = result.as_dict()
+        payload["allowed"] = sorted(allow)
+        if result.refused_effect:
+            payload["note"] = (
+                f"the program tried to use '{result.refused_effect}', "
+                f"which this run did not allow")
+        return as_text(payload)
+
+    return as_text({"error": f"no tool called '{name}'"})
+
+
+def reply(msg_id, result=None, error=None) -> None:
+    out = {"jsonrpc": "2.0", "id": msg_id}
+    if error is not None:
+        out["error"] = error
+    else:
+        out["result"] = result
+    sys.stdout.write(json.dumps(out) + "\n")
+    sys.stdout.flush()
+
+
+def main() -> int:
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        method, msg_id = msg.get("method"), msg.get("id")
+        params = msg.get("params") or {}
+
+        if method == "initialize":
+            reply(msg_id, {
+                "protocolVersion": PROTOCOL,
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "velaris",
+                               "version": velaris.VERSION},
+            })
+        elif method == "tools/list":
+            reply(msg_id, {"tools": TOOLS})
+        elif method == "tools/call":
+            name = params.get("name", "")
+            try:
+                reply(msg_id, handle_tool(name, params.get("arguments")
+                                          or {}))
+            except Exception as e:                # never kill the server
+                reply(msg_id, as_text({"error": f"{type(e).__name__}: {e}"}))
+        elif method in ("notifications/initialized", "initialized"):
+            continue                              # no reply expected
+        elif method == "shutdown":
+            reply(msg_id, None)
+        elif method == "exit":
+            return 0
+        elif msg_id is not None:
+            reply(msg_id, error={"code": -32601,
+                                 "message": f"no method '{method}'"})
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

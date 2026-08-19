@@ -252,7 +252,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.51.0"
+VERSION = "2.52.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -6942,6 +6942,255 @@ def main() -> int:
     except VelarisError as e:
         print(e.machine(filename) if as_json else e.human(filename), file=sys.stderr)
         return 1
+
+
+
+
+# ---------------------------------------------------------------------------
+# 14. THE LIBRARY — Velaris from inside another program
+#
+#     An agent framework, an MCP server or an internal tool should not
+#     have to shell out to use this. Everything the command line does is
+#     available here, with the same guarantees: effects are enforced
+#     while the program runs, whatever its source claims.
+#
+#         import velaris
+#         print(velaris.check(src).ok)
+#         print(velaris.audit(src).effects)
+#         print(velaris.run(src, allow={"io"}).output)
+# ---------------------------------------------------------------------------
+
+AUDIT_SCHEMA = "velaris.audit/1"     # the shape of audit().as_dict()
+
+
+class Problem:
+    """One thing wrong, in a form a tool can act on."""
+
+    __slots__ = ("code", "message", "line", "file", "fixes")
+
+    def __init__(self, code, message, line, file, fixes):
+        self.code, self.message = code, message
+        self.line, self.file, self.fixes = line, file, list(fixes or [])
+
+    def as_dict(self) -> dict:
+        return {"code": self.code, "message": self.message,
+                "line": self.line, "file": self.file, "fixes": self.fixes}
+
+    def __repr__(self):
+        return f"[{self.code}] line {self.line}: {self.message}"
+
+
+class CheckResult:
+    __slots__ = ("ok", "problems", "proven", "runtime_checked")
+
+    def __init__(self, ok, problems, proven, runtime_checked):
+        self.ok = ok
+        self.problems = problems
+        self.proven = proven                  # names proven before running
+        self.runtime_checked = runtime_checked
+
+    def as_dict(self) -> dict:
+        return {"ok": self.ok,
+                "problems": [p.as_dict() for p in self.problems],
+                "proven": list(self.proven),
+                "runtime_checked": list(self.runtime_checked)}
+
+
+class AuditResult:
+    """What a program can touch, promise and fail at - before running."""
+
+    __slots__ = ("schema", "velaris_version", "ok", "problems", "effects",
+                 "functions", "proven_share", "safe_command", "warnings")
+
+    def __init__(self, **kw):
+        for k in self.__slots__:
+            setattr(self, k, kw.get(k))
+
+    def as_dict(self) -> dict:
+        return {k: getattr(self, k) for k in self.__slots__}
+
+
+class RunResult:
+    __slots__ = ("ok", "output", "logs", "problems", "refused_effect",
+                 "exit_code")
+
+    def __init__(self, ok, output, logs, problems, refused_effect,
+                 exit_code):
+        self.ok, self.output, self.logs = ok, output, logs
+        self.problems, self.refused_effect = problems, refused_effect
+        self.exit_code = exit_code
+
+    def as_dict(self) -> dict:
+        return {"ok": self.ok, "output": self.output, "logs": self.logs,
+                "problems": [p.as_dict() for p in self.problems],
+                "refused_effect": self.refused_effect,
+                "exit_code": self.exit_code}
+
+
+def _as_problem(e, where) -> Problem:
+    return Problem(getattr(e, "code", "E000"), getattr(e, "message", str(e)),
+                   getattr(e, "line", 0), getattr(e, "file", None) or where,
+                   getattr(e, "fixes", []))
+
+
+def _source_to_file(source: str, path: str | None):
+    """Velaris resolves imports against a file, so give the text one."""
+    import tempfile
+    if path is not None:
+        return path, None
+    tmp = tempfile.NamedTemporaryFile("w", suffix=".vel", delete=False,
+                                      encoding="utf-8")
+    tmp.write(source)
+    tmp.close()
+    return tmp.name, tmp.name
+
+
+def check(source: str, *, path: str | None = None,
+          prove: bool = True) -> CheckResult:
+    """Compile without running. Every problem, plus what was proven."""
+    where, temp = _source_to_file(source, path)
+    try:
+        problems, proven, runtime = [], set(), []
+        try:
+            funcs, records = load_program(where, source if path else None)
+            errors: list = []
+            check_main(funcs, errors, running=False)
+            check_effects(funcs, errors)
+            if not errors:
+                check_types(funcs, records, errors)
+            if not errors and prove:
+                check_proofs(funcs, records, errors, proven, use_cache=False)
+            problems = [_as_problem(e, where) for e in errors]
+            for f in funcs:
+                if (f.requires or f.ensures) and f.name not in proven:
+                    runtime.append(f.name)
+        except VelarisError as e:
+            problems = [_as_problem(e, where)]
+        return CheckResult(not problems, problems, sorted(proven),
+                           sorted(runtime))
+    finally:
+        if temp:
+            os.unlink(temp)
+
+
+def audit(source: str, *, path: str | None = None) -> AuditResult:
+    """What this program can touch, promise and fail at.
+
+    The same answer `velaris audit` prints, as data, with a schema name
+    so a dashboard or an agent can rely on its shape.
+    """
+    where, temp = _source_to_file(source, path)
+    try:
+        report = inspect_source(where, source if path else None)
+        own = [f for f in report["functions"]
+               if os.path.abspath(f["file"]) == os.path.abspath(where)]
+        effects = sorted({e for f in own for e in f["effects"]})
+        promising = [f for f in own if f["requires"] or f["ensures"]]
+        proven = [f["name"] for f in promising if f["status"] == "proven"]
+        share = round(100.0 * len(proven) / len(promising), 1) \
+            if promising else None
+        warnings = []
+        if "ffi" in effects:
+            warnings.append(
+                "this program calls Python, which can do anything Python "
+                "can; an effect budget cannot contain that")
+        return AuditResult(
+            schema=AUDIT_SCHEMA, velaris_version=VERSION,
+            ok=not report["errors"],
+            problems=[Problem(e.get("code"), e.get("message"),
+                              e.get("line"), e.get("file"),
+                              e.get("fixes", [])).as_dict()
+                      for e in report["errors"]],
+            effects=effects,
+            functions=[{"name": f["name"], "effects": sorted(f["effects"]),
+                        "can_fail": f["can_fail"],
+                        "requires": f["requires"], "ensures": f["ensures"],
+                        "status": f["status"]} for f in own],
+            proven_share=share,
+            safe_command=("velaris <file> --allow " + (",".join(effects)
+                                                       or "''")),
+            warnings=warnings)
+    finally:
+        if temp:
+            os.unlink(temp)
+
+
+def run(source: str, *, path: str | None = None,
+        allow: set | None = None, deny: set | None = None,
+        args: list | None = None, stdin: str = "",
+        native: bool = True) -> RunResult:
+    """Run a program under an effect budget and capture what it did.
+
+    allow={"io"} means it cannot read files, reach the network, call
+    Python, ask the clock or use randomness - whatever its source says
+    about itself. A refused effect stops the program and is reported in
+    refused_effect; it cannot be caught by the program.
+    """
+    import io as _io
+    import contextlib
+    where, temp = _source_to_file(source, path)
+    budget = set(ALL_EFFECTS) if allow is None else set(allow)
+    for name in (deny or ()):
+        budget.discard(name)
+    unknown = (budget | set(deny or ())) - set(ALL_EFFECTS)
+    if unknown:
+        raise ValueError(f"not an effect: {', '.join(sorted(unknown))}; "
+                         f"they are {', '.join(ALL_EFFECTS)}")
+
+    saved_budget = set(EFFECT_BUDGET)
+    saved_args = list(PROGRAM_ARGS)
+    out, err = _io.StringIO(), _io.StringIO()
+    problems, refused, code = [], None, 0
+    try:
+        EFFECT_BUDGET.clear()
+        EFFECT_BUDGET.update(budget)
+        PROGRAM_ARGS[:] = list(args or [])
+        result = check(source, path=path)
+        if not result.ok:
+            return RunResult(False, "", "", result.problems, None, 1)
+        funcs, records = load_program(where, source if path else None)
+        errors: list = []
+        proven: set = set()
+        check_proofs(funcs, records, errors, proven, use_cache=False)
+        compiled = compile_native(funcs, proven) if native else {}
+        with contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(err):
+            old_stdin = sys.stdin
+            sys.stdin = _io.StringIO(stdin)
+            try:
+                interpret(funcs, compiled)
+            finally:
+                sys.stdin = old_stdin
+    except SystemExit as e:
+        code = int(e.code or 0)
+    except VelarisError as e:
+        problems = [_as_problem(e, where)]
+        if e.code == "E310":
+            refused = e.message.split("'")[3] \
+                if e.message.count("'") >= 4 else None
+        code = 1
+    except FailSignal as e:
+        problems = [Problem("E521", f"a failure escaped: {e.reason}", 0,
+                            where, ["handle it with check"])]
+        code = 1
+    finally:
+        EFFECT_BUDGET.clear()
+        EFFECT_BUDGET.update(saved_budget)
+        PROGRAM_ARGS[:] = saved_args
+        if temp:
+            os.unlink(temp)
+    return RunResult(code == 0 and not problems, out.getvalue(),
+                     err.getvalue(), problems, refused, code)
+
+
+def card() -> str:
+    """The language, small enough to paste into a model."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for where in (os.path.join(here, "LLM.md"),
+                  os.path.join(here, "..", "LLM.md")):
+        if os.path.exists(where):
+            return open(where, encoding="utf-8").read()
+    return ""
 
 
 if __name__ == "__main__":

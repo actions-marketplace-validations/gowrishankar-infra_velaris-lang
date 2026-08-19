@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+"""The library and the MCP server must give the same guarantees.
+
+Velaris as a command has four suites behind it. Velaris as a library is
+what an agent framework would actually import, and an effect budget
+that holds on the command line but leaks through `velaris.run()` would
+be worse than no budget at all - it would be a false promise in the
+place people trust most.
+
+    python check_library.py
+"""
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).parent
+sys.path.insert(0, str(HERE))
+import velaris  # noqa: E402
+
+PURE = '''
+fn double(n: Int) -> Int
+    requires n >= 0
+    ensures result >= 0
+{
+    return n * 2
+}
+
+fn main() uses io {
+    print(double(21))
+}
+'''
+
+READS_A_FILE = '''
+fn peek(path: Text) -> Text uses fs or fail {
+    return try read_file(path)
+}
+
+fn main() uses io, fs {
+    print("start")
+    check peek("velaris.py") {
+        ok body {
+            print("READ IT")
+        }
+        fail why {
+            print("failed")
+        }
+    }
+}
+'''
+
+BROKEN = '''
+fn discount(price: Int) -> Int
+    requires price >= 0
+    ensures result >= 0
+{
+    return price - 10
+}
+
+fn main() uses io {
+    print(discount(5))
+}
+'''
+
+WONT_COMPILE = '''
+fn main() {
+    print("no effect declared")
+}
+'''
+
+
+def main() -> int:
+    passed = failed = 0
+
+    def ok(label, condition, detail=""):
+        nonlocal passed, failed
+        if condition:
+            print(f"  ok       {label}")
+            passed += 1
+        else:
+            print(f"  BROKEN   {label}")
+            if detail:
+                print(f"           {detail}")
+            failed += 1
+
+    print("the library")
+    print("-" * 62)
+
+    r = velaris.check(PURE)
+    ok("check accepts a good program", r.ok, str(r.problems))
+    ok("check reports what was proven", "double" in r.proven,
+       str(r.proven))
+
+    r = velaris.check(WONT_COMPILE)
+    ok("check reports an undeclared effect",
+       not r.ok and any(p.code == "E300" for p in r.problems),
+       str(r.problems))
+    ok("problems carry fixes",
+       bool(r.problems and r.problems[0].fixes))
+
+    r = velaris.check(BROKEN)
+    ok("check refutes a false promise",
+       not r.ok and any(p.code == "E700" for p in r.problems),
+       str(r.problems))
+
+    a = velaris.audit(READS_A_FILE)
+    ok("audit names every effect", a.effects == ["fs", "io"],
+       str(a.effects))
+    ok("audit carries a schema version",
+       a.schema == "velaris.audit/1" and a.velaris_version)
+    ok("audit suggests the safe command", "--allow fs,io" in
+       a.safe_command, a.safe_command)
+
+    a = velaris.audit(PURE)
+    ok("audit reports the proven share", a.proven_share == 100.0,
+       str(a.proven_share))
+
+    ffi_src = ('fn main() uses io, ffi {\n'
+               '    check py("os", "getcwd", []) {\n'
+               '        ok v {\n            print(v)\n        }\n'
+               '        fail w {\n            print(w)\n        }\n'
+               '    }\n}\n')
+    a = velaris.audit(ffi_src)
+    ok("audit warns about the ffi cliff", bool(a.warnings),
+       str(a.warnings))
+
+    r = velaris.run(PURE, allow={"io"})
+    ok("run executes and captures output",
+       r.ok and r.output.strip() == "42", repr(r.output))
+
+    r = velaris.run(READS_A_FILE, allow={"io"})
+    ok("run REFUSES an effect outside the budget",
+       not r.ok and r.refused_effect == "fs", str(r.as_dict()))
+    ok("the refused program did not carry on",
+       "READ IT" not in r.output, repr(r.output))
+
+    r = velaris.run(READS_A_FILE, allow={"io", "fs"})
+    ok("run permits what the budget allows",
+       r.ok and "READ IT" in r.output, repr(r.output))
+
+    r = velaris.run(PURE, allow=set())
+    ok("a program needing io is refused with no budget",
+       not r.ok and r.refused_effect == "io", str(r.as_dict()))
+
+    try:
+        velaris.run(PURE, allow={"banana"})
+        ok("an unknown effect name is rejected", False)
+    except ValueError:
+        ok("an unknown effect name is rejected", True)
+
+    r1 = velaris.run(PURE, allow={"io"})
+    r2 = velaris.run(READS_A_FILE, allow={"io"})
+    r3 = velaris.run(PURE, allow={"io"})
+    ok("the budget is restored between runs",
+       r1.ok and not r2.ok and r3.ok)
+
+    r = velaris.run('fn main() uses io {\n    print(ask("name:"))\n}\n',
+                    allow={"io"}, stdin="gowri\n")
+    ok("stdin reaches the program", "gowri" in r.output, repr(r.output))
+
+    r = velaris.run('fn main() uses io {\n    print(args())\n}\n',
+                    allow={"io"}, args=["a", "b"])
+    ok("args reach the program", "a" in r.output, repr(r.output))
+
+    ok("card returns the language", len(velaris.card()) > 2000)
+
+    print()
+    print("the MCP server")
+    print("-" * 62)
+    msgs = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
+            "name": "velaris_run",
+            "arguments": {"source": READS_A_FILE, "allow": ["io"]}}},
+        {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {
+            "name": "velaris_audit", "arguments": {"source": PURE}}},
+        {"jsonrpc": "2.0", "method": "exit", "params": {}},
+    ]
+    done = subprocess.run(
+        [sys.executable, str(HERE / "velaris_mcp.py")],
+        input="\n".join(json.dumps(m) for m in msgs) + "\n",
+        capture_output=True, text=True, timeout=600)
+    answers = {}
+    for line in done.stdout.strip().splitlines():
+        try:
+            d = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if d.get("id") is not None:
+            answers[d["id"]] = d
+
+    ok("it announces itself",
+       answers.get(1, {}).get("result", {})
+       .get("serverInfo", {}).get("name") == "velaris")
+    tools = [t["name"] for t in
+             answers.get(2, {}).get("result", {}).get("tools", [])]
+    ok("it offers all four tools",
+       set(tools) == {"velaris_card", "velaris_check", "velaris_audit",
+                      "velaris_run"}, str(tools))
+    try:
+        body = json.loads(answers[3]["result"]["content"][0]["text"])
+        ok("run through MCP enforces the budget",
+           not body["ok"] and body.get("refused_effect") == "fs",
+           str(body)[:120])
+        ok("MCP explains the refusal", "note" in body)
+    except Exception as e:
+        ok("run through MCP enforces the budget", False, str(e))
+    try:
+        body = json.loads(answers[4]["result"]["content"][0]["text"])
+        ok("audit through MCP carries the schema",
+           body["schema"] == "velaris.audit/1")
+    except Exception as e:
+        ok("audit through MCP carries the schema", False, str(e))
+
+    print("-" * 62)
+    print(f"{passed} correct, {failed} wrong")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

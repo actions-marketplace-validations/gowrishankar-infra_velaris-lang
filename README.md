@@ -126,6 +126,21 @@ compilation apply to them unchanged — and they can carry their own
 `requires` / `ensures`, proven like any other function's. They can't capture surrounding
 variables — the compiler tells you to pass them in instead.
 
+## Use it from your own program
+
+```python
+import velaris
+
+report = velaris.audit(source)      # what it touches, what's proven
+run = velaris.run(source, allow={"io"})   # it cannot touch anything else
+print(run.output, run.refused_effect)
+```
+
+The budget is enforced the same way it is on the command line. There is
+an MCP server too, so an assistant can write, audit and sandbox-run
+Velaris without leaving the conversation — see
+[EMBEDDING.md](EMBEDDING.md) and the versioned `velaris.audit/1` format.
+
 ## Written by a model, audited by you, run in a box
 
 ```

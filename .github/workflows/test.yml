@@ -33,6 +33,8 @@ jobs:
         run: python fuzz_native.py 60
       - name: How much is proven
         run: velaris proofs examples stdlib || true
+      - name: The library and MCP server keep the same guarantees
+        run: python check_library.py
       - name: Every fallible builtin is enforced
         run: python check_fallible.py
       - name: The sandbox cannot be escaped
