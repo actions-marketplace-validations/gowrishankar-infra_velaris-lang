@@ -65,8 +65,8 @@ class VelarisMagics(Magics):
             report = velaris.audit(cell)
             if not report.ok:
                 for p in report.problems:
-                    print(f"line {p['line']}: [{p['code']}] {p['message']}")
-                    for fix in p.get("fixes", [])[:2]:
+                    print(f"line {p.line}: [{p.code}] {p.message}")
+                    for fix in (p.fixes or [])[:2]:
                         print(f"    try: {fix}")
                 return
             print("can touch:  " + (", ".join(report.effects) or "nothing"))
@@ -82,11 +82,8 @@ class VelarisMagics(Magics):
         result = velaris.run(cell, allow=allow)
         if result.problems:
             for p in result.problems:
-                # audit() hands back dicts, run() hands back objects
-                got = p.as_dict() if hasattr(p, "as_dict") else p
-                print(f"line {got['line']}: [{got['code']}] "
-                      f"{got['message']}")
-                for fix in (got.get("fixes") or [])[:2]:
+                print(f"line {p.line}: [{p.code}] {p.message}")
+                for fix in (p.fixes or [])[:2]:
                     print(f"    try: {fix}")
             if result.refused_effect:
                 print(f"\n(this cell allows {', '.join(sorted(allow))}; "

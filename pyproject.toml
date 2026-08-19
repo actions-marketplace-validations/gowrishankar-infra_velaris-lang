@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "velaris-lang"
-version = "2.55.0"
+version = "2.56.0"
 description = "The language where you can trust code you didn't write - signatures declare types, effects, and machine-checked promises."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,12 +22,13 @@ velaris = "velaris:main"
 Homepage = "https://github.com/gowrishankar-infra/velaris-lang"
 
 [tool.hatch.build.targets.wheel]
-only-include = ["velaris.py", "velaris_mcp.py", "velaris_mcp_install.py"]
+only-include = ["velaris.py", "velaris_mcp.py", "velaris_mcp_install.py", "velaris_magic.py"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "LLM.md" = "LLM.md"
 "velaris_mcp.py" = "velaris_mcp.py"
 "velaris_mcp_install.py" = "velaris_mcp_install.py"
+"velaris_magic.py" = "velaris_magic.py"
 "stdlib" = "stdlib"
 
 [tool.hatch.build]

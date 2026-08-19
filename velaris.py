@@ -254,7 +254,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.55.0"
+VERSION = "2.56.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -7133,7 +7133,10 @@ class AuditResult:
             setattr(self, k, kw.get(k))
 
     def as_dict(self) -> dict:
-        return {k: getattr(self, k) for k in self.__slots__}
+        out = {k: getattr(self, k) for k in self.__slots__}
+        out["problems"] = [p.as_dict() if hasattr(p, "as_dict") else p
+                           for p in (out.get("problems") or [])]
+        return out
 
 
 class RunResult:
@@ -7223,9 +7226,12 @@ def audit(source: str, *, path: str | None = None) -> AuditResult:
         return AuditResult(
             schema=AUDIT_SCHEMA, velaris_version=VERSION,
             ok=not report["errors"],
+            # Problem objects, like check() and run() - they carry
+            # .as_dict() for anyone who wants plain data. Returning
+            # dicts here and objects there made callers handle both.
             problems=[Problem(e.get("code"), e.get("message"),
                               e.get("line"), e.get("file"),
-                              e.get("fixes", [])).as_dict()
+                              e.get("fixes", []))
                       for e in report["errors"]],
             effects=effects,
             functions=[{"name": f["name"], "effects": sorted(f["effects"]),

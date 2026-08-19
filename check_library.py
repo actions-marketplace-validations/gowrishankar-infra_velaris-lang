@@ -75,6 +75,11 @@ fn main() {
 '''
 
 
+def _json_version(path) -> str:
+    import json as _j
+    return _j.loads(path.read_text(encoding="utf-8"))["version"]
+
+
 def main() -> int:
     passed = failed = 0
 
@@ -235,6 +240,36 @@ def main() -> int:
            body["schema"] == "velaris.audit/1")
     except Exception as e:
         ok("audit through MCP carries the schema", False, str(e))
+
+    print()
+    print("every door, after a real install")
+    print("-" * 62)
+    import importlib.util
+    for module in ("velaris", "velaris_mcp", "velaris_mcp_install",
+                   "velaris_magic"):
+        ok(f"{module} is importable",
+           importlib.util.find_spec(module) is not None,
+           "it is missing from the wheel: check pyproject.toml")
+
+    a = velaris.audit(WONT_COMPILE)
+    r = velaris.run(WONT_COMPILE, allow={"io"})
+    ok("audit and run report problems the same way",
+       bool(a.problems) and bool(r.problems)
+       and hasattr(a.problems[0], "code")
+       and hasattr(r.problems[0], "code"),
+       f"audit gave {type(a.problems[0]).__name__}, "
+       f"run gave {type(r.problems[0]).__name__}")
+    ok("as_dict gives plain data for JSON",
+       isinstance(a.as_dict()["problems"][0], dict))
+
+    npm_pkg = HERE / "npm" / "package.json"
+    if npm_pkg.exists():
+        ok("the npm package version follows the compiler",
+           _json_version(npm_pkg) == velaris.VERSION,
+           f"npm says {_json_version(npm_pkg)}, "
+           f"compiler says {velaris.VERSION}")
+    hooks = HERE / ".pre-commit-hooks.yaml"
+    ok("the pre-commit hooks exist", hooks.exists())
 
     print()
     print("the HTTP door")

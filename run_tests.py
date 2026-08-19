@@ -119,6 +119,22 @@ def check_versions() -> None:
         print(f"VERSION MISMATCH: velaris.py says {a}, "
               f"pyproject.toml says {b}")
         raise SystemExit(1)
+    # every other place a version lives: an npm package or an .mcpb
+    # manifest claiming a different version than the compiler is a lie
+    # a user would meet, so the guard covers them too
+    import json as _j
+    for label, path, read in (
+            ("the npm package", root / "npm" / "package.json",
+             lambda p: _j.loads(p.read_text(encoding="utf-8"))["version"]),
+            ("the .mcpb manifest", root / "mcpb" / "manifest.json",
+             lambda p: _j.loads(p.read_text(encoding="utf-8"))["version"])):
+        if path.exists():
+            got = read(path)
+            if got != a:
+                print(f"VERSION MISMATCH: velaris.py says {a}, "
+                      f"{label} says {got}")
+                raise SystemExit(1)
+
     ext = root / "editor" / "vscode" / "package.json"
     if ext.exists():
         import json as _json

@@ -1,5 +1,31 @@
 # Velaris changelog
 
+## 2.56 - Seamless means tested, not claimed
+Three gaps between "the door exists" and "the door works".
+
+**The Jupyter magic was never installed.** `velaris_magic.py` was not
+in the wheel, so `%load_ext velaris_magic` worked in the repository and
+failed for everyone who installed from PyPI. Found by checking from
+outside the repo rather than inside it - the difference between a door
+that opens and a door that appears to.
+
+**One shape for problems.** `audit()` returned dicts while `check()`
+and `run()` returned objects, so callers - including this project's own
+Jupyter magic - had to handle both. Now everything returns `Problem`
+objects and `as_dict()` flattens them for JSON. The magic got simpler
+by six lines, which is what an API fix should look like.
+
+**The version guard covers every version.** It watched velaris.py,
+pyproject.toml and the VS Code extension, but not the npm package or
+the .mcpb manifest - either could have shipped claiming a version the
+compiler never had. Both are guarded now.
+
+`check_library.py` grew a section that asserts every door works after
+a real install: all four modules importable, both APIs reporting the
+same shape, the npm version following the compiler, the hooks present.
+39 checks with the prover, 38 without, and rule 6 was followed - the
+no-prover run happened before this was written down.
+
 ## 2.55 - Four more doors
 Velaris was reachable from a terminal, Python, MCP, CI, Docker and
 HTTP. Four populations were still locked out.
