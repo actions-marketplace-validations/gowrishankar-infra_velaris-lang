@@ -56,6 +56,18 @@ prover could not settle.
 | Editor features | `editor_answer` and `lsp_serve` |
 | CLI commands | `main`, near the other `argv[:1] == [...]` checks |
 
+## The suites, and what each one is for
+
+| Suite | Asks |
+|---|---|
+| `run_tests.py` | do all 90 examples reach their expected verdict |
+| `fuzz_native.py` | do the native and interpreted engines agree exactly |
+| `check_refusals.py` | is each wrong program refused with the RIGHT code |
+| `check_sandbox.py` | can the effect budget be escaped |
+| `check_fallible.py` | is every fallible builtin actually enforced |
+| `check_library.py` | do the library and MCP server keep the same promises |
+| `velaris test examples/std_test.vel` | does the standard library behave |
+
 ## The rules this project holds
 
 1. **Never claim something is proven when it is not.** If a premise
@@ -68,6 +80,19 @@ prover could not settle.
 5. **Write the limitation down.** The changelog records mistakes on
    purpose; a project that only lists wins cannot be trusted about
    anything else.
+
+6. **Run every new suite WITHOUT the prover before wiring it into CI.**
+   This has been got wrong three times - v2.39.1, v2.44, v2.53.1 - and
+   always the same way: a suite passes locally, joins CI, and every
+   no-solver leg fails because some check quietly depended on proofs.
+   Make a Python with no z3 and run the suite there first:
+
+       python -m venv /tmp/bare && /tmp/bare/bin/pip install .
+       /tmp/bare/bin/python check_whatever.py
+
+   Better than skipping the proof-dependent checks is asserting the
+   FALLBACK - that the promise breaks while running instead - which is
+   what `check_library.py` does now.
 
 ## Working on it
 

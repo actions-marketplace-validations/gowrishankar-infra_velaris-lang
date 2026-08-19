@@ -236,6 +236,75 @@ def main() -> int:
     except Exception as e:
         ok("audit through MCP carries the schema", False, str(e))
 
+    print()
+    print("the HTTP door")
+    print("-" * 62)
+    import json as _json
+    import socket
+    import subprocess as _sub
+    import time
+    import urllib.error
+    import urllib.request
+
+    with socket.socket() as probe:        # a port nobody else is using
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    server = _sub.Popen(
+        [sys.executable, str(HERE / "velaris.py"), "serve",
+         "--port", str(port), "--max-allow", "io,fs"],
+        stdout=_sub.DEVNULL, stderr=_sub.DEVNULL)
+    try:
+        for _ in range(60):               # wait for it to answer
+            try:
+                urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/health", timeout=1).read()
+                break
+            except Exception:
+                time.sleep(0.25)
+
+        def post(path, payload):
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}{path}",
+                data=_json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=120) as r:
+                    return _json.load(r)
+            except urllib.error.HTTPError as e:
+                return _json.load(e)
+
+        health = _json.load(urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/health", timeout=10))
+        ok("it reports its version and ceiling",
+           health.get("velaris") == velaris.VERSION
+           and health.get("max_allow") == ["fs", "io"], str(health))
+
+        d = post("/audit", {"source": READS_A_FILE})
+        ok("audit over HTTP carries the schema",
+           d.get("schema") == "velaris.audit/1", str(d)[:100])
+
+        d = post("/run", {"source": READS_A_FILE, "allow": ["io"]})
+        ok("HTTP run REFUSES an effect outside the budget",
+           not d.get("ok") and d.get("refused_effect") == "fs",
+           str(d)[:120])
+
+        d = post("/run", {"source": READS_A_FILE, "allow": ["ffi"]})
+        ok("the server refuses what IT does not grant",
+           "error" in d and "ffi" in d["error"], str(d)[:120])
+
+        d = post("/run", {"source": PURE, "allow": ["io"]})
+        ok("HTTP run works when the budget allows it",
+           d.get("ok") and d.get("output", "").strip() == "42",
+           str(d)[:120])
+
+        d = post("/check", {"source": WONT_COMPILE})
+        ok("check over HTTP reports problems",
+           not d.get("ok") and d["problems"][0]["code"] == "E300",
+           str(d)[:120])
+    finally:
+        server.terminate()
+        server.wait(timeout=30)
+
     print("-" * 62)
     print(f"{passed} correct, {failed} wrong")
     return 1 if failed else 0

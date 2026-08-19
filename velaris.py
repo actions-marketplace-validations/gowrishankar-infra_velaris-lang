@@ -153,6 +153,7 @@ Usage:
   velaris audit program.vel                what it can touch, before you run it
   velaris card                             the language, for pasting into a model
   velaris mcp-install                      set up the tools in your assistant
+  velaris serve [--port 8787]              an HTTP door for any language
   velaris explain <folder>                 a map of every file
   velaris doctor                           check the installation
   velaris new <name>                       start a fresh project
@@ -253,7 +254,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.53.1"
+VERSION = "2.54.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -6570,6 +6571,113 @@ def main() -> int:
                       f"required {want:.0f}%", file=sys.stderr)
                 return 1
         return 1 if totals["errors"] else 0
+    if argv[:1] == ["serve"]:
+        # A local HTTP door, so a program in ANY language can check,
+        # audit and sandbox-run Velaris - not only Python and not only
+        # MCP clients. Bound to localhost unless told otherwise, and it
+        # says what it will and will not do before it starts.
+        import http.server
+        import urllib.parse
+
+        port = 8787
+        host = "127.0.0.1"
+        if "--port" in argv:
+            port = int(argv[argv.index("--port") + 1])
+        if "--host" in argv:
+            host = argv[argv.index("--host") + 1]
+        max_allow = set(ALL_EFFECTS)
+        if "--max-allow" in argv:
+            asked = argv[argv.index("--max-allow") + 1]
+            max_allow = {n.strip() for n in asked.split(",") if n.strip()}
+            unknown = max_allow - set(ALL_EFFECTS)
+            if unknown:
+                print(f"not an effect: {', '.join(sorted(unknown))}",
+                      file=sys.stderr)
+                return 2
+
+        import velaris as _self          # the library half, reused whole
+
+        class Door(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):   # quiet unless something matters
+                pass
+
+            def answer(self, code, payload):
+                body = json.dumps(payload, indent=2).encode("utf-8")
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):
+                if self.path.rstrip("/") in ("", "/health"):
+                    return self.answer(200, {
+                        "velaris": VERSION, "prover": bool(HAVE_Z3),
+                        "max_allow": sorted(max_allow),
+                        "endpoints": ["POST /check", "POST /audit",
+                                      "POST /run", "GET /card"]})
+                if self.path.rstrip("/") == "/card":
+                    return self.answer(200, {"card": _self.card()})
+                return self.answer(404, {"error": "no such endpoint"})
+
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length") or 0)
+                if length > 2_000_000:
+                    return self.answer(413, {"error": "that is too large"})
+                try:
+                    body = json.loads(self.rfile.read(length) or b"{}")
+                except json.JSONDecodeError as e:
+                    return self.answer(400, {"error": f"bad JSON: {e}"})
+                source = body.get("source", "")
+                if not isinstance(source, str) or not source.strip():
+                    return self.answer(400,
+                                       {"error": "send {\"source\": ...}"})
+                where = urllib.parse.urlparse(self.path).path.rstrip("/")
+                try:
+                    if where == "/check":
+                        return self.answer(
+                            200, _self.check(source).as_dict())
+                    if where == "/audit":
+                        return self.answer(
+                            200, _self.audit(source).as_dict())
+                    if where == "/run":
+                        asked = set(body.get("allow") or ["io"])
+                        refused = asked - max_allow
+                        if refused:
+                            return self.answer(403, {
+                                "error": "this server does not grant "
+                                         + ", ".join(sorted(refused)),
+                                "max_allow": sorted(max_allow)})
+                        out = _self.run(source, allow=asked,
+                                        stdin=body.get("stdin", ""),
+                                        args=body.get("args") or [])
+                        payload = out.as_dict()
+                        payload["allowed"] = sorted(asked)
+                        return self.answer(200, payload)
+                except Exception as e:
+                    return self.answer(500,
+                                       {"error": f"{type(e).__name__}: {e}"})
+                return self.answer(404, {"error": "no such endpoint"})
+
+        print(f"velaris {VERSION} listening on http://{host}:{port}")
+        print(f"  POST /check /audit /run   GET /card /health")
+        print(f"  grants at most: {', '.join(sorted(max_allow)) or 'nothing'}"
+              f"   (--max-allow io to narrow it)")
+        if host not in ("127.0.0.1", "localhost"):
+            print("  WARNING: not bound to localhost. This endpoint RUNS "
+                  "programs; do not expose it to a network you do not "
+                  "control.", file=sys.stderr)
+        if "ffi" in max_allow:
+            print("  note: ffi is grantable here, which means a caller "
+                  "can do anything Python can. --max-allow io,fs is "
+                  "safer for a shared machine.")
+        try:
+            http.server.ThreadingHTTPServer((host, port), Door)\
+                .serve_forever()
+        except KeyboardInterrupt:
+            print("\nstopped")
+        return 0
+
     if argv[:1] == ["mcp-install"]:
         here = os.path.dirname(os.path.abspath(__file__))
         for where in (here, os.path.join(here, "..")):

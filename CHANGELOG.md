@@ -1,5 +1,29 @@
 # Velaris changelog
 
+## 2.54 - A door for languages that are not Python
+Velaris was reachable from a terminal, from Python, from an MCP client
+and from CI. Everything else - a Node service, a Go tool, a Rust
+agent, a shell script - was locked out.
+
+`velaris serve` opens a local HTTP door with the same three calls:
+`POST /check`, `POST /audit`, `POST /run`, plus `GET /card` and
+`GET /health`. Same library underneath, so the same guarantees.
+
+**Two ceilings, both enforced.** The `allow` in a request is the
+program's budget. `--max-allow` is the server's own limit - a caller
+asking for `ffi` on a server started with `--max-allow io,fs` gets 403
+and is told what it does grant. Verified both ways in
+`check_library.py`, which now drives a real server on a real port.
+
+It binds to localhost unless told otherwise, warns when it is not, and
+warns when `ffi` is grantable - because this endpoint runs programs and
+that should be said out loud rather than buried.
+
+`ARCHITECTURE.md` gained a table of what each suite is for, and a
+sixth rule: run every new suite without the prover BEFORE wiring it
+into CI. That mistake has now been made three times; this release is
+the first where the rule was followed rather than learned again.
+
 ## 2.53.1 - The library suite knows what needs the prover
 Three of the 25 checks in `check_library.py` are about proofs - what
 was proven, a refuted promise, a 100% proven share - and the no-solver

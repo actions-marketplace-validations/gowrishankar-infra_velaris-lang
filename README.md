@@ -126,6 +126,19 @@ compilation apply to them unchanged — and they can carry their own
 `requires` / `ensures`, proven like any other function's. They can't capture surrounding
 variables — the compiler tells you to pass them in instead.
 
+## Where it plugs in
+
+```
+velaris script.vel --allow io        the command
+import velaris                        a Python library
+velaris mcp-install                   tools inside your assistant
+velaris.mcpb                          double-click install for Claude Desktop
+uses: gowrishankar-infra/velaris-lang a GitHub Action
+velaris serve                         an HTTP door for any language
+docker run ... velaris check          a container
+velaris build --for-everyone          standalone executables
+```
+
 ## Use it from your own program
 
 ```python

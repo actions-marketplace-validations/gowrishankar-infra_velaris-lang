@@ -127,6 +127,43 @@ box without leaving the conversation.
 Four tools: `velaris_card`, `velaris_check`, `velaris_audit` and
 `velaris_run` (which takes `allow`, defaulting to `["io"]`).
 
+## From a language that is not Python
+
+`velaris serve` opens a local HTTP door, so a Node service, a Go tool,
+a Rust agent or a shell script can use the same three calls.
+
+```
+velaris serve --max-allow io,fs        # localhost:8787, grants at most this
+```
+
+```
+GET  /health         version, whether the prover is installed, the ceiling
+GET  /card           the language, for pasting into a model
+POST /check          {"source": "..."}                  -> problems, proven
+POST /audit          {"source": "..."}                  -> velaris.audit/1
+POST /run            {"source": "...", "allow": ["io"], "stdin": "", "args": []}
+```
+
+```javascript
+const answer = await fetch("http://127.0.0.1:8787/run", {
+  method: "POST",
+  body: JSON.stringify({ source, allow: ["io"] }),
+}).then(r => r.json());
+
+console.log(answer.ok, answer.output, answer.refused_effect);
+```
+
+There are **two ceilings**, and both are enforced. The `allow` in a
+request is the program's budget. `--max-allow` is the server's own
+limit: a caller asking for more gets 403 and is told what the server
+grants. Start it with `--max-allow io` and no caller can touch the
+disk, whatever they ask for.
+
+It binds to `127.0.0.1` unless told otherwise, because **this endpoint
+runs programs**. Do not expose it to a network you do not control, and
+prefer `--max-allow io,fs` over granting `ffi` on a shared machine -
+the server warns about both.
+
 ## Trying it with nothing installed
 
 ```
