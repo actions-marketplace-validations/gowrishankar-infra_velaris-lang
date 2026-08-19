@@ -1,5 +1,30 @@
 # Velaris changelog
 
+## 2.53 - Setting it up should not be a chore
+The MCP server worked; getting it into an assistant meant finding a
+Python path and editing JSON. Two ways to skip that.
+
+**`velaris mcp-install`** finds every MCP client on the machine -
+Claude Code, Cline, Cursor, Windsurf, Continue, Zed - and adds a
+`velaris` server to each, using the Python that is running it. It
+never disturbs what is already there: tested against a config holding
+another server with its own env block and an unrelated top-level key,
+both of which survived, and every file is backed up before writing.
+`--list` shows what it found without touching anything, `--remove`
+undoes it.
+
+**`velaris.mcpb`** is the double-click bundle, 94 KB, with the
+compiler and standard library inside it - newer Claude Desktop builds
+only accept remote connectors in the add-connector dialog, so a local
+server has to arrive as a bundle. Verified by extracting it somewhere
+with no Velaris installed, driving it as a client would, and watching
+the sandbox still refuse `fs` to a program granted only `io`. It is
+built and attached to every release automatically.
+
+The bundled server now finds the compiler whether it was pip-installed,
+vendored beside it, or sitting in the repo next door - a user's own
+install still wins.
+
 ## 2.52 - Velaris from inside other programs
 The effect budget is the idea most easily copied out of this project.
 The way to make copying pointless is to make importing cheaper - so

@@ -1,0 +1,66 @@
+{
+  "manifest_version": "0.2",
+  "name": "velaris",
+  "display_name": "Velaris",
+  "version": "2.53.0",
+  "description": "Write Velaris, see what it can touch, and run it in a box.",
+  "long_description": "Velaris is a language where a function's signature declares its types, the effects it may perform, whether it can fail, and promises a theorem prover checks before the program runs.\n\nThis connector gives four tools: read the language card (about 2,300 words, enough to write correct Velaris), check a program without running it, audit what it can touch and how much of its promises are proven, and run it under an effect budget you choose. A program run with allow: [\"io\"] cannot read files, reach the network or call Python, whatever its source claims - and a refusal cannot be caught by the program.\n\nNot a security boundary: allowing ffi grants everything Python can do.",
+  "author": {
+    "name": "Gowri Shankar",
+    "email": "gowrishankar@gowrishankar.dev",
+    "url": "https://github.com/gowrishankar-infra/velaris-lang"
+  },
+  "homepage": "https://gowrishankar-infra.github.io/velaris-lang/",
+  "documentation": "https://github.com/gowrishankar-infra/velaris-lang/blob/main/EMBEDDING.md",
+  "support": "https://github.com/gowrishankar-infra/velaris-lang/issues",
+  "license": "MIT",
+  "keywords": [
+    "velaris",
+    "sandbox",
+    "effects",
+    "verification",
+    "proofs",
+    "code-execution"
+  ],
+  "server": {
+    "type": "python",
+    "entry_point": "server/velaris_mcp.py",
+    "mcp_config": {
+      "command": "python",
+      "args": [
+        "${__dirname}/server/velaris_mcp.py"
+      ],
+      "env": {
+        "PYTHONPATH": "${__dirname}/server/lib"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "velaris_card",
+      "description": "The Velaris language, small enough to read before writing it."
+    },
+    {
+      "name": "velaris_check",
+      "description": "Compile without running; problems with codes, lines and fixes."
+    },
+    {
+      "name": "velaris_audit",
+      "description": "What a program touches, promises, and can fail at."
+    },
+    {
+      "name": "velaris_run",
+      "description": "Run under an effect budget; anything outside it is refused."
+    }
+  ],
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "python": ">=3.10"
+    }
+  }
+}

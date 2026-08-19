@@ -90,6 +90,29 @@ Field meanings, all stable within `velaris.audit/1`:
 A new field may be added within version 1; a field will not change
 meaning or disappear without the schema name changing.
 
+## Setting it up in your assistant
+
+**One command, every client on the machine:**
+
+```
+velaris mcp-install          # adds it wherever it finds a client
+velaris mcp-install --list   # show what it found, change nothing
+velaris mcp-install --remove # take it back out
+```
+
+It knows where Claude Code, Cline, Cursor, Windsurf, Continue and Zed
+keep their configuration, adds a `velaris` server without disturbing
+anything else already there, and backs up each file first. Restart the
+assistant afterwards - closing the window is usually not enough.
+
+**Claude Desktop:** newer builds only accept remote connectors in the
+Add-connector dialog, so use the bundle instead. Download
+`velaris.mcpb` from any release and open it, or drag it into
+Settings -> Extensions. The compiler travels inside the bundle, so
+nothing needs installing first. (The prover does not travel with it -
+without `pip install z3-solver` promises are checked while running
+rather than proven, and the tools say so rather than hiding it.)
+
 ## As an MCP server
 
 `velaris_mcp.py` speaks the Model Context Protocol over stdin/stdout,

@@ -8,3 +8,5 @@ ledger.txt
 
 # remembered proofs - safe to delete, rebuilt on demand
 .velaris/
+velaris.mcpb
+_mcpb_build/

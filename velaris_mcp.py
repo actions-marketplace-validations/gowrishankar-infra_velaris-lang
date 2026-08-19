@@ -22,12 +22,24 @@ budget while the program runs, and a refused effect stops it.
 import json
 import sys
 
-try:
-    import velaris
-except ImportError:                       # running from the repo
-    import os
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import velaris
+import os
+
+# the compiler may be: installed (pip), vendored beside this file in an
+# .mcpb bundle, or sitting in the repo next door. Try each, in the order
+# that keeps a user's own install winning.
+_here = os.path.dirname(os.path.abspath(__file__))
+for _where in (None, os.path.join(_here, "lib"), _here,
+               os.path.dirname(_here)):
+    if _where and _where not in sys.path:
+        sys.path.insert(0, _where)
+    try:
+        import velaris
+        break
+    except ImportError:
+        continue
+else:                                     # pragma: no cover
+    sys.stderr.write("velaris not found: pip install velaris-lang\n")
+    raise SystemExit(1)
 
 PROTOCOL = "2024-11-05"
 

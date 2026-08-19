@@ -152,6 +152,7 @@ Usage:
   velaris explain program.vel              walk through what it does
   velaris audit program.vel                what it can touch, before you run it
   velaris card                             the language, for pasting into a model
+  velaris mcp-install                      set up the tools in your assistant
   velaris explain <folder>                 a map of every file
   velaris doctor                           check the installation
   velaris new <name>                       start a fresh project
@@ -252,7 +253,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.52.0"
+VERSION = "2.53.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -6569,6 +6570,23 @@ def main() -> int:
                       f"required {want:.0f}%", file=sys.stderr)
                 return 1
         return 1 if totals["errors"] else 0
+    if argv[:1] == ["mcp-install"]:
+        here = os.path.dirname(os.path.abspath(__file__))
+        for where in (here, os.path.join(here, "..")):
+            script = os.path.join(where, "velaris_mcp_install.py")
+            if os.path.exists(script):
+                sys.path.insert(0, where)
+                import velaris_mcp_install
+                return velaris_mcp_install.main(argv[1:])
+        try:
+            import velaris_mcp_install
+            return velaris_mcp_install.main(argv[1:])
+        except ImportError:
+            print("the installer is not alongside this compiler; get it "
+                  "from https://github.com/gowrishankar-infra/velaris-lang",
+                  file=sys.stderr)
+            return 1
+
     if argv[:1] == ["card"]:
         here = os.path.dirname(os.path.abspath(__file__))
         for where in (os.path.join(here, "LLM.md"),
