@@ -262,6 +262,26 @@ def main() -> int:
     ok("as_dict gives plain data for JSON",
        isinstance(a.as_dict()["problems"][0], dict))
 
+    import subprocess as _sub2
+    strict_ok = _sub2.run(
+        [sys.executable, str(HERE / "velaris.py"), "check",
+         str(HERE / "examples" / "inferred.vel"), "--strict"],
+        capture_output=True, text=True, timeout=900)
+    strict_no = _sub2.run(
+        [sys.executable, str(HERE / "velaris.py"), "check",
+         str(HERE / "examples" / "wordcount.vel"), "--strict"],
+        capture_output=True, text=True, timeout=900)
+    if HAVE_PROVER:
+        ok("--strict accepts a file whose promises all prove",
+           strict_ok.returncode == 0, strict_ok.stderr[:120])
+        ok("--strict REFUSES a promise left to runtime",
+           strict_no.returncode == 1 and "could not be proven"
+           in strict_no.stderr, strict_no.stderr[:120])
+    else:
+        ok("--strict refuses rather than pretending, with no prover",
+           strict_ok.returncode == 1 and "needs the prover"
+           in strict_ok.stderr, strict_ok.stderr[:120])
+
     npm_pkg = HERE / "npm" / "package.json"
     if npm_pkg.exists():
         ok("the npm package version follows the compiler",

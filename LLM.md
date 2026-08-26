@@ -377,6 +377,10 @@ velaris program.vel                      run it
 velaris program.vel --allow io           refuse every other effect (E310)
 velaris program.vel --deny net,ffi       allow everything but these
 velaris check program.vel [--json]       every problem, as data
+velaris check program.vel --strict       refuse ANY promise left to
+                                         runtime; without it an
+                                         unprovable promise degrades to
+                                         a runtime check
 velaris audit program.vel                what it touches, before running
 velaris proofs program.vel --detail      which promises proved, one by one
 velaris explain program.vel              functions, effects, proof status

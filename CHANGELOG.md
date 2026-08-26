@@ -1,5 +1,30 @@
 # Velaris changelog
 
+## 2.57 - --strict, from a question on r/Compilers
+Someone asked whether users could choose between strict and flexible
+proof modes rather than having leniency imposed on them. They were
+right, and half the answer already existed - `velaris proofs --min 80`
+holds a line across a project - but the compiler itself always
+accepted a promise that fell back to a runtime check.
+
+`velaris check program.vel --strict` refuses when any promise could not
+be proven, and names them:
+
+    examples/wordcount.vel: 2 promise(s) could not be proven, and
+    --strict does not accept runtime checks:
+      bar
+          needs    biggest > 0
+      report
+          needs    top > 0
+
+With no prover installed it refuses rather than pretending - a strict
+check that silently proves nothing would be the worst of both.
+
+The default stays lenient because the solver is optional and
+strict-by-default would mean the language does not run for anyone who
+has not installed z3. That is an argument about the default, not a
+reason the flag should not exist.
+
 ## 2.56 - Seamless means tested, not claimed
 Three gaps between "the door exists" and "the door works".
 

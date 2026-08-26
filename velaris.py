@@ -144,6 +144,7 @@ Usage:
   velaris <file> --deny net,ffi            allow everything but these
   velaris fmt program.vel                  format to the canonical style
   velaris check program.vel                compile only, do not run
+  velaris check f.vel --strict             refuse any promise left to runtime
   velaris proofs [path] [--min 80]         how much is proven, not just checked
   velaris proofs . --detail                which functions, one by one
   velaris clean                            forget remembered proofs
@@ -254,7 +255,7 @@ Usage:
 import json
 import os
 
-VERSION = "2.56.0"
+VERSION = "2.57.0"
 import re
 import sys
 from dataclasses import dataclass, field
@@ -6875,6 +6876,7 @@ def main() -> int:
             print("usage: velaris check program.vel", file=sys.stderr)
             return 1
         bad = 0
+        strict = "--strict" in argv
         for target in [a for a in argv[1:] if not a.startswith("-")]:
             rep_ = inspect_source(target)
             if rep_["errors"]:
@@ -6885,14 +6887,52 @@ def main() -> int:
                     for e in rep_["errors"]:
                         print(f"{target}:{e['line']}: [{e['code']}] "
                               f"{e['message']}", file=sys.stderr)
-            elif "--json" not in argv:
+            else:
                 own = [f for f in rep_["functions"]
                        if os.path.abspath(f["file"])
                        == os.path.abspath(target)]
                 proven = sum(1 for f in own if f["status"] == "proven")
-                note = "" if rep_["proofs"] else "  (no z3: runtime checks)"
-                print(f"{target}: ok - {len(own)} function(s), "
-                      f"{proven} with proven promises{note}")
+                # --strict: "it compiled" should mean "every promise it
+                # makes was proven", not "proven or hoped for". Without
+                # the flag an unprovable promise degrades to a runtime
+                # check, which keeps the language usable with no solver
+                # installed - but that is a choice about the DEFAULT,
+                # and someone who wants the stronger reading should be
+                # able to ask for it.
+                if strict:
+                    if not rep_["proofs"]:
+                        bad += 1
+                        print(f"{target}: --strict needs the prover "
+                              f"(pip install z3-solver)", file=sys.stderr)
+                        continue
+                    fell_back = [f for f in own
+                                 if (f["requires"] or f["ensures"])
+                                 and f["status"] != "proven"]
+                    if fell_back:
+                        bad += 1
+                        print(f"{target}: {len(fell_back)} promise(s) "
+                              f"could not be proven, and --strict does "
+                              f"not accept runtime checks:",
+                              file=sys.stderr)
+                        for f in fell_back:
+                            print(f"  {f['name']}", file=sys.stderr)
+                            for e in f["ensures"]:
+                                print(f"      promises {e}",
+                                      file=sys.stderr)
+                            for r in f["requires"]:
+                                print(f"      needs    {r}",
+                                      file=sys.stderr)
+                        print("  either simplify them until they prove, "
+                              "or drop --strict and accept the runtime "
+                              "check", file=sys.stderr)
+                        continue
+                if "--json" not in argv:
+                    note = ("" if rep_["proofs"]
+                            else "  (no z3: runtime checks)")
+                    if strict:
+                        note = "  (--strict: every promise proven)"
+                    print(f"{target}: ok - {len(own)} function(s), "
+                          f"{proven} with proven promises{note}")
         return 1 if bad else 0
     if argv[:1] == ["explain"]:
         if len(argv) < 2:
